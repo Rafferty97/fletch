@@ -1,4 +1,7 @@
-use crate::span::{Span, TextSize};
+use crate::{
+    escape::UnescapeError,
+    span::{Span, TextSize},
+};
 use std::{hint::unreachable_unchecked, marker::PhantomData};
 use thiserror::Error;
 
@@ -27,15 +30,33 @@ impl<'a> Default for Token<'a> {
     fn default() -> Self {
         let kind = TokenKind::None;
         let raw = "";
-        Self {
-            kind,
-            raw,
-            src_start: raw.as_ptr(),
-        }
+        Self { kind, raw, src_start: raw.as_ptr() }
     }
 }
 
 impl<'a> Token<'a> {
+    pub fn new(kind: TokenKind, raw: &'a str) -> Self {
+        let src_start = raw.as_ptr();
+        Self { kind, raw, src_start }
+    }
+
+    pub fn ident(&self) -> Result<String, UnescapeError> {
+        debug_assert!(self.kind == TokenKind::Identifier);
+
+        if self.raw.as_bytes()[0] == b'\'' {
+            crate::escape::unescape(&self.raw[1..self.raw.len() - 1])
+        } else {
+            Ok(self.raw.into())
+        }
+    }
+
+    pub fn string(&self) -> Result<String, UnescapeError> {
+        debug_assert!(self.kind == TokenKind::String);
+        debug_assert!(self.raw.as_bytes()[0] == b'\"');
+
+        crate::escape::unescape(&self.raw[1..self.raw.len() - 1])
+    }
+
     pub fn span(&self) -> Span {
         make_span(self.raw, self.src_start)
     }
@@ -132,20 +153,12 @@ impl<'a> Lexer<'a> {
             let bytes = std::slice::from_raw_parts(start, len);
             std::str::from_utf8_unchecked(bytes)
         };
-        let error = |lexer: &Self, message| {
-            Err(LexError {
-                message,
-                span: lexer.make_span(raw(lexer)),
-            })
-        };
+        let error =
+            |lexer: &Self, message| Err(LexError { message, span: lexer.make_span(raw(lexer)) });
 
         let Some(char) = self.advance() else {
             let kind = TokenKind::Eof;
-            return Ok(Token {
-                kind,
-                raw: raw(self),
-                src_start: self.start,
-            });
+            return Ok(Token { kind, raw: raw(self), src_start: self.start });
         };
 
         let kind = match char {
@@ -189,9 +202,20 @@ impl<'a> Lexer<'a> {
                 true => TokenKind::DoubleQuestionMark,
                 false => TokenKind::QuestionMark,
             },
+            b'\'' => loop {
+                match self.advance() {
+                    Some(b'\'') => break TokenKind::Identifier,
+                    Some(b'\n') => return error(self, "Newline in identifier"),
+                    Some(b'\\') => {
+                        self.advance();
+                    }
+                    Some(_) => continue,
+                    None => return error(self, "Unterminated identifier"),
+                }
+            },
             b'"' => loop {
                 match self.advance() {
-                    Some(b'\"') => break TokenKind::String,
+                    Some(b'"') => break TokenKind::String,
                     Some(b'\n') => return error(self, "Newline in string"),
                     Some(b'\\') => {
                         self.advance();
@@ -200,22 +224,6 @@ impl<'a> Lexer<'a> {
                     None => return error(self, "Unterminated string"),
                 }
             },
-            b'$' => {
-                if self.advance() != Some(b'{') {
-                    return error(self, "Expected '{' after '$'");
-                }
-                loop {
-                    match self.advance() {
-                        Some(b'}') => break TokenKind::Identifier,
-                        Some(b'\n') => return error(self, "Newline in identifer"),
-                        Some(b'\\') => {
-                            self.advance();
-                        }
-                        Some(_) => continue,
-                        None => return error(self, "Unterminated identifer"),
-                    }
-                }
-            }
             b'0'..=b'9' => {
                 self.consume_while(|c| c.is_ascii_digit());
                 if let (Some(b'.'), Some(b'0'..=b'9')) = (self.peek(), self.peek_next()) {
@@ -245,11 +253,7 @@ impl<'a> Lexer<'a> {
             _ => return error(self, "Unexpected character"),
         };
 
-        Ok(Token {
-            kind,
-            raw: raw(self),
-            src_start: self.start,
-        })
+        Ok(Token { kind, raw: raw(self), src_start: self.start })
     }
 
     fn peek(&self) -> Option<u8> {
@@ -344,4 +348,44 @@ fn make_span(raw: &str, src_start: *const u8) -> Span {
         TextSize::try_from(start - src_start).unwrap(),
         TextSize::try_from(end - src_start).unwrap(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn basic_test() {
+        let mut lexer = Lexer::new("foo + 'my column'");
+        assert!(matches!(
+            lexer.next().unwrap(),
+            Token { kind: TokenKind::Identifier, raw: "foo", .. }
+        ));
+        assert!(matches!(
+            lexer.next().unwrap(),
+            Token { kind: TokenKind::Plus, raw: "+", .. }
+        ));
+        assert!(matches!(
+            lexer.next().unwrap(),
+            Token { kind: TokenKind::Identifier, raw: "'my column'", .. }
+        ));
+    }
+
+    #[test]
+    fn unescape_string() {
+        let mut lexer = Lexer::new(r#""that\'s a lie""#);
+        let ident = lexer.next().unwrap();
+        assert_eq!(ident.kind, TokenKind::String);
+        assert_eq!(ident.raw, r#""that\'s a lie""#);
+        assert_eq!(ident.string().unwrap(), "that's a lie");
+    }
+
+    #[test]
+    fn unescape_identifier() {
+        let mut lexer = Lexer::new(r#"'that\'s a lie'"#);
+        let ident = lexer.next().unwrap();
+        assert_eq!(ident.kind, TokenKind::Identifier);
+        assert_eq!(ident.raw, r#"'that\'s a lie'"#);
+        assert_eq!(ident.ident().unwrap(), "that's a lie");
+    }
 }
