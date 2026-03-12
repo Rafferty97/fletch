@@ -1,7 +1,5 @@
-use crate::{
-    escape::UnescapeError,
-    span::{Span, TextSize},
-};
+use super::escape::{UnescapeError, unescape};
+use super::span::{Span, TextSize};
 use std::{hint::unreachable_unchecked, marker::PhantomData};
 use thiserror::Error;
 
@@ -44,7 +42,7 @@ impl<'a> Token<'a> {
         debug_assert!(self.kind == TokenKind::Identifier);
 
         if self.raw.as_bytes()[0] == b'\'' {
-            crate::escape::unescape(&self.raw[1..self.raw.len() - 1])
+            unescape(&self.raw[1..self.raw.len() - 1])
         } else {
             Ok(self.raw.into())
         }
@@ -54,7 +52,7 @@ impl<'a> Token<'a> {
         debug_assert!(self.kind == TokenKind::String);
         debug_assert!(self.raw.as_bytes()[0] == b'\"');
 
-        crate::escape::unescape(&self.raw[1..self.raw.len() - 1])
+        unescape(&self.raw[1..self.raw.len() - 1])
     }
 
     pub fn span(&self) -> Span {
@@ -105,7 +103,7 @@ pub enum TokenKind {
     Else,
     Asc,
     Desc,
-    New,
+    Do,
 }
 
 #[derive(Error, Debug)]
@@ -246,7 +244,7 @@ impl<'a> Lexer<'a> {
                     "or" => TokenKind::Or,
                     "asc" => TokenKind::Asc,
                     "desc" => TokenKind::Desc,
-                    "new" => TokenKind::New,
+                    "do" => TokenKind::Do,
                     _ => TokenKind::Identifier,
                 }
             }
