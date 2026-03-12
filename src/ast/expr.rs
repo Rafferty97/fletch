@@ -1,3 +1,4 @@
+use super::ident::Ident;
 use super::lit::Lit;
 use crate::parser::Span;
 
@@ -10,4 +11,5 @@ pub struct Expr {
 #[derive(Clone, Debug)]
 pub enum ExprKind {
     Lit(Lit),
+    Ident(Ident),
 }
