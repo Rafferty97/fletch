@@ -5,4 +5,6 @@ edition = "2024"
 
 [dependencies]
 line-index = "0.1.2"
+ordered-float = { version = "5.1.0", features = ["serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.18"

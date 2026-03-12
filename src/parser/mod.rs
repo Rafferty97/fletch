@@ -1,5 +1,6 @@
 mod error;
-mod escape;
 mod lexer;
 mod parser;
 mod span;
+
+pub use span::Span;
