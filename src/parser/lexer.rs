@@ -90,6 +90,7 @@ pub enum TokenKind {
     LessEqual,
     QuestionMark,
     DoubleQuestionMark,
+    Arrow,
     Identifier,
     String,
     Number,
@@ -104,6 +105,7 @@ pub enum TokenKind {
     Asc,
     Desc,
     Do,
+    Func,
 }
 
 #[derive(Error, Debug)]
@@ -171,7 +173,10 @@ impl<'a> Lexer<'a> {
             b':' => TokenKind::Colon,
             b'.' => TokenKind::Dot,
             b'+' => TokenKind::Plus,
-            b'-' => TokenKind::Minus,
+            b'-' => match self.matches(b'>') {
+                true => TokenKind::Arrow,
+                false => TokenKind::Minus,
+            },
             b'*' => TokenKind::Asterisk,
             b'/' => match self.matches(b'/') {
                 true => {
@@ -245,6 +250,7 @@ impl<'a> Lexer<'a> {
                     "asc" => TokenKind::Asc,
                     "desc" => TokenKind::Desc,
                     "do" => TokenKind::Do,
+                    "fn" => TokenKind::Func,
                     _ => TokenKind::Identifier,
                 }
             }
@@ -385,5 +391,39 @@ mod tests {
         assert_eq!(ident.kind, TokenKind::Identifier);
         assert_eq!(ident.raw, r#"'that\'s a lie'"#);
         assert_eq!(ident.ident().unwrap(), "that's a lie");
+    }
+
+    #[test]
+    fn lex_fn_definition() {
+        let src = r#"
+                fn unit_price(price: f32, qty: f32) -> f32 {
+                    price / qty
+                }
+            "#;
+
+        let mut lexer = Lexer::new(src);
+        let mut next = || {
+            let token = lexer.next().unwrap();
+            (token.kind, token.raw)
+        };
+        assert_eq!(next(), (TokenKind::Func, "fn"));
+        assert_eq!(next(), (TokenKind::Identifier, "unit_price"));
+        assert_eq!(next(), (TokenKind::LeftParen, "("));
+        assert_eq!(next(), (TokenKind::Identifier, "price"));
+        assert_eq!(next(), (TokenKind::Colon, ":"));
+        assert_eq!(next(), (TokenKind::Identifier, "f32"));
+        assert_eq!(next(), (TokenKind::Comma, ","));
+        assert_eq!(next(), (TokenKind::Identifier, "qty"));
+        assert_eq!(next(), (TokenKind::Colon, ":"));
+        assert_eq!(next(), (TokenKind::Identifier, "f32"));
+        assert_eq!(next(), (TokenKind::RightParen, ")"));
+        assert_eq!(next(), (TokenKind::Arrow, "->"));
+        assert_eq!(next(), (TokenKind::Identifier, "f32"));
+        assert_eq!(next(), (TokenKind::LeftBrace, "{"));
+        assert_eq!(next(), (TokenKind::Identifier, "price"));
+        assert_eq!(next(), (TokenKind::Solidus, "/"));
+        assert_eq!(next(), (TokenKind::Identifier, "qty"));
+        assert_eq!(next(), (TokenKind::RightBrace, "}"));
+        assert_eq!(next(), (TokenKind::Eof, ""));
     }
 }

@@ -12,6 +12,7 @@ pub struct Stmt {
 #[derive(Clone, Debug)]
 pub enum StmtKind {
     LetDecl(LetDecl),
+    Expr(Box<Expr>),
 }
 
 #[derive(Clone, Debug)]
