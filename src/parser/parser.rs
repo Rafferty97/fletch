@@ -1,5 +1,6 @@
 use super::error::{ParseError, Result};
 use super::lexer::{Lexer, Token};
+use crate::parser::lexer::TokenKind;
 use line_index::{LineIndex, TextRange, TextSize};
 use std::cell::OnceCell;
 use std::sync::Arc;
@@ -30,11 +31,22 @@ impl<'a> Parser<'a> {
         ))
     }
 
+    fn advance(&mut self) -> Result<(), ParseError> {
+        self.previous = self.current;
+        loop {
+            self.current = self.lexer.next()?;
+            if self.current.kind != TokenKind::Comment {
+                break;
+            }
+        }
+        Ok(())
+    }
+
     fn error(&self, msg: impl Into<String>, span: TextRange) -> ParseError {
-        let line_index = self
-            .line_index
-            .get_or_init(|| Arc::new(line_index::LineIndex::new(self.src)))
-            .clone();
-        ParseError { message: msg.into(), span, line_index }
+        // let line_index = self
+        //     .line_index
+        //     .get_or_init(|| Arc::new(line_index::LineIndex::new(self.src)))
+        //     .clone();
+        ParseError { message: msg.into(), span, line_index: None }
     }
 }
