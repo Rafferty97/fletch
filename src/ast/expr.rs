@@ -12,4 +12,13 @@ pub struct Expr {
 pub enum ExprKind {
     Lit(Lit),
     Ident(Ident),
+    Binary(BinOp, Box<Expr>, Box<Expr>, Span),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum BinOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
 }

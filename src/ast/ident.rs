@@ -1,2 +1,2 @@
 #[derive(Clone, Eq, PartialEq, Debug)]
-pub struct Ident(String);
+pub struct Ident(pub String);
