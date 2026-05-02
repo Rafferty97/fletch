@@ -1,4 +1,4 @@
-use crate::escape::escape;
+use crate::util::escape::escape;
 use ordered_float::NotNan;
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;

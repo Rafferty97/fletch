@@ -1,5 +1,5 @@
 use super::span::{Span, TextSize};
-use crate::escape::{UnescapeError, unescape};
+use crate::util::escape::{UnescapeError, unescape};
 use std::{hint::unreachable_unchecked, marker::PhantomData};
 use thiserror::Error;
 
