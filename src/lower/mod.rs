@@ -55,6 +55,15 @@ pub fn lower_binary(op: ast::BinOp, lhs: &ast::Expr, rhs: &ast::Expr) -> Result<
         ast::BinOp::Add => {
             ir::ExprKind::Call(ir::Call { func: ir::VarId(0), args: vec![lhs, rhs] })
         }
+        ast::BinOp::Sub => {
+            ir::ExprKind::Call(ir::Call { func: ir::VarId(1), args: vec![lhs, rhs] })
+        }
+        ast::BinOp::Mul => {
+            ir::ExprKind::Call(ir::Call { func: ir::VarId(2), args: vec![lhs, rhs] })
+        }
+        ast::BinOp::Div => {
+            ir::ExprKind::Call(ir::Call { func: ir::VarId(3), args: vec![lhs, rhs] })
+        }
         _ => unimplemented!(),
     })
 }

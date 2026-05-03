@@ -29,7 +29,7 @@ mod test {
 
     #[test]
     fn nested_parens() {
-        let src = "3 + (1 + (3 + 7) + 4)";
+        let src = "3 + (7 * (10 / 5) + 4)";
 
         let mut parser = Parser::new(src);
         let ast = parser.parse_program().unwrap();
@@ -37,6 +37,6 @@ mod test {
         let ir = lower_program(&ast).unwrap();
 
         let result = interpret_program(ir);
-        assert_eq!(result, Value::UInt64(18));
+        assert_eq!(result, Value::UInt64(21));
     }
 }

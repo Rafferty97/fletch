@@ -14,14 +14,18 @@ fn interpret_expr(ir: &Expr) -> Value {
 
 fn interpret_call(ir: &Call) -> Value {
     match ir.func.0 {
-        0 => {
+        op @ 0..=4 => {
             let [lhs, rhs] = &ir.args[..] else {
                 panic!("expected 2 arguments, got {}", ir.args.len());
             };
             let lhs = interpret_expr(lhs);
             let rhs = interpret_expr(rhs);
-            match (lhs, rhs) {
-                (Value::UInt64(lhs), Value::UInt64(rhs)) => Value::UInt64(lhs + rhs),
+            match (op, lhs, rhs) {
+                (0, Value::UInt64(lhs), Value::UInt64(rhs)) => Value::UInt64(lhs + rhs),
+                (1, Value::UInt64(lhs), Value::UInt64(rhs)) => Value::UInt64(lhs - rhs),
+                (2, Value::UInt64(lhs), Value::UInt64(rhs)) => Value::UInt64(lhs * rhs),
+                (3, Value::UInt64(lhs), Value::UInt64(rhs)) => Value::UInt64(lhs / rhs),
+                (4.., _, _) => unreachable!(),
             }
         }
         _ => panic!("unresolved function call"),
