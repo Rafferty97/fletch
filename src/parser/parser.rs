@@ -1,5 +1,7 @@
 use super::lexer::{Lexer, Token};
-use crate::ast::{BinOp, Expr, ExprKind, Ident, Program};
+use crate::ast::{
+    BinOp, Block, Expr, ExprKind, Func, Ident, Item, ItemKind, Program, Stmt, StmtKind,
+};
 use crate::error::{Error, Result};
 use crate::parser::lexer::TokenKind;
 use line_index::{LineIndex, TextRange, TextSize};
@@ -28,10 +30,11 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_program(&mut self) -> Result<Program> {
-        Err(self.error(
-            "not implemented",
-            TextRange::new(TextSize::new(0), TextSize::new(0)),
-        ))
+        let expr = self.parse_expr()?;
+        let span = expr.span;
+        let body = Block { stmts: vec![], tail: Some(expr), span };
+        let func = Func { name: Ident("main".into()), args: vec![], body };
+        Ok(Program { items: vec![Item { kind: ItemKind::Func(func), span }] })
     }
 
     pub fn parse_expr(&mut self) -> Result<Expr> {

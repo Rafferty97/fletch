@@ -12,6 +12,12 @@ pub struct Error {
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+impl Error {
+    pub fn new(msg: impl Into<String>, span: Span) -> Self {
+        Self { message: msg.into(), span, line_index: None }
+    }
+}
+
 impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.line_index {

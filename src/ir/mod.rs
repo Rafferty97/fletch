@@ -6,5 +6,5 @@ mod lit;
 
 #[derive(Clone, Debug)]
 pub struct Program {
-    // todo
+    pub expr: Expr,
 }
