@@ -59,6 +59,11 @@ impl<'a> Parser<'a> {
                     span: self.previous.span(),
                 }
             }
+            TokenKind::LeftParen => {
+                let expr = self.parse_expr()?;
+                self.consume(TokenKind::RightParen, "expected ')' after expression")?;
+                expr
+            }
             _ => panic!("{:?}", self.previous.kind),
         };
 
