@@ -1,6 +1,6 @@
 use super::lexer::{Lexer, Token};
 use crate::ast::{
-    BinOp, Block, Expr, ExprKind, Func, Ident, Item, ItemKind, Program, Stmt, StmtKind,
+    BinOp, Block, Expr, ExprKind, Func, Ident, Item, ItemKind, Lit, Program, Stmt, StmtKind,
 };
 use crate::error::{Error, Result};
 use crate::parser::lexer::TokenKind;
@@ -49,6 +49,16 @@ impl<'a> Parser<'a> {
                 kind: ExprKind::Ident(Ident(self.previous.raw.into())),
                 span: self.previous.span(),
             },
+            TokenKind::Number => {
+                let value =
+                    self.previous.raw.parse().map_err(|_| {
+                        Error::new("invalid numerical literal", self.previous.span())
+                    })?;
+                Expr {
+                    kind: ExprKind::Lit(Lit::UInt(value)),
+                    span: self.previous.span(),
+                }
+            }
             _ => panic!("{:?}", self.previous.kind),
         };
 

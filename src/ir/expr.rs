@@ -14,10 +14,10 @@ pub enum ExprKind {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct VarId(u32);
+pub struct VarId(pub u32);
 
 #[derive(Clone, Debug)]
 pub struct Call {
-    func: VarId, // ??
-    args: Vec<Expr>,
+    pub func: VarId, // ??
+    pub args: Vec<Expr>,
 }

@@ -1,6 +1,6 @@
 use crate::util::span::Span;
 use line_index::LineIndex;
-use std::sync::Arc;
+use std::{num::ParseIntError, sync::Arc};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
