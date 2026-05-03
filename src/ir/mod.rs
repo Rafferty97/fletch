@@ -3,3 +3,8 @@ pub use lit::*;
 
 mod expr;
 mod lit;
+
+#[derive(Clone, Debug)]
+pub struct Program {
+    // todo
+}

@@ -1,6 +1,6 @@
-use super::error::{ParseError, Result};
 use super::lexer::{Lexer, Token};
 use crate::ast::{BinOp, Expr, ExprKind, Ident, Program};
+use crate::error::{Error, Result};
 use crate::parser::lexer::TokenKind;
 use line_index::{LineIndex, TextRange, TextSize};
 use std::cell::OnceCell;
@@ -84,7 +84,7 @@ impl<'a> Parser<'a> {
         self.current.kind == kind
     }
 
-    fn matches(&mut self, kind: TokenKind) -> Result<bool, ParseError> {
+    fn matches(&mut self, kind: TokenKind) -> Result<bool, Error> {
         if self.current.kind == kind {
             self.advance()?;
             Ok(true)
@@ -93,7 +93,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn advance(&mut self) -> Result<(), ParseError> {
+    fn advance(&mut self) -> Result<(), Error> {
         self.previous = self.current;
         loop {
             self.current = self.lexer.next()?;
@@ -112,23 +112,23 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn error(&self, msg: impl Into<String>, span: TextRange) -> ParseError {
+    fn error(&self, msg: impl Into<String>, span: TextRange) -> Error {
         // let line_index = self
         //     .line_index
         //     .get_or_init(|| Arc::new(line_index::LineIndex::new(self.src)))
         //     .clone();
-        ParseError { message: msg.into(), span, line_index: None }
+        Error { message: msg.into(), span, line_index: None }
     }
 
-    fn error_at(&self, message: impl Into<String>, token: &Token) -> ParseError {
+    fn error_at(&self, message: impl Into<String>, token: &Token) -> Error {
         self.error(message, token.span())
     }
 
-    fn error_at_current(&self, message: &'static str) -> ParseError {
+    fn error_at_current(&self, message: &'static str) -> Error {
         self.error_at(message, &self.current)
     }
 
-    fn error_at_previous(&self, message: &'static str) -> ParseError {
+    fn error_at_previous(&self, message: &'static str) -> Error {
         self.error_at(message, &self.previous)
     }
 }

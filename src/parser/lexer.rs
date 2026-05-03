@@ -1,5 +1,8 @@
 use super::span::{Span, TextSize};
-use crate::util::escape::{UnescapeError, unescape};
+use crate::{
+    error::Error,
+    util::escape::{UnescapeError, unescape},
+};
 use std::{hint::unreachable_unchecked, marker::PhantomData};
 use thiserror::Error;
 
@@ -354,6 +357,16 @@ fn make_span(raw: &str, src_start: *const u8) -> Span {
         TextSize::try_from(start - src_start).unwrap(),
         TextSize::try_from(end - src_start).unwrap(),
     )
+}
+
+impl From<LexError> for Error {
+    fn from(err: LexError) -> Self {
+        Self {
+            message: err.message.into(),
+            span: err.span,
+            line_index: None,
+        }
+    }
 }
 
 #[cfg(test)]
