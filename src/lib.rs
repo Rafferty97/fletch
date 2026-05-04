@@ -6,6 +6,7 @@ mod interpreter;
 mod ir;
 mod lower;
 mod parser;
+mod typecheck;
 mod util;
 
 #[cfg(test)]
