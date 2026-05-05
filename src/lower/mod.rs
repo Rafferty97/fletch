@@ -1,10 +1,7 @@
-use crate::ast;
+use crate::ast::{self, BinOp};
 use crate::error::{Error, Result};
 use crate::ir::{self, ExprKind, intrinsics};
-use crate::typecheck::{
-    IntTy, Ty, TyCtx, TyKind, UIntTy, check_type, expected_lhs_for_binop, expected_rhs_for_binop,
-    with_ty_ctx,
-};
+use crate::typecheck::{IntTy, Ty, TyCtx, TyKind, UIntTy, with_ty_ctx};
 use crate::util::span::{Span, TextSize};
 
 pub fn lower_program<'tcx>(ast: &ast::Program, ctx: TyCtx<'tcx>) -> Result<ir::Program<'tcx>> {
@@ -74,11 +71,13 @@ pub fn lower_binary<'tcx>(
     expect: Option<Ty<'tcx>>,
     ctx: TyCtx<'tcx>,
 ) -> Result<ir::Expr<'tcx>> {
-    let lhs_expect = expect.and_then(|ty| expected_lhs_for_binop(op, ty));
+    let lhs_expect = expect.and_then(|ty| match BinOpCategory::from(op) {
+        BinOpCategory::Math => Some(ty),
+        BinOpCategory::Comparison => None,
+    });
     let lhs = lower_expr(lhs, lhs_expect, ctx)?;
 
-    let rhs_expect = expected_rhs_for_binop(op, lhs.ty);
-    let rhs = lower_expr(rhs, rhs_expect, ctx)?;
+    let rhs = lower_expr(rhs, Some(lhs.ty), ctx)?;
 
     if lhs.ty != rhs.ty {
         Err(Error::new_binop(op, lhs.ty, rhs.ty, span))?;
@@ -104,4 +103,31 @@ pub fn lower_binary<'tcx>(
         kind: ir::ExprKind::Call(ir::Call { func, args: vec![lhs, rhs] }),
         ty,
     })
+}
+
+#[derive(Clone, Copy)]
+enum BinOpCategory {
+    /// Operations that take equal types and produce the same type
+    Math,
+    /// Operations that take equal types and produce a boolean
+    Comparison,
+}
+
+impl From<BinOp> for BinOpCategory {
+    fn from(op: BinOp) -> Self {
+        match op {
+            BinOp::Add => Self::Math,
+            BinOp::Sub => Self::Math,
+            BinOp::Mul => Self::Math,
+            BinOp::Div => Self::Math,
+        }
+    }
+}
+
+pub fn check_type<'tcx>(expected: Ty<'tcx>, got: Ty<'tcx>, span: Span) -> Result<()> {
+    if got == expected {
+        Ok(())
+    } else {
+        Err(Error::new_type_mismatch(expected, got, span))
+    }
 }
