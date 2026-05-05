@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use super::ident::Ident;
 use super::lit::Lit;
 use crate::parser::Span;
@@ -21,4 +23,15 @@ pub enum BinOp {
     Sub,
     Mul,
     Div,
+}
+
+impl Display for BinOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Add => write!(f, "+"),
+            Self::Sub => write!(f, "-"),
+            Self::Mul => write!(f, "*"),
+            Self::Div => write!(f, "/"),
+        }
+    }
 }

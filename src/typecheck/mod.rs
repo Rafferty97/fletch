@@ -1,6 +1,11 @@
+use std::{fmt::Display, ops::Deref};
+
 use bumpalo::Bump;
 
+use crate::ast::BinOp;
+use crate::error::{Error, Result};
 use crate::util::intern::{Interned, Interner};
+use crate::util::span::Span;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Ty<'tcx>(Interned<'tcx, TyKind<'tcx>>);
@@ -9,10 +14,12 @@ pub type Tys<'tcx> = &'tcx [Ty<'tcx>];
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum TyKind<'tcx> {
+    Null,
     Bool,
     Char,
     Int(IntTy),
     UInt(UIntTy),
+    Float(FloatTy),
     Array(Ty<'tcx>),
     Tuple(Tys<'tcx>),
     Never,
@@ -34,10 +41,69 @@ pub enum UIntTy {
     U64,
 }
 
-pub struct TyCtx<'tcx> {
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub enum FloatTy {
+    F32,
+    F64,
+}
+
+impl<'ctx> Ty<'ctx> {
+    pub fn kind(self) -> TyKind<'ctx> {
+        *self.0
+    }
+}
+
+impl Display for Ty<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.kind().fmt(f)
+    }
+}
+
+impl Display for TyKind<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Null => write!(f, "null"),
+            Self::Bool => write!(f, "bool"),
+            Self::Char => write!(f, "char"),
+            Self::Int(IntTy::I8) => write!(f, "i8"),
+            Self::Int(IntTy::I16) => write!(f, "i16"),
+            Self::Int(IntTy::I32) => write!(f, "i32"),
+            Self::Int(IntTy::I64) => write!(f, "i64"),
+            Self::UInt(UIntTy::U8) => write!(f, "u8"),
+            Self::UInt(UIntTy::U16) => write!(f, "u16"),
+            Self::UInt(UIntTy::U32) => write!(f, "u32"),
+            Self::UInt(UIntTy::U64) => write!(f, "u64"),
+            Self::Float(FloatTy::F32) => write!(f, "f32"),
+            Self::Float(FloatTy::F64) => write!(f, "f64"),
+            Self::Array(ty) => write!(f, "{ty}[]"),
+            Self::Tuple([]) => write!(f, "()"),
+            Self::Tuple([first, rest @ ..]) => {
+                write!(f, "({first}")?;
+                for ty in rest {
+                    write!(f, ", {ty}")?;
+                }
+                write!(f, ")")
+            }
+            Self::Never => write!(f, "!"),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct TyCtx<'tcx>(&'tcx TyCtxInner<'tcx>);
+
+impl<'tcx> Deref for TyCtx<'tcx> {
+    type Target = TyCtxInner<'tcx>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub struct TyCtxInner<'tcx> {
     arena: &'tcx Bump,
     ty_interner: Interner<'tcx, TyKind<'tcx>>,
-    tys: CommonTypes<'tcx>,
+    pub tys: CommonTypes<'tcx>,
 }
 
 impl<'tcx> TyCtx<'tcx> {
@@ -46,8 +112,17 @@ impl<'tcx> TyCtx<'tcx> {
     }
 }
 
+pub fn with_ty_ctx<T>(f: impl FnOnce(TyCtx) -> T) -> T {
+    let arena = &Bump::new();
+    let ty_interner = Interner::new();
+    let tys = CommonTypes::new(arena, &ty_interner);
+    let inner = arena.alloc(TyCtxInner { arena, ty_interner, tys });
+    f(TyCtx(&inner))
+}
+
 pub struct CommonTypes<'tcx> {
     pub unit: Ty<'tcx>,
+    pub null: Ty<'tcx>,
     pub bool: Ty<'tcx>,
     pub u8: Ty<'tcx>,
     pub u16: Ty<'tcx>,
@@ -65,6 +140,7 @@ impl<'tcx> CommonTypes<'tcx> {
 
         Self {
             unit: make_ty(TyKind::Tuple(&[])),
+            null: make_ty(TyKind::Null),
             bool: make_ty(TyKind::Bool),
             u8: make_ty(TyKind::UInt(UIntTy::U8)),
             u16: make_ty(TyKind::UInt(UIntTy::U16)),
@@ -74,6 +150,44 @@ impl<'tcx> CommonTypes<'tcx> {
             i16: make_ty(TyKind::Int(IntTy::I16)),
             i32: make_ty(TyKind::Int(IntTy::I32)),
             i64: make_ty(TyKind::Int(IntTy::I64)),
+        }
+    }
+}
+
+pub fn check_type<'tcx>(expected: Ty<'tcx>, got: Ty<'tcx>, span: Span) -> Result<()> {
+    if got == expected {
+        Ok(())
+    } else {
+        Err(Error::new_type_mismatch(expected, got, span))
+    }
+}
+
+pub fn expected_lhs_for_binop<'tcx>(op: BinOp, output: Ty<'tcx>) -> Option<Ty<'tcx>> {
+    match BinOpCategory::from(op) {
+        BinOpCategory::Math => Some(output),
+        BinOpCategory::Comparison => None,
+    }
+}
+
+pub fn expected_rhs_for_binop<'tcx>(op: BinOp, lhs: Ty<'tcx>) -> Option<Ty<'tcx>> {
+    Some(lhs)
+}
+
+#[derive(Clone, Copy)]
+enum BinOpCategory {
+    /// Operations that take equal types and produce the same type
+    Math,
+    /// Operations that take equal types and produce a boolean
+    Comparison,
+}
+
+impl From<BinOp> for BinOpCategory {
+    fn from(op: BinOp) -> Self {
+        match op {
+            BinOp::Add => Self::Math,
+            BinOp::Sub => Self::Math,
+            BinOp::Mul => Self::Math,
+            BinOp::Div => Self::Math,
         }
     }
 }

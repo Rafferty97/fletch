@@ -1,6 +1,7 @@
 use super::lexer::{Lexer, Token};
 use crate::ast::{
-    BinOp, Block, Expr, ExprKind, Func, Ident, Item, ItemKind, Lit, Program, Stmt, StmtKind,
+    BinOp, Block, Expr, ExprKind, Func, Ident, Item, ItemKind, Lit, LitKind, Program, Stmt,
+    StmtKind,
 };
 use crate::error::{Error, Result};
 use crate::parser::lexer::TokenKind;
@@ -49,16 +50,18 @@ impl<'a> Parser<'a> {
                 kind: ExprKind::Ident(Ident(self.previous.raw.into())),
                 span: self.previous.span(),
             },
-            TokenKind::Number => {
-                let value =
-                    self.previous.raw.parse().map_err(|_| {
-                        Error::new("invalid numerical literal", self.previous.span())
-                    })?;
-                Expr {
-                    kind: ExprKind::Lit(Lit::UInt(value)),
-                    span: self.previous.span(),
-                }
-            }
+            TokenKind::False | TokenKind::True => Expr {
+                kind: ExprKind::Lit(Lit { kind: LitKind::Bool, raw: self.previous.raw.into() }),
+                span: self.previous.span(),
+            },
+            TokenKind::Integer => Expr {
+                kind: ExprKind::Lit(Lit { kind: LitKind::Integer, raw: self.previous.raw.into() }),
+                span: self.previous.span(),
+            },
+            TokenKind::Float => Expr {
+                kind: ExprKind::Lit(Lit { kind: LitKind::Float, raw: self.previous.raw.into() }),
+                span: self.previous.span(),
+            },
             TokenKind::LeftParen => {
                 let expr = self.parse_expr()?;
                 self.consume(TokenKind::RightParen, "expected ')' after expression")?;
@@ -135,7 +138,7 @@ impl<'a> Parser<'a> {
         //     .line_index
         //     .get_or_init(|| Arc::new(line_index::LineIndex::new(self.src)))
         //     .clone();
-        Error { message: msg.into(), span, line_index: None }
+        Error::new_other(msg, span)
     }
 
     fn error_at(&self, message: impl Into<String>, token: &Token) -> Error {

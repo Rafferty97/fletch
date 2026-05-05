@@ -49,6 +49,10 @@ pub struct Interner<'a, T> {
 }
 
 impl<'a, T: Hash + Eq> Interner<'a, T> {
+    pub fn new() -> Self {
+        Self { map: DashSet::new() }
+    }
+
     pub fn intern(&self, value: T, make: impl FnOnce(T) -> &'a T) -> Interned<'a, T> {
         if let Some(existing) = self.map.get(&value) {
             Interned::new_unchecked(&*existing)

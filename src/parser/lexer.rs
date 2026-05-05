@@ -97,7 +97,8 @@ pub enum TokenKind {
     Arrow,
     Identifier,
     String,
-    Number,
+    Integer,
+    Float,
     Null,
     True,
     False,
@@ -234,12 +235,15 @@ impl<'a> Lexer<'a> {
             },
             b'0'..=b'9' => {
                 self.consume_while(|c| c.is_ascii_digit());
-                if let (Some(b'.'), Some(b'0'..=b'9')) = (self.peek(), self.peek_next()) {
+                if let Some(b'.') = self.peek() {
                     self.advance();
                     self.consume_while(|c| c.is_ascii_digit());
+                    self.consume_while(|c| c.is_ascii_alphabetic());
+                    TokenKind::Float
+                } else {
+                    self.consume_while(|c| c.is_ascii_alphabetic());
+                    TokenKind::Integer
                 }
-                self.consume_while(|c| c.is_ascii_alphabetic());
-                TokenKind::Number
             }
             b'a'..=b'z' | b'A'..=b'Z' | b'_' => {
                 self.consume_while(|c| c.is_ascii_alphanumeric() || c == b'_');
@@ -361,11 +365,7 @@ fn make_span(raw: &str, src_start: *const u8) -> Span {
 
 impl From<LexError> for Error {
     fn from(err: LexError) -> Self {
-        Self {
-            message: err.message.into(),
-            span: err.span,
-            line_index: None,
-        }
+        Self::new_other(err.message, err.span)
     }
 }
 
