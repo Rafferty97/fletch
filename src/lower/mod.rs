@@ -1,6 +1,6 @@
 use crate::ast::{self, BinOp};
 use crate::error::{Error, Result};
-use crate::ir::{self, ExprKind, intrinsics};
+use crate::ir::{self, BinOpKind, ExprKind};
 use crate::typecheck::{IntTy, Ty, TyCtx, TyKind, UIntTy, with_ty_ctx};
 use crate::util::span::{Span, TextSize};
 
@@ -83,15 +83,15 @@ pub fn lower_binary<'tcx>(
         Err(Error::new_binop(op, lhs.ty, rhs.ty, span))?;
     }
 
-    let (func, ty) = match (op, lhs.ty.kind()) {
-        (ast::BinOp::Add, TyKind::Int(IntTy::I32)) => (intrinsics::ADD_I32, ctx.tys.i32),
-        (ast::BinOp::Add, TyKind::UInt(UIntTy::U64)) => (intrinsics::ADD_U64, ctx.tys.u64),
-        (ast::BinOp::Sub, TyKind::Int(IntTy::I32)) => (intrinsics::SUB_I32, ctx.tys.i32),
-        (ast::BinOp::Sub, TyKind::UInt(UIntTy::U64)) => (intrinsics::SUB_U64, ctx.tys.u64),
-        (ast::BinOp::Mul, TyKind::Int(IntTy::I32)) => (intrinsics::MUL_I32, ctx.tys.i32),
-        (ast::BinOp::Mul, TyKind::UInt(UIntTy::U64)) => (intrinsics::MUL_U64, ctx.tys.u64),
-        (ast::BinOp::Div, TyKind::Int(IntTy::I32)) => (intrinsics::DIV_I32, ctx.tys.i32),
-        (ast::BinOp::Div, TyKind::UInt(UIntTy::U64)) => (intrinsics::DIV_U64, ctx.tys.u64),
+    let (op, ty) = match (op, lhs.ty.kind()) {
+        (ast::BinOp::Add, TyKind::Int(IntTy::I32)) => (BinOpKind::Add, ctx.tys.i32),
+        (ast::BinOp::Add, TyKind::UInt(UIntTy::U64)) => (BinOpKind::Add, ctx.tys.u64),
+        (ast::BinOp::Sub, TyKind::Int(IntTy::I32)) => (BinOpKind::Sub, ctx.tys.i32),
+        (ast::BinOp::Sub, TyKind::UInt(UIntTy::U64)) => (BinOpKind::Sub, ctx.tys.u64),
+        (ast::BinOp::Mul, TyKind::Int(IntTy::I32)) => (BinOpKind::SMul, ctx.tys.i32),
+        (ast::BinOp::Mul, TyKind::UInt(UIntTy::U64)) => (BinOpKind::UMul, ctx.tys.u64),
+        (ast::BinOp::Div, TyKind::Int(IntTy::I32)) => (BinOpKind::SDiv, ctx.tys.i32),
+        (ast::BinOp::Div, TyKind::UInt(UIntTy::U64)) => (BinOpKind::UDiv, ctx.tys.u64),
         _ => unimplemented!(),
     };
 
@@ -99,10 +99,8 @@ pub fn lower_binary<'tcx>(
         check_type(expected, ty, span)?;
     }
 
-    Ok(ir::Expr {
-        kind: ir::ExprKind::Call(ir::Call { func, args: vec![lhs, rhs] }),
-        ty,
-    })
+    let [lhs, rhs] = [lhs, rhs].map(Box::new);
+    Ok(ir::Expr { kind: ir::ExprKind::BinOp(ir::BinOp { op, lhs, rhs }), ty })
 }
 
 #[derive(Clone, Copy)]

@@ -1,7 +1,4 @@
-use crate::ir::{
-    Call, Expr, ExprKind, Lit, Program,
-    intrinsics::{ADD_I32, ADD_U64, DIV_I32, DIV_U64, MUL_I32, MUL_U64, SUB_I32, SUB_U64},
-};
+use crate::ir::{BinOp, BinOpKind, Call, Expr, ExprKind, Lit, Program};
 
 pub fn interpret_program(ir: Program) -> Value {
     interpret_expr(&ir.expr)
@@ -9,33 +6,10 @@ pub fn interpret_program(ir: Program) -> Value {
 
 fn interpret_expr(ir: &Expr) -> Value {
     match &ir.kind {
-        ExprKind::Call(call) => interpret_call(call),
         ExprKind::Lit(lit) => interpret_lit(lit),
+        ExprKind::BinOp(binop) => interpret_binop(binop),
+        ExprKind::Call(call) => interpret_call(call),
         _ => unimplemented!(),
-    }
-}
-
-fn interpret_call(ir: &Call) -> Value {
-    match ir.func.0 {
-        op @ 0..40 => {
-            let [lhs, rhs] = &ir.args[..] else {
-                panic!("expected 2 arguments, got {}", ir.args.len());
-            };
-            let lhs = interpret_expr(lhs);
-            let rhs = interpret_expr(rhs);
-            match (ir.func, lhs, rhs) {
-                (ADD_I32, Value::Int32(lhs), Value::Int32(rhs)) => Value::Int32(lhs + rhs),
-                (ADD_U64, Value::UInt64(lhs), Value::UInt64(rhs)) => Value::UInt64(lhs + rhs),
-                (SUB_I32, Value::Int32(lhs), Value::Int32(rhs)) => Value::Int32(lhs - rhs),
-                (SUB_U64, Value::UInt64(lhs), Value::UInt64(rhs)) => Value::UInt64(lhs - rhs),
-                (MUL_I32, Value::Int32(lhs), Value::Int32(rhs)) => Value::Int32(lhs * rhs),
-                (MUL_U64, Value::UInt64(lhs), Value::UInt64(rhs)) => Value::UInt64(lhs * rhs),
-                (DIV_I32, Value::Int32(lhs), Value::Int32(rhs)) => Value::Int32(lhs / rhs),
-                (DIV_U64, Value::UInt64(lhs), Value::UInt64(rhs)) => Value::UInt64(lhs / rhs),
-                _ => unreachable!(),
-            }
-        }
-        _ => panic!("unresolved function call"),
     }
 }
 
@@ -45,6 +19,38 @@ fn interpret_lit(ir: &Lit) -> Value {
         Lit::UInt64(value) => Value::UInt64(*value),
         _ => unimplemented!(),
     }
+}
+
+fn interpret_binop(ir: &BinOp) -> Value {
+    let lhs = interpret_expr(&ir.lhs);
+    let rhs = interpret_expr(&ir.rhs);
+
+    match ir.op {
+        BinOpKind::Add => match (lhs, rhs) {
+            (Value::Int32(lhs), Value::Int32(rhs)) => Value::Int32(lhs + rhs),
+            (Value::UInt64(lhs), Value::UInt64(rhs)) => Value::UInt64(lhs + rhs),
+            _ => panic!("invalid operands"),
+        },
+        BinOpKind::Sub => match (lhs, rhs) {
+            (Value::Int32(lhs), Value::Int32(rhs)) => Value::Int32(lhs - rhs),
+            (Value::UInt64(lhs), Value::UInt64(rhs)) => Value::UInt64(lhs - rhs),
+            _ => panic!("invalid operands"),
+        },
+        BinOpKind::SMul | BinOpKind::UMul => match (lhs, rhs) {
+            (Value::Int32(lhs), Value::Int32(rhs)) => Value::Int32(lhs * rhs),
+            (Value::UInt64(lhs), Value::UInt64(rhs)) => Value::UInt64(lhs * rhs),
+            _ => panic!("invalid operands"),
+        },
+        BinOpKind::SDiv | BinOpKind::UDiv => match (lhs, rhs) {
+            (Value::Int32(lhs), Value::Int32(rhs)) => Value::Int32(lhs / rhs),
+            (Value::UInt64(lhs), Value::UInt64(rhs)) => Value::UInt64(lhs / rhs),
+            _ => panic!("invalid operands"),
+        },
+    }
+}
+
+fn interpret_call(ir: &Call) -> Value {
+    unimplemented!()
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]

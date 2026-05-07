@@ -1,8 +1,9 @@
+pub use binop::*;
 pub use expr::*;
 pub use lit::*;
 
+mod binop;
 mod expr;
-pub mod intrinsics;
 mod lit;
 
 #[derive(Clone, Debug)]

@@ -1,3 +1,4 @@
+use super::binop::BinOp;
 use super::lit::Lit;
 use crate::parser::Span;
 use crate::typecheck::Ty;
@@ -12,6 +13,7 @@ pub struct Expr<'tcx> {
 pub enum ExprKind<'tcx> {
     Lit(Lit),
     Var(VarId),
+    BinOp(BinOp<'tcx>),
     Call(Call<'tcx>),
 }
 
