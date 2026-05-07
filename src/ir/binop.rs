@@ -11,8 +11,6 @@ pub struct BinOp<'tcx> {
 pub enum BinOpKind {
     Add,
     Sub,
-    SMul,
-    UMul,
-    SDiv,
-    UDiv,
+    Mul,
+    Div,
 }

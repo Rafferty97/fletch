@@ -18,12 +18,12 @@ fn eval_expr(src: &str) -> Value {
 fn single_binary_op() {
     let src = "2 + 3";
     let result = eval_expr(src);
-    assert_eq!(result, Value::Int32(5));
+    assert_eq!(result, Value::Scalar(5));
 }
 
 #[test]
 fn nested_parens() {
     let src = "3 + (7 * (10 / 5) + 4)";
     let result = eval_expr(src);
-    assert_eq!(result, Value::Int32(21));
+    assert_eq!(result, Value::Scalar(21));
 }

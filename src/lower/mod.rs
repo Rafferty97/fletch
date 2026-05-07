@@ -88,10 +88,10 @@ pub fn lower_binary<'tcx>(
         (ast::BinOp::Add, TyKind::UInt(UIntTy::U64)) => (BinOpKind::Add, ctx.tys.u64),
         (ast::BinOp::Sub, TyKind::Int(IntTy::I32)) => (BinOpKind::Sub, ctx.tys.i32),
         (ast::BinOp::Sub, TyKind::UInt(UIntTy::U64)) => (BinOpKind::Sub, ctx.tys.u64),
-        (ast::BinOp::Mul, TyKind::Int(IntTy::I32)) => (BinOpKind::SMul, ctx.tys.i32),
-        (ast::BinOp::Mul, TyKind::UInt(UIntTy::U64)) => (BinOpKind::UMul, ctx.tys.u64),
-        (ast::BinOp::Div, TyKind::Int(IntTy::I32)) => (BinOpKind::SDiv, ctx.tys.i32),
-        (ast::BinOp::Div, TyKind::UInt(UIntTy::U64)) => (BinOpKind::UDiv, ctx.tys.u64),
+        (ast::BinOp::Mul, TyKind::Int(IntTy::I32)) => (BinOpKind::Mul, ctx.tys.i32),
+        (ast::BinOp::Mul, TyKind::UInt(UIntTy::U64)) => (BinOpKind::Mul, ctx.tys.u64),
+        (ast::BinOp::Div, TyKind::Int(IntTy::I32)) => (BinOpKind::Div, ctx.tys.i32),
+        (ast::BinOp::Div, TyKind::UInt(UIntTy::U64)) => (BinOpKind::Div, ctx.tys.u64),
         _ => unimplemented!(),
     };
 
