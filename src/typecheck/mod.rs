@@ -22,6 +22,7 @@ pub enum TyKind<'tcx> {
     Float(FloatTy),
     Array(Ty<'tcx>),
     Tuple(Tys<'tcx>),
+    Infer(InferVar),
     Never,
 }
 
@@ -46,6 +47,9 @@ pub enum FloatTy {
     F32,
     F64,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct InferVar(u32);
 
 impl<'ctx> Ty<'ctx> {
     pub fn kind(self) -> TyKind<'ctx> {
@@ -84,6 +88,7 @@ impl Display for TyKind<'_> {
                 }
                 write!(f, ")")
             }
+            Self::Infer(_) => write!(f, "?"),
             Self::Never => write!(f, "!"),
         }
     }
