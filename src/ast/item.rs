@@ -5,26 +5,26 @@ use super::stmt::Stmt;
 use crate::parser::Span;
 
 #[derive(Clone, Debug)]
-pub struct Item {
-    pub kind: ItemKind,
+pub struct Item<A> {
+    pub kind: ItemKind<A>,
     pub span: Span,
 }
 
 #[derive(Clone, Debug)]
-pub enum ItemKind {
-    Func(Func),
+pub enum ItemKind<A> {
+    Func(Func<A>),
 }
 
 #[derive(Clone, Debug)]
-pub struct Func {
+pub struct Func<A> {
     pub name: Ident,
     pub args: Vec<Ident>,
-    pub body: Block,
+    pub body: Block<A>,
 }
 
 #[derive(Clone, Debug)]
-pub struct Block {
-    pub stmts: Vec<Stmt>,
-    pub tail: Option<Expr>,
+pub struct Block<A> {
+    pub stmts: Vec<Stmt<A>>,
+    pub tail: Option<Expr<A>>,
     pub span: Span,
 }

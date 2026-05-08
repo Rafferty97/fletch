@@ -4,7 +4,7 @@ use crate::ir::{self, BinOpKind, ExprKind};
 use crate::typecheck::{IntTy, Ty, TyCtx, TyKind, UIntTy, with_ty_ctx};
 use crate::util::span::{Span, TextSize};
 
-pub fn lower_program<'tcx>(ast: &ast::Program, ctx: TyCtx<'tcx>) -> Result<ir::Program<'tcx>> {
+pub fn lower_program<'tcx>(ast: &ast::Program<()>, ctx: TyCtx<'tcx>) -> Result<ir::Program<'tcx>> {
     let main = ast
         .items
         .iter()
@@ -28,7 +28,7 @@ pub fn lower_program<'tcx>(ast: &ast::Program, ctx: TyCtx<'tcx>) -> Result<ir::P
 }
 
 pub fn lower_expr<'tcx>(
-    ast: &ast::Expr,
+    ast: &ast::Expr<()>,
     expect: Option<Ty<'tcx>>,
     ctx: TyCtx<'tcx>,
 ) -> Result<ir::Expr<'tcx>> {
@@ -65,8 +65,8 @@ pub fn lower_lit<'tcx>(
 
 pub fn lower_binary<'tcx>(
     op: ast::BinOp,
-    lhs: &ast::Expr,
-    rhs: &ast::Expr,
+    lhs: &ast::Expr<()>,
+    rhs: &ast::Expr<()>,
     span: Span,
     expect: Option<Ty<'tcx>>,
     ctx: TyCtx<'tcx>,

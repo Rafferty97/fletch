@@ -71,7 +71,7 @@ impl Value {
     }
 }
 
-trait Scalar: Copy + Debug {
+pub trait Scalar: Copy + Debug {
     fn from_u64(v: u64) -> Self;
     fn into_u64(self) -> u64;
 }

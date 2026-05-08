@@ -30,7 +30,7 @@ impl<'a> Parser<'a> {
         parser
     }
 
-    pub fn parse_program(&mut self) -> Result<Program> {
+    pub fn parse_program(&mut self) -> Result<Program<()>> {
         let expr = self.parse_expr()?;
         let span = expr.span;
         let body = Block { stmts: vec![], tail: Some(expr), span };
@@ -38,29 +38,33 @@ impl<'a> Parser<'a> {
         Ok(Program { items: vec![Item { kind: ItemKind::Func(func), span }] })
     }
 
-    pub fn parse_expr(&mut self) -> Result<Expr> {
+    pub fn parse_expr(&mut self) -> Result<Expr<()>> {
         self.parse_precedence(Precedence::Lowest)
     }
 
-    fn parse_precedence(&mut self, prec: Precedence) -> Result<Expr> {
+    fn parse_precedence(&mut self, prec: Precedence) -> Result<Expr<()>> {
         self.advance()?;
 
         let mut expr = match self.previous.kind {
             TokenKind::Identifier => Expr {
                 kind: ExprKind::Ident(Ident(self.previous.raw.into())),
                 span: self.previous.span(),
+                ann: (),
             },
             TokenKind::False | TokenKind::True => Expr {
                 kind: ExprKind::Lit(Lit { kind: LitKind::Bool, raw: self.previous.raw.into() }),
                 span: self.previous.span(),
+                ann: (),
             },
             TokenKind::Integer => Expr {
                 kind: ExprKind::Lit(Lit { kind: LitKind::Integer, raw: self.previous.raw.into() }),
                 span: self.previous.span(),
+                ann: (),
             },
             TokenKind::Float => Expr {
                 kind: ExprKind::Lit(Lit { kind: LitKind::Float, raw: self.previous.raw.into() }),
                 span: self.previous.span(),
+                ann: (),
             },
             TokenKind::LeftParen => {
                 let expr = self.parse_expr()?;
@@ -92,13 +96,13 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn parse_binary(&mut self, lhs: Expr, op: BinOp, prec: Precedence) -> Result<Expr> {
+    fn parse_binary(&mut self, lhs: Expr<()>, op: BinOp, prec: Precedence) -> Result<Expr<()>> {
         let rhs = self.parse_precedence(prec.succ())?;
 
         let op_span = self.previous.span();
         let span = TextRange::cover(lhs.span, rhs.span);
         let kind = ExprKind::Binary(op, lhs.into(), rhs.into(), op_span);
-        Ok(Expr { kind, span })
+        Ok(Expr { kind, span, ann: () })
     }
 
     fn check(&self, kind: TokenKind) -> bool {

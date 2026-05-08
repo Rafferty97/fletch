@@ -3,6 +3,7 @@
 use crate::typecheck::with_ty_ctx;
 
 mod ast;
+mod ast_infer;
 mod error;
 mod interpreter;
 mod ir;

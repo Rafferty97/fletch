@@ -5,16 +5,17 @@ use super::lit::Lit;
 use crate::parser::Span;
 
 #[derive(Clone, Debug)]
-pub struct Expr {
-    pub kind: ExprKind,
+pub struct Expr<A> {
+    pub kind: ExprKind<A>,
     pub span: Span,
+    pub ann: A,
 }
 
 #[derive(Clone, Debug)]
-pub enum ExprKind {
+pub enum ExprKind<A> {
     Lit(Lit),
     Ident(Ident),
-    Binary(BinOp, Box<Expr>, Box<Expr>, Span),
+    Binary(BinOp, Box<Expr<A>>, Box<Expr<A>>, Span),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

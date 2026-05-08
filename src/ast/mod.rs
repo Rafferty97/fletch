@@ -11,6 +11,6 @@ mod lit;
 mod stmt;
 
 #[derive(Clone, Debug)]
-pub struct Program {
-    pub items: Vec<Item>,
+pub struct Program<A> {
+    pub items: Vec<Item<A>>,
 }

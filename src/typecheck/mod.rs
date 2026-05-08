@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::{fmt::Display, ops::Deref};
 
 use bumpalo::Bump;
@@ -20,6 +21,7 @@ pub enum TyKind<'tcx> {
     Int(IntTy),
     UInt(UIntTy),
     Float(FloatTy),
+    Str,
     Array(Ty<'tcx>),
     Tuple(Tys<'tcx>),
     Infer(InferVar),
@@ -79,6 +81,7 @@ impl Display for TyKind<'_> {
             Self::UInt(UIntTy::U64) => write!(f, "u64"),
             Self::Float(FloatTy::F32) => write!(f, "f32"),
             Self::Float(FloatTy::F64) => write!(f, "f64"),
+            Self::Str => write!(f, "str"),
             Self::Array(ty) => write!(f, "{ty}[]"),
             Self::Tuple([]) => write!(f, "()"),
             Self::Tuple([first, rest @ ..]) => {
@@ -109,11 +112,27 @@ pub struct TyCtxInner<'tcx> {
     arena: &'tcx Bump,
     ty_interner: Interner<'tcx, TyKind<'tcx>>,
     pub tys: CommonTypes<'tcx>,
+    next_infer_var: AtomicU32,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum InferConstraint {
+    Unconstrained,
+    Integer,
+    Float,
 }
 
 impl<'tcx> TyCtx<'tcx> {
     pub fn make_ty(&self, kind: TyKind<'tcx>) -> Ty<'tcx> {
         Ty(self.ty_interner.intern(kind, |kind| self.arena.alloc(kind)))
+    }
+
+    pub fn fresh_infer_var(&self, constraint: InferConstraint) -> Ty<'tcx> {
+        // todo: pre-intern
+        let idx = self.next_infer_var.fetch_add(1, Ordering::Relaxed);
+        let ty = self.make_ty(TyKind::Infer(InferVar(idx)));
+        // todo: constrain
+        ty
     }
 }
 
@@ -121,7 +140,8 @@ pub fn with_ty_ctx<T>(f: impl FnOnce(TyCtx) -> T) -> T {
     let arena = &Bump::new();
     let ty_interner = Interner::new();
     let tys = CommonTypes::new(arena, &ty_interner);
-    let inner = arena.alloc(TyCtxInner { arena, ty_interner, tys });
+    let next_infer_var = AtomicU32::new(0);
+    let inner = arena.alloc(TyCtxInner { arena, ty_interner, tys, next_infer_var });
     f(TyCtx(&inner))
 }
 
@@ -137,6 +157,7 @@ pub struct CommonTypes<'tcx> {
     pub i16: Ty<'tcx>,
     pub i32: Ty<'tcx>,
     pub i64: Ty<'tcx>,
+    pub str: Ty<'tcx>,
 }
 
 impl<'tcx> CommonTypes<'tcx> {
@@ -155,6 +176,7 @@ impl<'tcx> CommonTypes<'tcx> {
             i16: make_ty(TyKind::Int(IntTy::I16)),
             i32: make_ty(TyKind::Int(IntTy::I32)),
             i64: make_ty(TyKind::Int(IntTy::I64)),
+            str: make_ty(TyKind::Str),
         }
     }
 }
