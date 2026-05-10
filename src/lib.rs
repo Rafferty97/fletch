@@ -4,3 +4,4 @@ mod diagnostics;
 mod lexer;
 mod parser;
 mod span;
+mod types;
