@@ -10,60 +10,42 @@ pub struct Symbol(u32);
 // pub struct ByteSymbol(u32);
 
 #[derive(Debug)]
-pub struct SymbolInterner {
-    arena: Bump,
-    values: Vec<(*const u8, usize)>,
-    indices: HashTable<(u32, u64)>,
+pub struct SymbolInterner<'a> {
+    values: Vec<&'a str>,
+    indices: HashTable<(Symbol, u64)>,
     state: RandomState,
 }
 
-impl SymbolInterner {
+impl<'a> SymbolInterner<'a> {
     pub fn new() -> Self {
         Self {
-            arena: Bump::new(),
             values: vec![],
             indices: HashTable::new(),
             state: RandomState::new(),
         }
     }
 
-    pub fn intern_str(&mut self, str: &str) -> Symbol {
-        let bytes = str.as_bytes();
-        let hash = self.state.hash_one(bytes);
+    pub fn intern_str(&mut self, arena: &'a Bump, str: &str) -> Symbol {
+        let hash = self.state.hash_one(str);
 
-        dbg!(str, hash);
-        let idx = match self.indices.find(hash, |&(idx, _)| self.get_inner(idx) == bytes) {
-            Some(&(idx, _)) => idx,
+        match self.indices.find(hash, |&(sym, _)| self.get_str(sym) == str) {
+            Some(&(sym, _)) => sym,
             None => {
                 let idx = self.values.len().try_into().expect("exceeded capacity");
-                let slice = self.arena.alloc_slice_copy(bytes);
-                self.values.push((slice.as_ptr(), slice.len()));
-                self.indices.insert_unique(hash, (idx, hash), |&(_, hash)| hash);
-                idx
+                let sym = Symbol(idx);
+                self.values.push(arena.alloc_str(str));
+                self.indices.insert_unique(hash, (sym, hash), |&(_, hash)| hash);
+                sym
             }
-        };
-
-        Symbol(idx)
+        }
     }
 
     pub fn get_str(&self, symbol: Symbol) -> &str {
-        let bytes = self.get_inner(symbol.0);
-
-        // SAFETY: The index came from a `Symbol`, which can
-        // only be created from valid UTF-8 strings
-        unsafe { str::from_utf8_unchecked(bytes) }
+        self.values[symbol.0 as usize]
     }
 
     pub fn size(&self) -> usize {
         self.values.len()
-    }
-
-    fn get_inner(&self, index: u32) -> &[u8] {
-        let (ptr, len) = self.values[index as usize];
-
-        // SAFETY: the string is allocated in `self.arena`,
-        // and so must live at least as long as `&self`
-        unsafe { std::slice::from_raw_parts(ptr, len) }
     }
 }
 
@@ -73,11 +55,12 @@ mod test {
 
     #[test]
     fn intern_symbols() {
+        let arena = &Bump::new();
         let mut interner = SymbolInterner::new();
 
-        let foo = interner.intern_str("foo");
-        let bar = interner.intern_str("bar");
-        let hello = interner.intern_str("hello world");
+        let foo = interner.intern_str(arena, "foo");
+        let bar = interner.intern_str(arena, "bar");
+        let hello = interner.intern_str(arena, "hello world");
 
         // Check that symbols can be converted back to strings
         assert_eq!(interner.get_str(foo), "foo");
@@ -85,9 +68,9 @@ mod test {
         assert_eq!(interner.get_str(hello), "hello world");
 
         // Check that symbols are duplicated
-        assert_eq!(interner.intern_str("bar"), bar);
-        assert_eq!(interner.intern_str("hello world"), hello);
-        assert_eq!(interner.intern_str("foo"), foo);
+        assert_eq!(interner.intern_str(arena, "bar"), bar);
+        assert_eq!(interner.intern_str(arena, "hello world"), hello);
+        assert_eq!(interner.intern_str(arena, "foo"), foo);
         assert_eq!(interner.size(), 3);
     }
 }

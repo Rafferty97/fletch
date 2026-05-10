@@ -1,5 +1,5 @@
-pub use interner::*;
+pub use interned::*;
 pub use symbol::*;
 
-mod interner;
+mod interned;
 mod symbol;

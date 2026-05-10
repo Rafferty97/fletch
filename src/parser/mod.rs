@@ -1,3 +1,5 @@
+use bumpalo::Bump;
+
 use crate::arena::SymbolInterner;
 use crate::ast::{BinOpKind, Expr, ExprKind, Ident, Lit};
 use crate::diagnostics::{DiagCtx, Diagnostic};
@@ -8,18 +10,19 @@ type Result<T> = std::result::Result<T, Diagnostic>;
 
 pub struct Parser<'a> {
     diag: DiagCtx<'a>,
-    interner: SymbolInterner,
+    arena: &'a Bump,
+    interner: SymbolInterner<'a>,
     lexer: Lexer<'a>,
     current: Token,
     previous: Token,
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(diag: DiagCtx<'a>, src: &'a str) -> Self {
+    pub fn new(arena: &'a Bump, diag: DiagCtx<'a>, src: &'a str) -> Self {
         let interner = SymbolInterner::new();
         let lexer = Lexer::new(src);
         let (current, previous) = Default::default();
-        Self { diag, interner, lexer, current, previous }
+        Self { diag, arena, interner, lexer, current, previous }
     }
 
     pub fn parse_expr(&mut self) -> Result<Expr> {
@@ -82,7 +85,7 @@ impl<'a> Parser<'a> {
         debug_assert!(token.kind == TokenKind::Ident);
         let span = token.span;
         let str = self.lexer.get_raw(span);
-        let sym = self.interner.intern_str(str);
+        let sym = self.interner.intern_str(self.arena, str);
         Ident { sym, span }
     }
 
@@ -92,7 +95,7 @@ impl<'a> Parser<'a> {
         };
         let span = token.span;
         let str = self.lexer.get_raw(span);
-        let sym = self.interner.intern_str(str);
+        let sym = self.interner.intern_str(self.arena, str);
         Lit { kind, sym }
     }
 
@@ -174,7 +177,8 @@ mod test {
         let src = "2 + (40 * (12/3) - 9)";
 
         let mut diagnostics = Diagnostics::new();
-        let mut parser = Parser::new(DiagCtx::new(&mut diagnostics), src);
+        let arena = Bump::new();
+        let mut parser = Parser::new(&arena, DiagCtx::new(&mut diagnostics), src);
         parser.advance();
         let expr = parser.parse_expr().unwrap();
 
