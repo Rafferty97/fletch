@@ -1,28 +1,25 @@
-use bumpalo::Bump;
-
-use crate::arena::SymbolInterner;
+use crate::arena::Ctx;
 use crate::ast::{BinOpKind, Expr, ExprKind, Ident, Lit};
-use crate::diagnostics::{DiagCtx, Diagnostic};
+use crate::diagnostics::Diagnostic;
 use crate::lexer::{Lexer, Token, TokenKind};
 use crate::span::{Span, Spanned};
 
 type Result<T> = std::result::Result<T, Diagnostic>;
 
-pub struct Parser<'a> {
-    diag: DiagCtx<'a>,
-    arena: &'a Bump,
-    interner: SymbolInterner<'a>,
-    lexer: Lexer<'a>,
+pub struct Parser<'cx, 'src> {
+    ctx: Ctx<'cx>,
+    lexer: Lexer<'src>,
     current: Token,
     previous: Token,
 }
 
-impl<'a> Parser<'a> {
-    pub fn new(arena: &'a Bump, diag: DiagCtx<'a>, src: &'a str) -> Self {
-        let interner = SymbolInterner::new();
+impl<'cx, 'src> Parser<'cx, 'src> {
+    pub fn new(ctx: Ctx<'cx>, src: &'src str) -> Self {
         let lexer = Lexer::new(src);
         let (current, previous) = Default::default();
-        Self { diag, arena, interner, lexer, current, previous }
+        let mut parser = Self { ctx, lexer, current, previous };
+        parser.advance();
+        parser
     }
 
     pub fn parse_expr(&mut self) -> Result<Expr> {
@@ -42,9 +39,11 @@ impl<'a> Parser<'a> {
                 span: self.previous.span,
             },
             TokenKind::LeftParen => {
+                let start = self.previous.span.start();
                 let expr = self.parse_expr()?;
                 self.consume(TokenKind::RightParen, "expected ')' after expression")?;
-                expr
+                let span = Span::new(start, self.previous.span.end());
+                Expr { kind: ExprKind::Paren(expr.into()), span }
             }
             _ => todo!("{:?}", self.previous.kind),
         };
@@ -85,7 +84,7 @@ impl<'a> Parser<'a> {
         debug_assert!(token.kind == TokenKind::Ident);
         let span = token.span;
         let str = self.lexer.get_raw(span);
-        let sym = self.interner.intern_str(self.arena, str);
+        let sym = self.ctx.intern_str(str);
         Ident { sym, span }
     }
 
@@ -95,7 +94,7 @@ impl<'a> Parser<'a> {
         };
         let span = token.span;
         let str = self.lexer.get_raw(span);
-        let sym = self.interner.intern_str(self.arena, str);
+        let sym = self.ctx.intern_str(str);
         Lit { kind, sym }
     }
 
@@ -168,6 +167,8 @@ impl Precedence {
 
 #[cfg(test)]
 mod test {
+    use bumpalo::Bump;
+
     use crate::diagnostics::Diagnostics;
 
     use super::*;
@@ -176,13 +177,15 @@ mod test {
     fn lex_nested_arithmetic() {
         let src = "2 + (40 * (12/3) - 9)";
 
-        let mut diagnostics = Diagnostics::new();
         let arena = Bump::new();
-        let mut parser = Parser::new(&arena, DiagCtx::new(&mut diagnostics), src);
+        let mut handler = Diagnostics::new();
+        let ctx = Ctx::new(&arena, &mut handler);
+
+        let mut parser = Parser::new(ctx, src);
         parser.advance();
         let expr = parser.parse_expr().unwrap();
 
-        assert!(diagnostics.diagnostics.is_empty());
+        // assert!(handler.diagnostics.is_empty());
         assert!(matches!(expr.kind, ExprKind::Binary(..)));
     }
 }

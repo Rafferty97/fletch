@@ -4,8 +4,8 @@ pub type Span = line_index::TextRange;
 
 #[derive(Clone, Debug)]
 pub struct Spanned<T> {
-    node: T,
-    span: Span,
+    pub node: T,
+    pub span: Span,
 }
 
 impl<T> Spanned<T> {

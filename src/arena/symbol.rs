@@ -40,7 +40,7 @@ impl<'a> SymbolInterner<'a> {
         }
     }
 
-    pub fn get_str(&self, symbol: Symbol) -> &str {
+    pub fn get_str(&self, symbol: Symbol) -> &'a str {
         self.values[symbol.0 as usize]
     }
 

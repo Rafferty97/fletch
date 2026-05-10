@@ -28,6 +28,12 @@ pub struct Interner<'a, T: ?Sized> {
     state: RandomState,
 }
 
+impl<'a, T: ?Sized> Interner<'a, T> {
+    pub fn new() -> Self {
+        Self { values: HashTable::new(), state: RandomState::new() }
+    }
+}
+
 impl<'a, T: Hash + Eq> Interner<'a, T> {
     pub fn intern(&mut self, arena: &'a Bump, value: T) -> Interned<'a, T> {
         let hash = self.state.hash_one(&value);

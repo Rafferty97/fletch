@@ -2,6 +2,8 @@ use crate::arena::Symbol;
 use crate::lexer::LitKind;
 use crate::span::{Span, Spanned};
 
+pub mod print;
+
 #[derive(Clone, Debug)]
 pub struct Expr {
     pub kind: ExprKind,
@@ -13,6 +15,7 @@ pub enum ExprKind {
     Lit(Lit),
     Var(Ident),
     Binary(BinOp, Box<Expr>, Box<Expr>),
+    Paren(Box<Expr>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
