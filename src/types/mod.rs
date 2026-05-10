@@ -1,6 +1,4 @@
-use bumpalo::Bump;
-
-use crate::arena::{Interned, Interner, Symbol, SymbolInterner};
+use crate::arena::Interned;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Ty<'tc>(Interned<'tc, TyKind<'tc>>);
@@ -32,30 +30,4 @@ pub enum UIntTy {
     UInt16,
     UInt32,
     UInt64,
-}
-
-struct TyCtx<'tc> {
-    arena: &'tc Bump,
-    symbol_interner: SymbolInterner<'tc>,
-    ty_interner: Interner<'tc, TyKind<'tc>>,
-    ty_list_interner: Interner<'tc, [Ty<'tc>]>,
-}
-
-impl<'tc> TyCtx<'tc> {
-    fn new_symbol(&mut self, str: &str) -> Symbol {
-        self.symbol_interner.intern_str(self.arena, str)
-    }
-
-    fn new_ty(&mut self, kind: TyKind<'tc>) -> Ty<'tc> {
-        Ty(self.ty_interner.intern(self.arena, kind))
-    }
-
-    fn new_ty_list(&mut self, tys: &[Ty<'tc>]) -> TyList<'tc> {
-        TyList(self.ty_list_interner.intern_slice(self.arena, tys))
-    }
-
-    fn new_tuple(&mut self, tys: &[Ty<'tc>]) -> Ty<'tc> {
-        let tys = self.new_ty_list(tys);
-        self.new_ty(TyKind::Tuple(tys))
-    }
 }
