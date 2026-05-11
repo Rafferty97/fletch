@@ -1,5 +1,5 @@
 use crate::arena::Ctx;
-use crate::ast::{BinOpKind, Expr, ExprKind, Ident, Lit};
+use crate::ast::{BinOpKind, Expr, ExprKind, Ident, Lit, NodeId};
 use crate::diagnostics::Diagnostic;
 use crate::lexer::{Lexer, Token, TokenKind};
 use crate::span::{Span, Spanned};
@@ -11,13 +11,15 @@ pub struct Parser<'cx, 'src> {
     lexer: Lexer<'src>,
     current: Token,
     previous: Token,
+    next_id: u32,
 }
 
 impl<'cx, 'src> Parser<'cx, 'src> {
     pub fn new(ctx: Ctx<'cx>, src: &'src str) -> Self {
         let lexer = Lexer::new(src);
         let (current, previous) = Default::default();
-        let mut parser = Self { ctx, lexer, current, previous };
+        let next_id = 0;
+        let mut parser = Self { ctx, lexer, current, previous, next_id };
         parser.advance();
         parser
     }
@@ -31,10 +33,12 @@ impl<'cx, 'src> Parser<'cx, 'src> {
 
         let mut expr = match self.previous.kind {
             TokenKind::Ident => Expr {
+                id: self.next_id(),
                 kind: ExprKind::Var(self.ident(self.previous)),
                 span: self.previous.span,
             },
             TokenKind::Lit(_) => Expr {
+                id: self.next_id(),
                 kind: ExprKind::Lit(self.literal(self.previous)),
                 span: self.previous.span,
             },
@@ -43,7 +47,7 @@ impl<'cx, 'src> Parser<'cx, 'src> {
                 let expr = self.parse_expr()?;
                 self.consume(TokenKind::RightParen, "expected ')' after expression")?;
                 let span = Span::new(start, self.previous.span.end());
-                Expr { kind: ExprKind::Paren(expr.into()), span }
+                Expr { id: self.next_id(), kind: ExprKind::Paren(expr.into()), span }
             }
             _ => todo!("{:?}", self.previous.kind),
         };
@@ -77,7 +81,7 @@ impl<'cx, 'src> Parser<'cx, 'src> {
         let op = Spanned::new(op, self.previous.span);
         let span = Span::cover(lhs.span, rhs.span);
         let kind = ExprKind::Binary(op, lhs.into(), rhs.into());
-        Ok(Expr { kind, span })
+        Ok(Expr { id: self.next_id(), kind, span })
     }
 
     fn ident(&mut self, token: Token) -> Ident {
@@ -96,6 +100,12 @@ impl<'cx, 'src> Parser<'cx, 'src> {
         let str = self.lexer.get_raw(span);
         let sym = self.ctx.intern_str(str);
         Lit { kind, sym }
+    }
+
+    fn next_id(&mut self) -> NodeId {
+        let id = NodeId(self.next_id);
+        self.next_id += 1;
+        id
     }
 
     fn check(&self, kind: TokenKind) -> bool {

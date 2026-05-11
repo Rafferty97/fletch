@@ -4,8 +4,12 @@ use crate::span::{Span, Spanned};
 
 pub mod print;
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct NodeId(pub u32);
+
 #[derive(Clone, Debug)]
 pub struct Expr {
+    pub id: NodeId,
     pub kind: ExprKind,
     pub span: Span,
 }
