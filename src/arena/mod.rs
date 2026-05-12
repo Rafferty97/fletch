@@ -21,6 +21,7 @@ pub struct CtxInner<'cx> {
     symbol_interner: RwLock<SymbolInterner<'cx>>,
     ty_interner: Mutex<Interner<'cx, TyKind<'cx>>>,
     ty_list_interner: Mutex<Interner<'cx, [Ty<'cx>]>>,
+    field_list_interner: Mutex<Interner<'cx, [(Symbol, Ty<'cx>)]>>,
 }
 
 impl<'cx> Ctx<'cx> {
@@ -31,6 +32,7 @@ impl<'cx> Ctx<'cx> {
             symbol_interner: RwLock::new(SymbolInterner::new()),
             ty_interner: Mutex::new(Interner::new()),
             ty_list_interner: Mutex::new(Interner::new()),
+            field_list_interner: Mutex::new(Interner::new()),
         });
         Self { inner }
     }
@@ -43,9 +45,23 @@ impl<'cx> Ctx<'cx> {
         self.inner.ty_interner.lock().unwrap().intern(self.inner.arena, kind)
     }
 
-    pub fn intern_ty_slice(&mut self, tys: &[Ty<'cx>]) -> Interned<'cx, [Ty<'cx>]> {
+    pub fn intern_tys(&mut self, tys: &[Ty<'cx>]) -> Interned<'cx, [Ty<'cx>]> {
         self.inner.ty_list_interner.lock().unwrap().intern_slice(self.inner.arena, tys)
     }
+
+    pub fn intern_fields(
+        &mut self,
+        fields: &[(Symbol, Ty<'cx>)],
+    ) -> Interned<'cx, [(Symbol, Ty<'cx>)]> {
+        self.inner.field_list_interner.lock().unwrap().intern_slice(self.inner.arena, fields)
+    }
+
+    // pub fn intern_fields_iter(
+    //     &mut self,
+    //     fields: impl Iterator<Item = (Symbol, Ty<'cx>)>,
+    // ) -> Interned<'cx, [(Symbol, Ty<'cx>)]> {
+    //     self.inner.field_list_interner.lock().unwrap().intern_slice(self.inner.arena, fields)
+    // }
 
     pub fn get_str(&self, symbol: Symbol) -> &'cx str {
         self.inner.symbol_interner.read().unwrap().get_str(symbol)

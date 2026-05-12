@@ -1,10 +1,19 @@
-use std::hash::{BuildHasher, RandomState};
+use std::{
+    fmt::Debug,
+    hash::{BuildHasher, RandomState},
+};
 
 use bumpalo::Bump;
 use hashbrown::hash_table::HashTable;
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Symbol(u32);
+
+impl Debug for Symbol {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "${}", self.0)
+    }
+}
 
 // #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
 // pub struct ByteSymbol(u32);

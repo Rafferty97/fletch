@@ -192,7 +192,6 @@ mod test {
         let ctx = Ctx::new(&arena, &mut handler);
 
         let mut parser = Parser::new(ctx, src);
-        parser.advance();
         let expr = parser.parse_expr().unwrap();
 
         // assert!(handler.diagnostics.is_empty());
