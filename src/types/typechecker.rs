@@ -118,8 +118,12 @@ impl<'cx> TypecheckCtx<'cx> {
             TyKind::Int(_) | TyKind::UInt(_) => Ok(ty),
             TyKind::Str => Ok(ty),
             TyKind::Array(inner) => {
-                let inner = self.resolve(*inner)?;
-                Ok(Ty(self.ctx.intern_ty_kind(TyKind::Array(inner))))
+                let inner2 = self.resolve(*inner)?;
+                Ok(if *inner == inner2 {
+                    ty
+                } else {
+                    Ty(self.ctx.intern_ty_kind(TyKind::Array(inner2)))
+                })
             }
             TyKind::Infer(var) => match self.table.probe_value(*var) {
                 Some(ty) => self.resolve(ty),
