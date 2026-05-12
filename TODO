@@ -1,0 +1,10 @@
+Type checker:
+
+- Fields aren't ordered, so won't be deduped correctly when interning
+- Enums don't have row variables yet
+- No int/float type variables yet
+- Nullable types
+- Function types
+- Occurs check to prevent infinite types
+- Finish `todo!`s
+- Change `resolve_row` to chase tails and return a `Result<FieldList>`
