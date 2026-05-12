@@ -22,7 +22,7 @@ pub enum TyKind<'tc> {
     Array(Ty<'tc>),
     Tuple(TyList<'tc>),
     Struct(FieldList<'tc>, Option<RowVar<'tc>>),
-    Enum(FieldList<'tc>),
+    Enum(FieldList<'tc>, Option<RowVar<'tc>>),
     Infer(TyVar<'tc>),
 }
 

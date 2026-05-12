@@ -4,7 +4,7 @@ use ena::unify::{InPlace, NoError, UnificationTable, UnifyKey, UnifyValue};
 use hashbrown::HashMap;
 
 use crate::arena::Ctx;
-use crate::types::{FieldList, RowVar, Ty, TyKind, TyVar};
+use crate::types::{FieldList, RowVar, Ty, TyKind, TyList, TyVar};
 
 pub struct TypecheckCtx<'cx> {
     ctx: Ctx<'cx>,
@@ -67,7 +67,10 @@ impl<'cx> TypecheckCtx<'cx> {
                 RowValue { fields: *a, tail: *a_tail },
                 RowValue { fields: *b, tail: *b_tail },
             ),
-            (TyKind::Enum(a), TyKind::Enum(b)) => self.unify_fields(*a, *b),
+            (TyKind::Enum(a, a_tail), TyKind::Enum(b, b_tail)) => self.unify_rows(
+                RowValue { fields: *a, tail: *a_tail },
+                RowValue { fields: *b, tail: *b_tail },
+            ),
             _ => Err(format!("cannot unify {:?} and {:?}", a, b)),
         }
     }
@@ -117,23 +120,66 @@ impl<'cx> TypecheckCtx<'cx> {
             TyKind::Bool => Ok(ty),
             TyKind::Int(_) | TyKind::UInt(_) => Ok(ty),
             TyKind::Str => Ok(ty),
-            TyKind::Array(inner) => {
-                let inner2 = self.resolve(*inner)?;
-                Ok(if *inner == inner2 {
+            &TyKind::Array(inner) => {
+                let inner_resolved = self.resolve(inner)?;
+                Ok(if inner == inner_resolved {
                     ty
                 } else {
-                    Ty(self.ctx.intern_ty_kind(TyKind::Array(inner2)))
+                    Ty(self.ctx.intern_ty_kind(TyKind::Array(inner_resolved)))
                 })
+            }
+            TyKind::Tuple(tys) => {
+                let tys_resolved =
+                    tys.tys().iter().map(|ty| self.resolve(*ty)).collect::<Result<Vec<_>, _>>()?;
+                Ok(if tys_resolved == tys.tys() {
+                    ty
+                } else {
+                    let tys_resolved = self.ctx.intern_tys(&tys_resolved);
+                    Ty(self.ctx.intern_ty_kind(TyKind::Tuple(TyList(tys_resolved))))
+                })
+            }
+            TyKind::Struct(_, None) => Ok(ty),
+            &TyKind::Struct(fields, tail) => {
+                let fields = self.resolve_row(RowValue { fields, tail })?;
+                Ok(Ty(self.ctx.intern_ty_kind(TyKind::Struct(fields, None))))
+            }
+            TyKind::Enum(_, None) => Ok(ty),
+            &TyKind::Enum(fields, tail) => {
+                let fields = self.resolve_row(RowValue { fields, tail })?;
+                Ok(Ty(self.ctx.intern_ty_kind(TyKind::Enum(fields, None))))
             }
             TyKind::Infer(var) => match self.table.probe_value(*var) {
                 Some(ty) => self.resolve(ty),
                 _ => Err(format!("unresolved type")),
             },
-            _ => todo!("{ty:?}"),
         }
     }
 
-    pub fn resolve_row(&mut self, var: RowVar<'cx>) -> Result<RowValue<'cx>, String> {
+    pub fn resolve_row(&mut self, value: RowValue<'cx>) -> Result<FieldList<'cx>, String> {
+        let mut fields_vec = vec![value.fields];
+        let mut curr_tail = value.tail;
+
+        while let Some(var) = curr_tail {
+            match self.row_table.probe_value(var) {
+                Some(RowValue { fields, tail }) => {
+                    fields_vec.push(fields);
+                    curr_tail = tail;
+                }
+                None => Err(format!("unbound row var"))?,
+            }
+        }
+
+        match &fields_vec[..] {
+            [fields] => Ok(*fields),
+            list => {
+                let fields = list.iter().flat_map(|f| f.fields()).copied().collect::<Vec<_>>();
+                let fields = self.ctx.intern_fields(&fields);
+                Ok(FieldList(fields))
+            }
+        }
+    }
+
+    pub fn probe_row(&mut self, var: RowVar<'cx>) -> Result<RowValue<'cx>, String> {
         match self.row_table.probe_value(var) {
             Some(value) => Ok(value),
             None => Err("unbound row var")?,
@@ -420,7 +466,7 @@ mod test {
         let closed = mk_struct!(ctx, tc, [("name", str), ("age", int)], None);
         assert!(tc.unify(open, closed).is_ok());
         // row variable should now be bound to { age: Int }
-        let resolved_row = tc.resolve_row(row).unwrap();
+        let resolved_row = tc.probe_row(row).unwrap();
         assert_eq!(resolved_row.fields, FieldList(ctx.intern_fields(&[(age, int)])));
         assert_eq!(resolved_row.tail, None);
     }
@@ -453,11 +499,11 @@ mod test {
         let open_b = mk_struct!(ctx, tc, [("age", int)], Some(row_b));
         assert!(tc.unify(open_a, open_b).is_ok());
         // row_a should be bound to { age: Int | common_tail }
-        let resolved_a = tc.resolve_row(row_a).unwrap();
+        let resolved_a = tc.probe_row(row_a).unwrap();
         assert_eq!(resolved_a.fields, FieldList(ctx.intern_fields(&[(age, int)])));
         assert!(resolved_a.tail.is_some());
         // row_b should be bound to { name: Str | common_tail }
-        let resolved_b = tc.resolve_row(row_b).unwrap();
+        let resolved_b = tc.probe_row(row_b).unwrap();
         assert_eq!(resolved_b.fields, FieldList(ctx.intern_fields(&[(name, str)])));
         assert!(resolved_b.tail.is_some());
         // both tails should share the same common tail
@@ -479,7 +525,7 @@ mod test {
         // unifying argument with parameter type
         assert!(tc.unify(arg_ty, param_ty).is_ok());
         // row variable should be bound to the extra fields
-        let resolved_row = tc.resolve_row(row).unwrap();
+        let resolved_row = tc.probe_row(row).unwrap();
         let age = ctx.intern_str("age");
         assert_eq!(resolved_row.fields, FieldList(ctx.intern_fields(&[(age, int)])));
         assert_eq!(resolved_row.tail, None);
