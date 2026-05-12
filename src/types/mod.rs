@@ -18,12 +18,15 @@ pub enum TyKind<'tc> {
     Bool,
     Int(IntTy),
     UInt(UIntTy),
+    Float(FloatTy),
     Str,
     Array(Ty<'tc>),
     Tuple(TyList<'tc>),
     Struct(FieldList<'tc>, Option<RowVar<'tc>>),
     Enum(FieldList<'tc>, Option<RowVar<'tc>>),
-    Infer(TyVar<'tc>),
+    TyVar(TyVar<'tc>),
+    IntVar(IntVar<'tc>),
+    FloatVar(FloatVar<'tc>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -42,12 +45,36 @@ pub enum UIntTy {
     UInt64,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub enum FloatTy {
+    Float32,
+    Float64,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TyVar<'cx>(u32, PhantomData<&'cx ()>);
 
 impl Debug for TyVar<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "TyVar({})", self.0)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct IntVar<'cx>(u32, PhantomData<&'cx ()>);
+
+impl Debug for IntVar<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "IntVar({})", self.0)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct FloatVar<'cx>(u32, PhantomData<&'cx ()>);
+
+impl Debug for FloatVar<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "FloatVar({})", self.0)
     }
 }
 

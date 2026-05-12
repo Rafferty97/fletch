@@ -4,11 +4,15 @@ use ena::unify::{InPlace, NoError, UnificationTable, UnifyKey, UnifyValue};
 use hashbrown::HashMap;
 
 use crate::arena::Ctx;
-use crate::types::{FieldList, RowVar, Ty, TyKind, TyList, TyVar};
+use crate::types::{
+    FieldList, FloatTy, FloatVar, IntTy, IntVar, RowVar, Ty, TyKind, TyList, TyVar, UIntTy,
+};
 
 pub struct TypecheckCtx<'cx> {
     ctx: Ctx<'cx>,
-    table: UnificationTable<InPlace<TyVar<'cx>>>,
+    ty_table: UnificationTable<InPlace<TyVar<'cx>>>,
+    int_table: UnificationTable<InPlace<IntVar<'cx>>>,
+    float_table: UnificationTable<InPlace<FloatVar<'cx>>>,
     row_table: UnificationTable<InPlace<RowVar<'cx>>>,
 }
 
@@ -16,14 +20,26 @@ impl<'cx> TypecheckCtx<'cx> {
     pub fn new(ctx: Ctx<'cx>) -> Self {
         Self {
             ctx,
-            table: UnificationTable::new(),
+            ty_table: UnificationTable::new(),
+            int_table: UnificationTable::new(),
+            float_table: UnificationTable::new(),
             row_table: UnificationTable::new(),
         }
     }
 
     pub fn new_ty_var(&mut self) -> Ty<'cx> {
-        let tyvar = self.table.new_key(None);
-        Ty(self.ctx.intern_ty_kind(TyKind::Infer(tyvar)))
+        let ty_var = self.ty_table.new_key(None);
+        Ty(self.ctx.intern_ty_kind(TyKind::TyVar(ty_var)))
+    }
+
+    pub fn new_int_var(&mut self) -> Ty<'cx> {
+        let int_var = self.int_table.new_key(None);
+        Ty(self.ctx.intern_ty_kind(TyKind::IntVar(int_var)))
+    }
+
+    pub fn new_float_var(&mut self) -> Ty<'cx> {
+        let float_var = self.float_table.new_key(None);
+        Ty(self.ctx.intern_ty_kind(TyKind::FloatVar(float_var)))
     }
 
     pub fn new_row_var(&mut self) -> RowVar<'cx> {
@@ -36,22 +52,33 @@ impl<'cx> TypecheckCtx<'cx> {
         }
 
         match (a.kind(), b.kind()) {
-            (TyKind::Infer(a), TyKind::Infer(b)) => {
-                match (self.table.probe_value(*a), self.table.probe_value(*b)) {
+            (TyKind::TyVar(a), TyKind::TyVar(b)) => {
+                match (self.ty_table.probe_value(*a), self.ty_table.probe_value(*b)) {
                     (Some(a_ty), Some(b_ty)) => self.unify(a_ty, b_ty),
-                    (Some(a_ty), None) => Ok(self.table.union_value(*b, Some(a_ty))),
-                    (None, Some(b_ty)) => Ok(self.table.union_value(*a, Some(b_ty))),
-                    (None, None) => Ok(self.table.union(*a, *b)),
+                    (Some(a_ty), None) => Ok(self.ty_table.union_value(*b, Some(a_ty))),
+                    (None, Some(b_ty)) => Ok(self.ty_table.union_value(*a, Some(b_ty))),
+                    (None, None) => Ok(self.ty_table.union(*a, *b)),
                 }
             }
-            (TyKind::Infer(a), _) => match self.table.probe_value(*a) {
+            (TyKind::TyVar(a), _) => match self.ty_table.probe_value(*a) {
                 Some(a_ty) => self.unify(a_ty, b),
-                None => Ok(self.table.union_value(*a, Some(b))),
+                None => Ok(self.ty_table.union_value(*a, Some(b))),
             },
-            (_, TyKind::Infer(b)) => match self.table.probe_value(*b) {
+            (_, TyKind::TyVar(b)) => match self.ty_table.probe_value(*b) {
                 Some(b_ty) => self.unify(a, b_ty),
-                None => Ok(self.table.union_value(*b, Some(a))),
+                None => Ok(self.ty_table.union_value(*b, Some(a))),
             },
+            (TyKind::IntVar(a), TyKind::IntVar(b)) => self.int_table.unify_var_var(*a, *b),
+            (TyKind::IntVar(k), TyKind::Int(t)) | (TyKind::Int(t), TyKind::IntVar(k)) => {
+                self.int_table.unify_var_value(*k, Some(IntValue::Int(*t)))
+            }
+            (TyKind::IntVar(k), TyKind::UInt(t)) | (TyKind::UInt(t), TyKind::IntVar(k)) => {
+                self.int_table.unify_var_value(*k, Some(IntValue::UInt(*t)))
+            }
+            (TyKind::FloatVar(a), TyKind::FloatVar(b)) => self.float_table.unify_var_var(*a, *b),
+            (TyKind::FloatVar(k), TyKind::Float(t)) | (TyKind::Float(t), TyKind::FloatVar(k)) => {
+                self.float_table.unify_var_value(*k, Some(*t))
+            }
             (TyKind::Array(a), TyKind::Array(b)) => self.unify(*a, *b),
             (TyKind::Tuple(a), TyKind::Tuple(b)) => {
                 let (a, b) = (a.tys(), b.tys());
@@ -118,7 +145,7 @@ impl<'cx> TypecheckCtx<'cx> {
     pub fn resolve(&mut self, ty: Ty<'cx>) -> Result<Ty<'cx>, String> {
         match ty.kind() {
             TyKind::Bool => Ok(ty),
-            TyKind::Int(_) | TyKind::UInt(_) => Ok(ty),
+            TyKind::Int(_) | TyKind::UInt(_) | TyKind::Float(_) => Ok(ty),
             TyKind::Str => Ok(ty),
             &TyKind::Array(inner) => {
                 let inner_resolved = self.resolve(inner)?;
@@ -148,9 +175,18 @@ impl<'cx> TypecheckCtx<'cx> {
                 let fields = self.resolve_row(RowValue { fields, tail })?;
                 Ok(Ty(self.ctx.intern_ty_kind(TyKind::Enum(fields, None))))
             }
-            TyKind::Infer(var) => match self.table.probe_value(*var) {
+            TyKind::TyVar(var) => match self.ty_table.probe_value(*var) {
                 Some(ty) => self.resolve(ty),
                 _ => Err(format!("unresolved type")),
+            },
+            TyKind::IntVar(var) => match self.int_table.probe_value(*var) {
+                Some(IntValue::Int(t)) => Ok(Ty(self.ctx.intern_ty_kind(TyKind::Int(t)))),
+                Some(IntValue::UInt(t)) => Ok(Ty(self.ctx.intern_ty_kind(TyKind::UInt(t)))),
+                None => Ok(Ty(self.ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)))),
+            },
+            TyKind::FloatVar(var) => match self.float_table.probe_value(*var) {
+                Some(t) => Ok(Ty(self.ctx.intern_ty_kind(TyKind::Float(t)))),
+                None => Ok(Ty(self.ctx.intern_ty_kind(TyKind::Float(FloatTy::Float64)))),
             },
         }
     }
@@ -273,6 +309,60 @@ impl<'cx> UnifyValue for Ty<'cx> {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum IntValue {
+    Int(IntTy),
+    UInt(UIntTy),
+}
+
+impl<'cx> UnifyKey for IntVar<'cx> {
+    type Value = Option<IntValue>;
+
+    fn index(&self) -> u32 {
+        self.0
+    }
+
+    fn from_index(u: u32) -> Self {
+        Self(u, PhantomData)
+    }
+
+    fn tag() -> &'static str {
+        "IntVar"
+    }
+}
+
+impl UnifyValue for IntValue {
+    type Error = String;
+
+    fn unify_values(a: &Self, b: &Self) -> Result<Self, Self::Error> {
+        (a == b).then_some(*a).ok_or_else(|| "mismatched int types".into())
+    }
+}
+
+impl<'cx> UnifyKey for FloatVar<'cx> {
+    type Value = Option<FloatTy>;
+
+    fn index(&self) -> u32 {
+        self.0
+    }
+
+    fn from_index(u: u32) -> Self {
+        Self(u, PhantomData)
+    }
+
+    fn tag() -> &'static str {
+        "FloatVar"
+    }
+}
+
+impl UnifyValue for FloatTy {
+    type Error = String;
+
+    fn unify_values(a: &Self, b: &Self) -> Result<Self, Self::Error> {
+        (a == b).then_some(*a).ok_or_else(|| "mismatched float types".into())
+    }
+}
+
 impl<'cx> UnifyKey for RowVar<'cx> {
     type Value = Option<RowValue<'cx>>;
 
@@ -331,6 +421,23 @@ mod test {
         tc.unify(var1, var2).unwrap();
         tc.unify(var2, str).unwrap();
         assert_eq!(tc.resolve(var1).unwrap(), str);
+    }
+
+    #[test]
+    fn unify_int_ty() {
+        setup!(arena, ctx, tc);
+        let var = tc.new_int_var();
+        let int16 = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int16)));
+        tc.unify(var, int16).unwrap();
+        assert_eq!(tc.resolve(var).unwrap(), int16);
+    }
+
+    #[test]
+    fn unify_float_ty_with_int() {
+        setup!(arena, ctx, tc);
+        let var = tc.new_float_var();
+        let int16 = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int16)));
+        assert!(tc.unify(var, int16).is_err());
     }
 
     // Unifying two different concrete types should fail.
