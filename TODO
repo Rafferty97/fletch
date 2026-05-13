@@ -1,6 +1,5 @@
 Type checker:
 
-- Fields aren't ordered, so won't be deduped correctly when interning
 - Nullable types
 - Function types
 - Occurs check to prevent infinite types

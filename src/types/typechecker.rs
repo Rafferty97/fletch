@@ -253,7 +253,8 @@ impl<'cx> TypecheckCtx<'cx> {
             }
         }
 
-        let fields = fields.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
+        let mut fields = fields.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
+        fields.sort_by_cached_key(|(name, _)| self.ctx.get_str(*name));
 
         Ok(FieldList(self.ctx.intern_fields(&fields)))
     }
@@ -275,8 +276,10 @@ impl<'cx> TypecheckCtx<'cx> {
             }
         }
 
-        let a_fields = a_fields.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
-        let b_fields = b_fields.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
+        let mut a_fields = a_fields.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
+        let mut b_fields = b_fields.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
+        a_fields.sort_by_cached_key(|(name, _)| self.ctx.get_str(*name));
+        b_fields.sort_by_cached_key(|(name, _)| self.ctx.get_str(*name));
 
         Ok((
             FieldList(self.ctx.intern_fields(&a_fields)),
@@ -662,5 +665,115 @@ mod test {
         let open_a = mk_struct!(ctx, tc, [("name", str)], Some(row_a));
         let open_b = mk_struct!(ctx, tc, [("name", int)], Some(row_b));
         assert!(tc.unify(open_a, open_b).is_err());
+    }
+
+    // Fields are stored in canonical (lexicographic) order regardless of insertion order
+    #[test]
+    fn canonical_field_ordering_in_row_tail() {
+        setup!(arena, ctx, tc);
+        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
+        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let row = tc.new_row_var();
+        // open struct with "name", closed struct has "age" and "name" - "age" comes first lexically
+        let open = mk_struct!(ctx, tc, [("name", str)], Some(row));
+        let closed = mk_struct!(ctx, tc, [("zebra", int), ("age", int), ("name", str)], None);
+        tc.unify(open, closed).unwrap();
+        let resolved = tc.probe_row(row).unwrap();
+        let fields = resolved.fields.fields();
+        // fields in the tail should be sorted lexicographically
+        assert_eq!(fields[0].0, ctx.intern_str("age"));
+        assert_eq!(fields[1].0, ctx.intern_str("zebra"));
+    }
+
+    // Two calls producing the same row tail should produce identical FieldLists via pointer equality
+    #[test]
+    fn canonical_ordering_produces_identical_interned_types() {
+        setup!(arena, ctx, tc);
+        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
+        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+
+        // First unification
+        let row_a = tc.new_row_var();
+        let open_a = mk_struct!(ctx, tc, [("name", str)], Some(row_a));
+        let closed_a = mk_struct!(ctx, tc, [("age", int), ("name", str)], None);
+        tc.unify(open_a, closed_a).unwrap();
+
+        // Second unification with same types but different insertion order
+        let row_b = tc.new_row_var();
+        let open_b = mk_struct!(ctx, tc, [("name", str)], Some(row_b));
+        let closed_b = mk_struct!(ctx, tc, [("name", str), ("age", int)], None);
+        tc.unify(open_b, closed_b).unwrap();
+
+        // Both row tails should have resolved to identical interned FieldLists
+        let resolved_a = tc.probe_row(row_a).unwrap();
+        let resolved_b = tc.probe_row(row_b).unwrap();
+        assert_eq!(resolved_a.fields, resolved_b.fields);
+        // pointer equality — same interned allocation
+        assert!(std::ptr::eq(
+            resolved_a.fields.fields().as_ptr(),
+            resolved_b.fields.fields().as_ptr()
+        ));
+    }
+
+    // intersect_fields produces canonically ordered results
+    #[test]
+    fn canonical_ordering_in_two_open_struct_tails() {
+        setup!(arena, ctx, tc);
+        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
+        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let bool = Ty(ctx.intern_ty_kind(TyKind::Bool));
+        let row_a = tc.new_row_var();
+        let row_b = tc.new_row_var();
+        // a has "name" and "zebra", b has "age" and "zebra"
+        // "zebra" is common, "name" ends up in b's tail, "age" ends up in a's tail
+        let open_a = mk_struct!(ctx, tc, [("zebra", bool), ("name", str)], Some(row_a));
+        let open_b = mk_struct!(ctx, tc, [("age", int), ("zebra", bool)], Some(row_b));
+        tc.unify(open_a, open_b).unwrap();
+        // a's tail should contain "age" (b's unique field)
+        let resolved_a = tc.probe_row(row_a).unwrap();
+        let a_fields = resolved_a.fields.fields();
+        assert_eq!(a_fields.len(), 1);
+        assert_eq!(a_fields[0].0, ctx.intern_str("age"));
+        // b's tail should contain "name" (a's unique field)
+        let resolved_b = tc.probe_row(row_b).unwrap();
+        let b_fields = resolved_b.fields.fields();
+        assert_eq!(b_fields.len(), 1);
+        assert_eq!(b_fields[0].0, ctx.intern_str("name"));
+    }
+
+    // Determinism — running the same unification twice produces identical results
+    #[test]
+    fn unification_is_deterministic() {
+        let arena1 = Bump::new();
+        let mut handler1 = diagnostics::Diagnostics::new();
+        let mut ctx1 = arena::Ctx::new(&arena1, &mut handler1);
+        let mut tc1 = super::TypecheckCtx::new(ctx1);
+
+        let arena2 = Bump::new();
+        let mut handler2 = diagnostics::Diagnostics::new();
+        let mut ctx2 = arena::Ctx::new(&arena2, &mut handler2);
+        let mut tc2 = super::TypecheckCtx::new(ctx2);
+
+        // Same unification in both contexts
+        let str1 = Ty(ctx1.intern_ty_kind(TyKind::Str));
+        let int1 = Ty(ctx1.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let row1 = tc1.new_row_var();
+        let open1 = mk_struct!(ctx1, tc1, [("name", str1)], Some(row1));
+        let closed1 = mk_struct!(ctx1, tc1, [("zebra", int1), ("age", int1), ("name", str1)], None);
+        tc1.unify(open1, closed1).unwrap();
+
+        let str2 = Ty(ctx2.intern_ty_kind(TyKind::Str));
+        let int2 = Ty(ctx2.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let row2 = tc2.new_row_var();
+        let open2 = mk_struct!(ctx2, tc2, [("name", str2)], Some(row2));
+        let closed2 = mk_struct!(ctx2, tc2, [("zebra", int2), ("age", int2), ("name", str2)], None);
+        tc2.unify(open2, closed2).unwrap();
+
+        // Both should produce the same field ordering in the tail
+        let resolved1 = tc1.probe_row(row1).unwrap();
+        let resolved2 = tc2.probe_row(row2).unwrap();
+        let fields1: Vec<_> = resolved1.fields.fields().iter().map(|(k, _)| *k).collect();
+        let fields2: Vec<_> = resolved2.fields.fields().iter().map(|(k, _)| *k).collect();
+        assert_eq!(fields1, fields2);
     }
 }
