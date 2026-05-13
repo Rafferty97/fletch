@@ -98,6 +98,7 @@ impl<'cx> TypecheckCtx<'cx> {
                 RowValue { fields: *a, tail: *a_tail },
                 RowValue { fields: *b, tail: *b_tail },
             ),
+            (TyKind::Nullable(a), TyKind::Nullable(b)) => self.unify(*a, *b),
             _ => Err(format!("cannot unify {:?} and {:?}", a, b)),
         }
     }
@@ -181,6 +182,14 @@ impl<'cx> TypecheckCtx<'cx> {
             &TyKind::Enum(fields, tail) => {
                 let fields = self.resolve_row(RowValue { fields, tail })?;
                 Ok(Ty(self.ctx.intern_ty_kind(TyKind::Enum(fields, None))))
+            }
+            &TyKind::Nullable(inner) => {
+                let inner_resolved = self.resolve(inner)?;
+                Ok(if inner == inner_resolved {
+                    ty
+                } else {
+                    Ty(self.ctx.intern_ty_kind(TyKind::Nullable(inner_resolved)))
+                })
             }
             TyKind::TyVar(var) => match self.ty_table.probe_value(*var) {
                 Some(ty) => self.resolve(ty),
@@ -311,6 +320,7 @@ impl<'cx> TypecheckCtx<'cx> {
                 let in_tail = tail.map_or(false, |next| self.occurs_in_row(var, next));
                 in_fields || in_tail
             }
+            TyKind::Nullable(inner) => self.occurs(var, *inner),
             TyKind::TyVar(other) => match self.ty_table.probe_value(*other) {
                 Some(bound) => self.occurs(var, bound),
                 None => self.ty_table.find(*other) == self.ty_table.find(var),

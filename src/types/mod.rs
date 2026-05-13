@@ -24,6 +24,7 @@ pub enum TyKind<'tc> {
     Tuple(TyList<'tc>),
     Struct(FieldList<'tc>, Option<RowVar<'tc>>),
     Enum(FieldList<'tc>, Option<RowVar<'tc>>),
+    Nullable(Ty<'tc>),
     TyVar(TyVar<'tc>),
     IntVar(IntVar<'tc>),
     FloatVar(FloatVar<'tc>),
