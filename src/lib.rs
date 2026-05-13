@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use bumpalo::Bump;
 
 use crate::ast::print::print_expr;

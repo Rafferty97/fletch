@@ -1,5 +1,4 @@
 use std::marker::PhantomData;
-use std::ops::Deref;
 
 use ena::unify::{InPlace, NoError, UnificationTable, UnifyKey, UnifyValue};
 use hashbrown::HashMap;
@@ -7,7 +6,7 @@ use hashbrown::HashMap;
 use crate::arena::Ctx;
 use crate::types::fold::TyFolder;
 use crate::types::{
-    FieldList, FloatTy, FloatVar, IntTy, IntVar, RowVar, Ty, TyKind, TyList, TyVar, UIntTy,
+    FieldList, FloatTy, FloatVar, IntTy, IntVar, RowVar, Ty, TyKind, TyVar, UIntTy,
 };
 
 pub struct TypecheckCtx<'cx> {
@@ -46,6 +45,155 @@ impl<'cx> TypecheckCtx<'cx> {
 
     pub fn new_row_var(&mut self) -> RowVar<'cx> {
         self.row_table.new_key(None)
+    }
+
+    pub fn coerce(&mut self, from: Ty<'cx>, to: Ty<'cx>) -> Result<(), String> {
+        if from == to {
+            return Ok(());
+        }
+
+        match (from.kind(), to.kind()) {
+            (TyKind::TyVar(from), TyKind::TyVar(to)) => {
+                match (self.ty_table.probe_value(*from), self.ty_table.probe_value(*to)) {
+                    (Some(from), Some(to)) => self.coerce(from, to),
+                    (Some(from), None) => self.union_value(*to, from),
+                    (None, Some(to)) => self.union_value(*from, to),
+                    (None, None) => Ok(self.ty_table.union(*from, *to)),
+                }
+            }
+            (TyKind::TyVar(from), _) => match self.ty_table.probe_value(*from) {
+                Some(from) => self.coerce(from, to),
+                None => self.union_value(*from, to),
+            },
+            (_, TyKind::TyVar(to)) => match self.ty_table.probe_value(*to) {
+                Some(to) => self.coerce(from, to),
+                None => self.union_value(*to, from),
+            },
+            (TyKind::IntVar(a), TyKind::IntVar(b)) => self.int_table.unify_var_var(*a, *b),
+            (TyKind::IntVar(k), TyKind::Int(t)) | (TyKind::Int(t), TyKind::IntVar(k)) => {
+                self.int_table.unify_var_value(*k, Some(IntValue::Int(*t)))
+            }
+            (TyKind::IntVar(k), TyKind::UInt(t)) | (TyKind::UInt(t), TyKind::IntVar(k)) => {
+                self.int_table.unify_var_value(*k, Some(IntValue::UInt(*t)))
+            }
+            (TyKind::FloatVar(a), TyKind::FloatVar(b)) => self.float_table.unify_var_var(*a, *b),
+            (TyKind::FloatVar(k), TyKind::Float(t)) | (TyKind::Float(t), TyKind::FloatVar(k)) => {
+                self.float_table.unify_var_value(*k, Some(*t))
+            }
+            (TyKind::Array(a), TyKind::Array(b)) => self.coerce(*a, *b),
+            (TyKind::Tuple(a), TyKind::Tuple(b)) => {
+                if a.len() != b.len() {
+                    return Err(format!("cannot coerce {:?} to {:?}", a, b));
+                }
+                for (a, b) in a.iter().zip(b.iter()) {
+                    self.coerce(*a, *b)?;
+                }
+                Ok(())
+            }
+            (TyKind::Struct(from, from_tail), TyKind::Struct(to, to_tail)) => self.coerce_struct(
+                RowValue { fields: *from, tail: *from_tail },
+                RowValue { fields: *to, tail: *to_tail },
+            ),
+            (TyKind::Enum(from, from_tail), TyKind::Enum(to, to_tail)) => self.coerce_variant(
+                RowValue { fields: *from, tail: *from_tail },
+                RowValue { fields: *to, tail: *to_tail },
+            ),
+            (TyKind::Nullable(from), TyKind::Nullable(to)) => self.coerce(*from, *to),
+            (_, TyKind::Nullable(to)) => self.coerce(from, *to),
+            _ => Err(format!("cannot coerce {from:?} into {to:?}")),
+        }
+    }
+
+    fn coerce_struct(&mut self, from: RowValue<'cx>, to: RowValue<'cx>) -> Result<(), String> {
+        let RowValue { fields: from, tail: from_tail } = from;
+        let RowValue { fields: to, tail: to_tail } = to;
+
+        match (from_tail, to_tail) {
+            (None, None) => {
+                let _ = self.superset_fields(from, to, Self::coerce)?;
+                Ok(())
+            }
+
+            (Some(from_tail), None) => {
+                let (_, fields) = self.intersect_fields(from, to, Self::coerce)?;
+                let from_tail_value = RowValue { fields, tail: None };
+                match self.row_table.probe_value(from_tail) {
+                    None => Ok(self.row_table.union_value(from_tail, Some(from_tail_value))),
+                    Some(from_tail) => self.coerce_struct(from_tail, from_tail_value),
+                }
+            }
+
+            (None, Some(to_tail)) => {
+                let fields = self.superset_fields(from, to, Self::coerce)?;
+                let to_tail_value = RowValue { fields, tail: None };
+                match self.row_table.probe_value(to_tail) {
+                    None => Ok(self.row_table.union_value(to_tail, Some(to_tail_value))),
+                    Some(to_tail) => self.coerce_struct(to_tail, to_tail_value),
+                }
+            }
+
+            (Some(from_tail), Some(to_tail)) => {
+                let common_tail = self.new_row_var();
+                let (a_fields, b_fields) = self.intersect_fields(from, to, Self::coerce)?;
+                let a_tail_value = RowValue { fields: b_fields, tail: Some(common_tail) };
+                let b_tail_value = RowValue { fields: a_fields, tail: Some(common_tail) };
+                match self.row_table.probe_value(from_tail) {
+                    None => self.row_table.union_value(from_tail, Some(a_tail_value)),
+                    Some(a_tail) => self.coerce_struct(a_tail, a_tail_value)?,
+                }
+                match self.row_table.probe_value(to_tail) {
+                    None => self.row_table.union_value(to_tail, Some(b_tail_value)),
+                    Some(b_tail) => self.coerce_struct(b_tail, b_tail_value)?,
+                }
+                Ok(())
+            }
+        }
+    }
+
+    fn coerce_variant(&mut self, from: RowValue<'cx>, to: RowValue<'cx>) -> Result<(), String> {
+        let RowValue { fields: from, tail: from_tail } = from;
+        let RowValue { fields: to, tail: to_tail } = to;
+
+        match (from_tail, to_tail) {
+            (None, None) => {
+                let _ = self.subset_fields(from, to, Self::coerce)?;
+                Ok(())
+            }
+
+            (Some(from_tail), None) => {
+                let fields = self.subset_fields(from, to, Self::coerce)?;
+                let from_tail_value = RowValue { fields, tail: None };
+                match self.row_table.probe_value(from_tail) {
+                    None => Ok(self.row_table.union_value(from_tail, Some(from_tail_value))),
+                    Some(from_tail) => self.unify_rows(from_tail, from_tail_value),
+                }
+            }
+
+            (None, Some(to_tail)) => {
+                let (fields, _) = self.intersect_fields(from, to, Self::coerce)?;
+                let to_tail_value = RowValue { fields, tail: None };
+                match self.row_table.probe_value(to_tail) {
+                    None => Ok(self.row_table.union_value(to_tail, Some(to_tail_value))),
+                    Some(to_tail) => self.coerce_struct(to_tail, to_tail_value),
+                }
+            }
+
+            (Some(from_tail), Some(to_tail)) => {
+                let common_tail = self.new_row_var();
+                let (a_fields, b_fields) = self.intersect_fields(from, to, Self::coerce)?;
+                let a_tail_value = RowValue { fields: b_fields, tail: Some(common_tail) };
+                let b_tail_value = RowValue { fields: a_fields, tail: Some(common_tail) };
+                match self.row_table.probe_value(from_tail) {
+                    None => self.row_table.union_value(from_tail, Some(a_tail_value)),
+                    Some(a_tail) => self.coerce_struct(a_tail, a_tail_value)?,
+                }
+                match self.row_table.probe_value(to_tail) {
+                    None => self.row_table.union_value(to_tail, Some(b_tail_value)),
+                    Some(b_tail) => self.coerce_struct(b_tail, b_tail_value)?,
+                }
+                Ok(())
+            }
+        }
     }
 
     pub fn unify(&mut self, a: Ty<'cx>, b: Ty<'cx>) -> Result<(), String> {
@@ -104,38 +252,34 @@ impl<'cx> TypecheckCtx<'cx> {
         }
     }
 
-    fn union_value(&mut self, var: TyVar<'cx>, ty: Ty<'cx>) -> Result<(), String> {
-        if self.occurs(var, ty) {
-            return Err(format!("infinite type"));
-        }
-        Ok(self.ty_table.union_value(var, Some(ty)))
-    }
-
     fn unify_rows(&mut self, a: RowValue<'cx>, b: RowValue<'cx>) -> Result<(), String> {
         let RowValue { fields: a, tail: a_tail } = a;
         let RowValue { fields: b, tail: b_tail } = b;
 
         match (a_tail, b_tail) {
-            (None, None) => self.unify_fields(a, b),
+            (None, None) => self.match_fields(a, b, Self::unify),
+
             (Some(a_tail), None) => {
-                let fields = self.subtype_fields(a, b)?;
+                let fields = self.subset_fields(a, b, Self::unify)?;
                 let a_tail_value = RowValue { fields, tail: None };
                 match self.row_table.probe_value(a_tail) {
                     None => Ok(self.row_table.union_value(a_tail, Some(a_tail_value))),
                     Some(a_tail) => self.unify_rows(a_tail, a_tail_value),
                 }
             }
+
             (None, Some(b_tail)) => {
-                let fields = self.subtype_fields(b, a)?;
+                let fields = self.superset_fields(a, b, Self::unify)?;
                 let b_tail_value = RowValue { fields, tail: None };
                 match self.row_table.probe_value(b_tail) {
                     None => Ok(self.row_table.union_value(b_tail, Some(b_tail_value))),
                     Some(b_tail) => self.unify_rows(b_tail, b_tail_value),
                 }
             }
+
             (Some(a_tail), Some(b_tail)) => {
                 let common_tail = self.new_row_var();
-                let (a_fields, b_fields) = self.intersect_fields(a, b)?;
+                let (a_fields, b_fields) = self.intersect_fields(a, b, Self::unify)?;
                 let a_tail_value = RowValue { fields: b_fields, tail: Some(common_tail) };
                 let b_tail_value = RowValue { fields: a_fields, tail: Some(common_tail) };
                 match self.row_table.probe_value(a_tail) {
@@ -149,6 +293,101 @@ impl<'cx> TypecheckCtx<'cx> {
                 Ok(())
             }
         }
+    }
+
+    /// Checks that the fields match exactly
+    fn match_fields(
+        &mut self,
+        a: FieldList<'cx>,
+        b: FieldList<'cx>,
+        merge: impl Fn(&mut Self, Ty<'cx>, Ty<'cx>) -> Result<(), String>,
+    ) -> Result<(), String> {
+        let mut a_fields: HashMap<_, _> = a.iter().copied().collect();
+
+        for (name, b_ty) in b {
+            match a_fields.remove(&name) {
+                Some(a_ty) => merge(self, a_ty, b_ty)?,
+                None => Err("mismatched keys")?,
+            }
+        }
+
+        if !a_fields.is_empty() {
+            Err("mismatched keys")?;
+        }
+
+        Ok(())
+    }
+
+    /// Checks that the fields in `sub` are a subset of those in `sup`,
+    /// returning the fields in `sup` not present in `sub` as a new `FieldList`
+    fn subset_fields(
+        &mut self,
+        sub: FieldList<'cx>,
+        sup: FieldList<'cx>,
+        merge: impl Fn(&mut Self, Ty<'cx>, Ty<'cx>) -> Result<(), String>,
+    ) -> Result<FieldList<'cx>, String> {
+        let mut sup_fields: HashMap<_, _> = sup.iter().copied().collect();
+
+        for (name, sub_ty) in sub {
+            match sup_fields.remove(&name) {
+                Some(sup_ty) => merge(self, sub_ty, sup_ty)?,
+                None => Err("mismatched keys")?,
+            }
+        }
+
+        let mut fields = sup_fields.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
+        fields.sort_by_cached_key(|(name, _)| self.ctx.get_str(*name));
+
+        Ok(FieldList(self.ctx.intern_fields(&fields)))
+    }
+
+    /// Checks that the fields in `sup` are a superset of those in `sub`,
+    /// returning the fields in `sup` not present in `sub` as a new `FieldList`
+    fn superset_fields(
+        &mut self,
+        sup: FieldList<'cx>,
+        sub: FieldList<'cx>,
+        merge: impl Fn(&mut Self, Ty<'cx>, Ty<'cx>) -> Result<(), String>,
+    ) -> Result<FieldList<'cx>, String> {
+        self.subset_fields(sub, sup, |s, a, b| merge(s, b, a))
+    }
+
+    /// Finds the intersection of the fields in `a` and `b`, returning a tuple containing
+    /// the unique fields in `a` followed by the unique fields in `b`, as new `FieldList`s
+    fn intersect_fields(
+        &mut self,
+        a: FieldList<'cx>,
+        b: FieldList<'cx>,
+        merge: impl Fn(&mut Self, Ty<'cx>, Ty<'cx>) -> Result<(), String>,
+    ) -> Result<(FieldList<'cx>, FieldList<'cx>), String> {
+        let mut a_fields: HashMap<_, _> = a.iter().copied().collect();
+        let mut b_fields = HashMap::new();
+
+        for (name, b_ty) in b {
+            match a_fields.remove(&name) {
+                Some(a_ty) => merge(self, a_ty, b_ty)?,
+                None => {
+                    b_fields.insert(name, b_ty);
+                }
+            }
+        }
+
+        let mut a_fields = a_fields.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
+        let mut b_fields = b_fields.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
+        a_fields.sort_by_cached_key(|(name, _)| self.ctx.get_str(*name));
+        b_fields.sort_by_cached_key(|(name, _)| self.ctx.get_str(*name));
+
+        Ok((
+            FieldList(self.ctx.intern_fields(&a_fields)),
+            FieldList(self.ctx.intern_fields(&b_fields)),
+        ))
+    }
+
+    fn union_value(&mut self, var: TyVar<'cx>, ty: Ty<'cx>) -> Result<(), String> {
+        if self.occurs(var, ty) {
+            return Err(format!("infinite type"));
+        }
+        Ok(self.ty_table.union_value(var, Some(ty)))
     }
 
     pub fn resolve(&mut self, ty: Ty<'cx>) -> Result<Ty<'cx>, String> {
@@ -225,71 +464,6 @@ impl<'cx> TypecheckCtx<'cx> {
             Some(value) => Ok(value),
             None => Err("unbound row var")?,
         }
-    }
-
-    fn unify_fields(&mut self, a: FieldList<'cx>, b: FieldList<'cx>) -> Result<(), String> {
-        let mut fields: HashMap<_, _> = a.iter().copied().collect();
-
-        for (name, ty) in b {
-            match fields.remove(&name) {
-                Some(lhs_ty) => self.unify(lhs_ty, ty)?,
-                None => Err("mismatched keys")?,
-            }
-        }
-
-        if !fields.is_empty() {
-            Err("mismatched keys")?;
-        }
-
-        Ok(())
-    }
-
-    fn subtype_fields(
-        &mut self,
-        subset: FieldList<'cx>,
-        superset: FieldList<'cx>,
-    ) -> Result<FieldList<'cx>, String> {
-        let mut fields: HashMap<_, _> = superset.iter().copied().collect();
-
-        for (name, ty) in subset {
-            match fields.remove(&name) {
-                Some(lhs_ty) => self.unify(lhs_ty, ty)?,
-                None => Err("mismatched keys")?,
-            }
-        }
-
-        let mut fields = fields.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
-        fields.sort_by_cached_key(|(name, _)| self.ctx.get_str(*name));
-
-        Ok(FieldList(self.ctx.intern_fields(&fields)))
-    }
-
-    fn intersect_fields(
-        &mut self,
-        a: FieldList<'cx>,
-        b: FieldList<'cx>,
-    ) -> Result<(FieldList<'cx>, FieldList<'cx>), String> {
-        let mut a_fields: HashMap<_, _> = a.iter().copied().collect();
-        let mut b_fields = HashMap::new();
-
-        for (name, ty) in b {
-            match a_fields.remove(&name) {
-                Some(lhs_ty) => self.unify(lhs_ty, ty)?,
-                None => {
-                    b_fields.insert(name, ty);
-                }
-            }
-        }
-
-        let mut a_fields = a_fields.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
-        let mut b_fields = b_fields.iter().map(|(k, v)| (*k, *v)).collect::<Vec<_>>();
-        a_fields.sort_by_cached_key(|(name, _)| self.ctx.get_str(*name));
-        b_fields.sort_by_cached_key(|(name, _)| self.ctx.get_str(*name));
-
-        Ok((
-            FieldList(self.ctx.intern_fields(&a_fields)),
-            FieldList(self.ctx.intern_fields(&b_fields)),
-        ))
     }
 
     fn occurs(&mut self, var: TyVar<'cx>, ty: Ty<'cx>) -> bool {
@@ -440,10 +614,8 @@ impl<'cx> UnifyValue for RowValue<'cx> {
 
 #[cfg(test)]
 mod test {
-    use crate::{
-        arena, diagnostics,
-        types::{FieldList, IntTy, Ty, TyKind, TyList},
-    };
+    use crate::types::{FieldList, IntTy, Ty, TyKind, TyList};
+    use crate::{arena, diagnostics};
     use bumpalo::Bump;
 
     macro_rules! setup {
@@ -603,6 +775,14 @@ mod test {
             let fields = [$(($ctx.intern_str($name), $ty)),+];
             let r = $ctx.intern_fields(&fields);
             Ty($ctx.intern_ty_kind(TyKind::Struct(FieldList(r), $tail)))
+        }};
+    }
+
+    macro_rules! mk_enum {
+        ($ctx:expr, $tc:expr, [$(($name:expr, $ty:expr)),+], $tail:expr) => {{
+            let fields = [$(($ctx.intern_str($name), $ty)),+];
+            let r = $ctx.intern_fields(&fields);
+            Ty($ctx.intern_ty_kind(TyKind::Enum(FieldList(r), $tail)))
         }};
     }
 
@@ -878,7 +1058,6 @@ mod test {
         setup!(arena, ctx, tc);
         let var = tc.new_ty_var();
         let row = tc.new_row_var();
-        let name = ctx.intern_str("name");
         // open struct where the row tail will be bound to something containing var
         let open = mk_struct!(ctx, tc, [("name", var)], Some(row));
         let str = Ty(ctx.intern_ty_kind(TyKind::Str));
@@ -927,5 +1106,48 @@ mod test {
         let array_str = Ty(ctx.intern_ty_kind(TyKind::Array(str)));
         assert!(tc.unify(var, array_str).is_ok());
         assert_eq!(tc.resolve(var).unwrap(), array_str);
+    }
+
+    #[test]
+    fn coerce_struct() {
+        setup!(arena, ctx, tc);
+        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
+        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let ty1 = mk_struct!(ctx, tc, [("name", str), ("age", int)], None);
+        let ty2 = mk_struct!(ctx, tc, [("age", int)], None);
+        assert!(tc.coerce(ty1, ty2).is_ok());
+        assert!(tc.coerce(ty2, ty1).is_err());
+    }
+
+    #[test]
+    fn coerce_enum() {
+        setup!(arena, ctx, tc);
+        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
+        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let ty1 = mk_enum!(ctx, tc, [("name", str), ("age", int)], None);
+        let ty2 = mk_enum!(ctx, tc, [("age", int)], None);
+        assert!(tc.coerce(ty2, ty1).is_ok());
+        assert!(tc.coerce(ty1, ty2).is_err());
+    }
+
+    #[test]
+    fn coerce_nullable() {
+        setup!(arena, ctx, tc);
+        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
+        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let nullable_int = Ty(ctx.intern_ty_kind(TyKind::Nullable(int)));
+
+        assert!(tc.coerce(int, nullable_int).is_ok());
+        assert!(tc.coerce(nullable_int, int).is_err());
+
+        let ty1 = mk_struct!(ctx, tc, [("name", str), ("age", int)], None);
+        let ty2 = mk_struct!(ctx, tc, [("age", nullable_int)], None);
+        assert!(tc.coerce(ty1, ty2).is_ok());
+        assert!(tc.coerce(ty2, ty1).is_err());
+
+        let ty1 = mk_struct!(ctx, tc, [("name", str), ("age", nullable_int)], None);
+        let ty2 = mk_struct!(ctx, tc, [("age", int)], None);
+        assert!(tc.coerce(ty1, ty2).is_err());
+        assert!(tc.coerce(ty2, ty1).is_err());
     }
 }
