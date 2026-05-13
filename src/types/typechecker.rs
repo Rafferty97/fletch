@@ -5,6 +5,7 @@ use ena::unify::{InPlace, NoError, UnificationTable, UnifyKey, UnifyValue};
 use hashbrown::HashMap;
 
 use crate::arena::Ctx;
+use crate::types::fold::TyFolder;
 use crate::types::{
     FieldList, FloatTy, FloatVar, IntTy, IntVar, RowVar, Ty, TyKind, TyList, TyVar, UIntTy,
 };
@@ -151,60 +152,48 @@ impl<'cx> TypecheckCtx<'cx> {
     }
 
     pub fn resolve(&mut self, ty: Ty<'cx>) -> Result<Ty<'cx>, String> {
-        match ty.kind() {
-            TyKind::Bool => Ok(ty),
-            TyKind::Int(_) | TyKind::UInt(_) | TyKind::Float(_) => Ok(ty),
-            TyKind::Str => Ok(ty),
-            &TyKind::Array(inner) => {
-                let inner_resolved = self.resolve(inner)?;
-                Ok(if inner == inner_resolved {
-                    ty
-                } else {
-                    Ty(self.ctx.intern_ty_kind(TyKind::Array(inner_resolved)))
-                })
+        struct Resolver<'a, 'cx>(&'a mut TypecheckCtx<'cx>);
+
+        impl<'a, 'cx> TyFolder<'cx> for Resolver<'a, 'cx> {
+            type Error = String;
+
+            fn ctx(&self) -> Ctx<'cx> {
+                self.0.ctx
             }
-            TyKind::Tuple(tys) => {
-                let tys_resolved =
-                    tys.iter().map(|ty| self.resolve(*ty)).collect::<Result<Vec<_>, _>>()?;
-                Ok(if tys_resolved == tys.deref() {
-                    ty
-                } else {
-                    let tys_resolved = self.ctx.intern_tys(&tys_resolved);
-                    Ty(self.ctx.intern_ty_kind(TyKind::Tuple(TyList(tys_resolved))))
-                })
+
+            fn fold_ty(&mut self, ty: Ty<'cx>) -> Result<Ty<'cx>, Self::Error> {
+                match ty.kind() {
+                    &TyKind::Struct(fields, Some(tail)) => {
+                        let fields = self.0.resolve_row(RowValue { fields, tail: Some(tail) })?;
+                        let ty = Ty(self.0.ctx.intern_ty_kind(TyKind::Struct(fields, None)));
+                        self.super_fold_ty(ty)
+                    }
+                    &TyKind::Enum(fields, Some(tail)) => {
+                        let fields = self.0.resolve_row(RowValue { fields, tail: Some(tail) })?;
+                        let ty = Ty(self.0.ctx.intern_ty_kind(TyKind::Enum(fields, None)));
+                        self.super_fold_ty(ty)
+                    }
+                    TyKind::TyVar(var) => match self.0.ty_table.probe_value(*var) {
+                        Some(ty) => self.fold_ty(ty),
+                        _ => Err(format!("unresolved type")),
+                    },
+                    TyKind::IntVar(var) => match self.0.int_table.probe_value(*var) {
+                        Some(IntValue::Int(t)) => Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Int(t)))),
+                        Some(IntValue::UInt(t)) => {
+                            Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::UInt(t))))
+                        }
+                        None => Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)))),
+                    },
+                    TyKind::FloatVar(var) => match self.0.float_table.probe_value(*var) {
+                        Some(t) => Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Float(t)))),
+                        None => Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Float(FloatTy::Float64)))),
+                    },
+                    _ => self.super_fold_ty(ty),
+                }
             }
-            TyKind::Struct(_, None) => Ok(ty),
-            &TyKind::Struct(fields, tail) => {
-                let fields = self.resolve_row(RowValue { fields, tail })?;
-                Ok(Ty(self.ctx.intern_ty_kind(TyKind::Struct(fields, None))))
-            }
-            TyKind::Enum(_, None) => Ok(ty),
-            &TyKind::Enum(fields, tail) => {
-                let fields = self.resolve_row(RowValue { fields, tail })?;
-                Ok(Ty(self.ctx.intern_ty_kind(TyKind::Enum(fields, None))))
-            }
-            &TyKind::Nullable(inner) => {
-                let inner_resolved = self.resolve(inner)?;
-                Ok(if inner == inner_resolved {
-                    ty
-                } else {
-                    Ty(self.ctx.intern_ty_kind(TyKind::Nullable(inner_resolved)))
-                })
-            }
-            TyKind::TyVar(var) => match self.ty_table.probe_value(*var) {
-                Some(ty) => self.resolve(ty),
-                _ => Err(format!("unresolved type")),
-            },
-            TyKind::IntVar(var) => match self.int_table.probe_value(*var) {
-                Some(IntValue::Int(t)) => Ok(Ty(self.ctx.intern_ty_kind(TyKind::Int(t)))),
-                Some(IntValue::UInt(t)) => Ok(Ty(self.ctx.intern_ty_kind(TyKind::UInt(t)))),
-                None => Ok(Ty(self.ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)))),
-            },
-            TyKind::FloatVar(var) => match self.float_table.probe_value(*var) {
-                Some(t) => Ok(Ty(self.ctx.intern_ty_kind(TyKind::Float(t)))),
-                None => Ok(Ty(self.ctx.intern_ty_kind(TyKind::Float(FloatTy::Float64)))),
-            },
         }
+
+        Resolver(self).fold_ty(ty)
     }
 
     pub fn resolve_row(&mut self, value: RowValue<'cx>) -> Result<FieldList<'cx>, String> {
