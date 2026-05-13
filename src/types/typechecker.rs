@@ -1,4 +1,5 @@
 use std::marker::PhantomData;
+use std::ops::Deref;
 
 use ena::unify::{InPlace, NoError, UnificationTable, UnifyKey, UnifyValue};
 use hashbrown::HashMap;
@@ -81,11 +82,10 @@ impl<'cx> TypecheckCtx<'cx> {
             }
             (TyKind::Array(a), TyKind::Array(b)) => self.unify(*a, *b),
             (TyKind::Tuple(a), TyKind::Tuple(b)) => {
-                let (a, b) = (a.tys(), b.tys());
                 if a.len() != b.len() {
                     return Err(format!("cannot unify {:?} and {:?}", a, b));
                 }
-                for (a, b) in a.iter().zip(b) {
+                for (a, b) in a.iter().zip(b.iter()) {
                     self.unify(*a, *b)?;
                 }
                 Ok(())
@@ -165,8 +165,8 @@ impl<'cx> TypecheckCtx<'cx> {
             }
             TyKind::Tuple(tys) => {
                 let tys_resolved =
-                    tys.tys().iter().map(|ty| self.resolve(*ty)).collect::<Result<Vec<_>, _>>()?;
-                Ok(if tys_resolved == tys.tys() {
+                    tys.iter().map(|ty| self.resolve(*ty)).collect::<Result<Vec<_>, _>>()?;
+                Ok(if tys_resolved == tys.deref() {
                     ty
                 } else {
                     let tys_resolved = self.ctx.intern_tys(&tys_resolved);
@@ -224,7 +224,7 @@ impl<'cx> TypecheckCtx<'cx> {
         match &fields_vec[..] {
             [fields] => Ok(*fields),
             list => {
-                let fields = list.iter().flat_map(|f| f.fields()).copied().collect::<Vec<_>>();
+                let fields = list.iter().flatten().collect::<Vec<_>>();
                 let fields = self.ctx.intern_fields(&fields);
                 Ok(FieldList(fields))
             }
@@ -239,9 +239,9 @@ impl<'cx> TypecheckCtx<'cx> {
     }
 
     fn unify_fields(&mut self, a: FieldList<'cx>, b: FieldList<'cx>) -> Result<(), String> {
-        let mut fields: HashMap<_, _> = a.fields().iter().copied().collect();
+        let mut fields: HashMap<_, _> = a.iter().copied().collect();
 
-        for &(name, ty) in b.fields() {
+        for (name, ty) in b {
             match fields.remove(&name) {
                 Some(lhs_ty) => self.unify(lhs_ty, ty)?,
                 None => Err("mismatched keys")?,
@@ -260,9 +260,9 @@ impl<'cx> TypecheckCtx<'cx> {
         subset: FieldList<'cx>,
         superset: FieldList<'cx>,
     ) -> Result<FieldList<'cx>, String> {
-        let mut fields: HashMap<_, _> = superset.fields().iter().copied().collect();
+        let mut fields: HashMap<_, _> = superset.iter().copied().collect();
 
-        for &(name, ty) in subset.fields() {
+        for (name, ty) in subset {
             match fields.remove(&name) {
                 Some(lhs_ty) => self.unify(lhs_ty, ty)?,
                 None => Err("mismatched keys")?,
@@ -280,10 +280,10 @@ impl<'cx> TypecheckCtx<'cx> {
         a: FieldList<'cx>,
         b: FieldList<'cx>,
     ) -> Result<(FieldList<'cx>, FieldList<'cx>), String> {
-        let mut a_fields: HashMap<_, _> = a.fields().iter().copied().collect();
+        let mut a_fields: HashMap<_, _> = a.iter().copied().collect();
         let mut b_fields = HashMap::new();
 
-        for &(name, ty) in b.fields() {
+        for (name, ty) in b {
             match a_fields.remove(&name) {
                 Some(lhs_ty) => self.unify(lhs_ty, ty)?,
                 None => {
@@ -309,14 +309,14 @@ impl<'cx> TypecheckCtx<'cx> {
             TyKind::Int(_) | TyKind::UInt(_) | TyKind::Float(_) => false,
             TyKind::Str => false,
             TyKind::Array(inner) => self.occurs(var, *inner),
-            TyKind::Tuple(tys) => tys.tys().iter().any(|t| self.occurs(var, *t)),
+            TyKind::Tuple(tys) => tys.iter().any(|t| self.occurs(var, *t)),
             TyKind::Struct(fields, tail) => {
-                let in_fields = fields.fields().iter().any(|(_, t)| self.occurs(var, *t));
+                let in_fields = fields.iter().any(|(_, t)| self.occurs(var, *t));
                 let in_tail = tail.map_or(false, |next| self.occurs_in_row(var, next));
                 in_fields || in_tail
             }
             TyKind::Enum(fields, tail) => {
-                let in_fields = fields.fields().iter().any(|(_, t)| self.occurs(var, *t));
+                let in_fields = fields.iter().any(|(_, t)| self.occurs(var, *t));
                 let in_tail = tail.map_or(false, |next| self.occurs_in_row(var, next));
                 in_fields || in_tail
             }
@@ -333,7 +333,7 @@ impl<'cx> TypecheckCtx<'cx> {
         match self.row_table.probe_value(row_var) {
             None => false, // unbound row var, can't contain anything yet
             Some(RowValue { fields, tail }) => {
-                let in_fields = fields.fields().iter().any(|(_, t)| self.occurs(var, *t));
+                let in_fields = fields.iter().any(|(_, t)| self.occurs(var, *t));
                 let in_tail = tail.map_or(false, |next| self.occurs_in_row(var, next));
                 in_fields || in_tail
             }
@@ -743,7 +743,7 @@ mod test {
         let closed = mk_struct!(ctx, tc, [("zebra", int), ("age", int), ("name", str)], None);
         tc.unify(open, closed).unwrap();
         let resolved = tc.probe_row(row).unwrap();
-        let fields = resolved.fields.fields();
+        let fields = resolved.fields;
         // fields in the tail should be sorted lexicographically
         assert_eq!(fields[0].0, ctx.intern_str("age"));
         assert_eq!(fields[1].0, ctx.intern_str("zebra"));
@@ -773,10 +773,7 @@ mod test {
         let resolved_b = tc.probe_row(row_b).unwrap();
         assert_eq!(resolved_a.fields, resolved_b.fields);
         // pointer equality — same interned allocation
-        assert!(std::ptr::eq(
-            resolved_a.fields.fields().as_ptr(),
-            resolved_b.fields.fields().as_ptr()
-        ));
+        assert!(std::ptr::eq(resolved_a.fields.as_ptr(), resolved_b.fields.as_ptr()));
     }
 
     // intersect_fields produces canonically ordered results
@@ -795,12 +792,12 @@ mod test {
         tc.unify(open_a, open_b).unwrap();
         // a's tail should contain "age" (b's unique field)
         let resolved_a = tc.probe_row(row_a).unwrap();
-        let a_fields = resolved_a.fields.fields();
+        let a_fields = resolved_a.fields;
         assert_eq!(a_fields.len(), 1);
         assert_eq!(a_fields[0].0, ctx.intern_str("age"));
         // b's tail should contain "name" (a's unique field)
         let resolved_b = tc.probe_row(row_b).unwrap();
-        let b_fields = resolved_b.fields.fields();
+        let b_fields = resolved_b.fields;
         assert_eq!(b_fields.len(), 1);
         assert_eq!(b_fields[0].0, ctx.intern_str("name"));
     }
@@ -836,8 +833,8 @@ mod test {
         // Both should produce the same field ordering in the tail
         let resolved1 = tc1.probe_row(row1).unwrap();
         let resolved2 = tc2.probe_row(row2).unwrap();
-        let fields1: Vec<_> = resolved1.fields.fields().iter().map(|(k, _)| *k).collect();
-        let fields2: Vec<_> = resolved2.fields.fields().iter().map(|(k, _)| *k).collect();
+        let fields1: Vec<_> = resolved1.fields.iter().map(|(k, _)| *k).collect();
+        let fields2: Vec<_> = resolved2.fields.iter().map(|(k, _)| *k).collect();
         assert_eq!(fields1, fields2);
     }
 

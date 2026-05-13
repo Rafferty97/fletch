@@ -1,7 +1,8 @@
-use std::{fmt::Debug, marker::PhantomData};
+use std::{fmt::Debug, marker::PhantomData, ops::Deref};
 
 use crate::arena::{Interned, Symbol};
 
+mod fold;
 mod typechecker;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -100,9 +101,29 @@ impl<'cx> Debug for Ty<'cx> {
     }
 }
 
-impl<'cx> TyList<'cx> {
-    pub fn tys(&self) -> &[Ty<'cx>] {
+impl<'cx> Deref for TyList<'cx> {
+    type Target = [Ty<'cx>];
+
+    fn deref(&self) -> &Self::Target {
         &self.0.0
+    }
+}
+
+impl<'cx> IntoIterator for TyList<'cx> {
+    type Item = Ty<'cx>;
+    type IntoIter = std::iter::Copied<std::slice::Iter<'cx, Ty<'cx>>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.0.into_iter().copied()
+    }
+}
+
+impl<'a, 'cx> IntoIterator for &'a TyList<'cx> {
+    type Item = Ty<'cx>;
+    type IntoIter = std::iter::Copied<std::slice::Iter<'cx, Ty<'cx>>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.0.into_iter().copied()
     }
 }
 
@@ -112,9 +133,29 @@ impl<'cx> Debug for TyList<'cx> {
     }
 }
 
-impl<'cx> FieldList<'cx> {
-    pub fn fields(&self) -> &[(Symbol, Ty<'cx>)] {
+impl<'cx> Deref for FieldList<'cx> {
+    type Target = [(Symbol, Ty<'cx>)];
+
+    fn deref(&self) -> &Self::Target {
         &self.0.0
+    }
+}
+
+impl<'cx> IntoIterator for FieldList<'cx> {
+    type Item = (Symbol, Ty<'cx>);
+    type IntoIter = std::iter::Copied<std::slice::Iter<'cx, (Symbol, Ty<'cx>)>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.0.into_iter().copied()
+    }
+}
+
+impl<'a, 'cx> IntoIterator for &'a FieldList<'cx> {
+    type Item = (Symbol, Ty<'cx>);
+    type IntoIter = std::iter::Copied<std::slice::Iter<'cx, (Symbol, Ty<'cx>)>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.0.into_iter().copied()
     }
 }
 
