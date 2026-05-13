@@ -5,7 +5,7 @@ pub use interned::*;
 pub use symbol::*;
 
 use crate::diagnostics::{DiagCtx, DiagnosticHandler};
-use crate::types::{Ty, TyKind};
+use crate::types::{Ty, TyData, TyKind};
 
 mod interned;
 mod symbol;
@@ -19,7 +19,7 @@ pub struct CtxInner<'cx> {
     diag: DiagCtx<'cx>,
     arena: &'cx Bump,
     symbol_interner: RwLock<SymbolInterner<'cx>>,
-    ty_interner: Mutex<Interner<'cx, TyKind<'cx>>>,
+    ty_interner: Mutex<Interner<'cx, TyData<'cx>>>,
     ty_list_interner: Mutex<Interner<'cx, [Ty<'cx>]>>,
     field_list_interner: Mutex<Interner<'cx, [(Symbol, Ty<'cx>)]>>,
 }
@@ -41,8 +41,12 @@ impl<'cx> Ctx<'cx> {
         self.inner.symbol_interner.write().unwrap().intern_str(self.inner.arena, str)
     }
 
-    pub fn intern_ty_kind(&mut self, kind: TyKind<'cx>) -> Interned<'cx, TyKind<'cx>> {
-        self.inner.ty_interner.lock().unwrap().intern(self.inner.arena, kind)
+    pub fn intern_ty(&mut self, kind: TyKind<'cx>, nullable: bool) -> Ty<'cx> {
+        Ty::new(self.intern_ty_data(TyData { kind, nullable }))
+    }
+
+    pub fn intern_ty_data(&mut self, data: TyData<'cx>) -> Interned<'cx, TyData<'cx>> {
+        self.inner.ty_interner.lock().unwrap().intern(self.inner.arena, data)
     }
 
     pub fn intern_tys(&mut self, tys: &[Ty<'cx>]) -> Interned<'cx, [Ty<'cx>]> {

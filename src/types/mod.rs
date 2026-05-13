@@ -5,13 +5,19 @@ use crate::arena::{Interned, Symbol};
 mod typechecker;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Ty<'tc>(Interned<'tc, TyKind<'tc>>);
+pub struct Ty<'tc>(Interned<'tc, TyData<'tc>>);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TyList<'tc>(Interned<'tc, [Ty<'tc>]>);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FieldList<'tc>(Interned<'tc, [(Symbol, Ty<'tc>)]>);
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct TyData<'tc> {
+    pub kind: TyKind<'tc>,
+    pub nullable: bool,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum TyKind<'tc> {
@@ -88,8 +94,16 @@ impl Debug for RowVar<'_> {
 }
 
 impl<'cx> Ty<'cx> {
+    pub fn new(data: Interned<'cx, TyData<'cx>>) -> Self {
+        Self(data)
+    }
+
     pub fn kind(&self) -> &TyKind<'cx> {
-        &self.0.0
+        &self.0.kind
+    }
+
+    pub fn nullable(&self) -> bool {
+        self.0.nullable
     }
 }
 

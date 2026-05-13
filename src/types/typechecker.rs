@@ -29,17 +29,22 @@ impl<'cx> TypecheckCtx<'cx> {
 
     pub fn new_ty_var(&mut self) -> Ty<'cx> {
         let ty_var = self.ty_table.new_key(None);
-        Ty(self.ctx.intern_ty_kind(TyKind::TyVar(ty_var)))
+        self.ctx.intern_ty(TyKind::TyVar(ty_var), false)
+    }
+
+    pub fn new_null_var(&mut self) -> Ty<'cx> {
+        let ty_var = self.ty_table.new_key(None);
+        self.ctx.intern_ty(TyKind::TyVar(ty_var), true)
     }
 
     pub fn new_int_var(&mut self) -> Ty<'cx> {
         let int_var = self.int_table.new_key(None);
-        Ty(self.ctx.intern_ty_kind(TyKind::IntVar(int_var)))
+        self.ctx.intern_ty(TyKind::IntVar(int_var), false)
     }
 
     pub fn new_float_var(&mut self) -> Ty<'cx> {
         let float_var = self.float_table.new_key(None);
-        Ty(self.ctx.intern_ty_kind(TyKind::FloatVar(float_var)))
+        self.ctx.intern_ty(TyKind::FloatVar(float_var), false)
     }
 
     pub fn new_row_var(&mut self) -> RowVar<'cx> {
@@ -159,7 +164,7 @@ impl<'cx> TypecheckCtx<'cx> {
                 Ok(if inner == inner_resolved {
                     ty
                 } else {
-                    Ty(self.ctx.intern_ty_kind(TyKind::Array(inner_resolved)))
+                    self.ctx.intern_ty(TyKind::Array(inner_resolved), ty.nullable())
                 })
             }
             TyKind::Tuple(tys) => {
@@ -169,31 +174,31 @@ impl<'cx> TypecheckCtx<'cx> {
                     ty
                 } else {
                     let tys_resolved = self.ctx.intern_tys(&tys_resolved);
-                    Ty(self.ctx.intern_ty_kind(TyKind::Tuple(TyList(tys_resolved))))
+                    self.ctx.intern_ty(TyKind::Tuple(TyList(tys_resolved)), ty.nullable())
                 })
             }
             TyKind::Struct(_, None) => Ok(ty),
             &TyKind::Struct(fields, tail) => {
                 let fields = self.resolve_row(RowValue { fields, tail })?;
-                Ok(Ty(self.ctx.intern_ty_kind(TyKind::Struct(fields, None))))
+                Ok(self.ctx.intern_ty(TyKind::Struct(fields, None), ty.nullable()))
             }
             TyKind::Enum(_, None) => Ok(ty),
             &TyKind::Enum(fields, tail) => {
                 let fields = self.resolve_row(RowValue { fields, tail })?;
-                Ok(Ty(self.ctx.intern_ty_kind(TyKind::Enum(fields, None))))
+                Ok(self.ctx.intern_ty(TyKind::Enum(fields, None), ty.nullable()))
             }
             TyKind::TyVar(var) => match self.ty_table.probe_value(*var) {
                 Some(ty) => self.resolve(ty),
                 _ => Err(format!("unresolved type")),
             },
             TyKind::IntVar(var) => match self.int_table.probe_value(*var) {
-                Some(IntValue::Int(t)) => Ok(Ty(self.ctx.intern_ty_kind(TyKind::Int(t)))),
-                Some(IntValue::UInt(t)) => Ok(Ty(self.ctx.intern_ty_kind(TyKind::UInt(t)))),
-                None => Ok(Ty(self.ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)))),
+                Some(IntValue::Int(t)) => Ok(self.ctx.intern_ty(TyKind::Int(t), false)),
+                Some(IntValue::UInt(t)) => Ok(self.ctx.intern_ty(TyKind::UInt(t), false)),
+                None => Ok(self.ctx.intern_ty(TyKind::Int(IntTy::Int32), false)),
             },
             TyKind::FloatVar(var) => match self.float_table.probe_value(*var) {
-                Some(t) => Ok(Ty(self.ctx.intern_ty_kind(TyKind::Float(t)))),
-                None => Ok(Ty(self.ctx.intern_ty_kind(TyKind::Float(FloatTy::Float64)))),
+                Some(t) => Ok(self.ctx.intern_ty(TyKind::Float(t), false)),
+                None => Ok(self.ctx.intern_ty(TyKind::Float(FloatTy::Float64), false)),
             },
         }
     }
@@ -463,7 +468,7 @@ mod test {
         setup!(arena, ctx, tc);
         let var1 = tc.new_ty_var();
         let var2 = tc.new_ty_var();
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
+        let str = ctx.intern_ty(TyKind::Str, false);
         tc.unify(var1, var2).unwrap();
         tc.unify(var2, str).unwrap();
         assert_eq!(tc.resolve(var1).unwrap(), str);
@@ -473,7 +478,7 @@ mod test {
     fn unify_int_ty() {
         setup!(arena, ctx, tc);
         let var = tc.new_int_var();
-        let int16 = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int16)));
+        let int16 = ctx.intern_ty(TyKind::Int(IntTy::Int16), false);
         tc.unify(var, int16).unwrap();
         assert_eq!(tc.resolve(var).unwrap(), int16);
     }
@@ -482,7 +487,7 @@ mod test {
     fn unify_float_ty_with_int() {
         setup!(arena, ctx, tc);
         let var = tc.new_float_var();
-        let int16 = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int16)));
+        let int16 = ctx.intern_ty(TyKind::Int(IntTy::Int16), false);
         assert!(tc.unify(var, int16).is_err());
     }
 
@@ -490,8 +495,8 @@ mod test {
     #[test]
     fn unify_concrete_mismatch() {
         setup!(arena, ctx, tc);
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
-        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let str = ctx.intern_ty(TyKind::Str, false);
+        let int = ctx.intern_ty(TyKind::Int(IntTy::Int32), false);
         assert!(tc.unify(str, int).is_err());
     }
 
@@ -502,10 +507,10 @@ mod test {
         setup!(arena, ctx, tc);
         let var1 = tc.new_ty_var();
         let var2 = tc.new_ty_var();
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
-        let array_var1 = Ty(ctx.intern_ty_kind(TyKind::Array(var1)));
-        let array_var2 = Ty(ctx.intern_ty_kind(TyKind::Array(var2)));
-        let array_str = Ty(ctx.intern_ty_kind(TyKind::Array(str)));
+        let str = ctx.intern_ty(TyKind::Str, false);
+        let array_var1 = ctx.intern_ty(TyKind::Array(var1), false);
+        let array_var2 = ctx.intern_ty(TyKind::Array(var2), false);
+        let array_str = ctx.intern_ty(TyKind::Array(str), false);
         // var1 and var2 are linked, then var2 is resolved to Str
         tc.unify(array_var1, array_var2).unwrap();
         tc.unify(var2, str).unwrap();
@@ -517,14 +522,14 @@ mod test {
     fn unify_structs() {
         setup!(arena, ctx, tc);
         let var1 = tc.new_ty_var();
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
-        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let str = ctx.intern_ty(TyKind::Str, false);
+        let int = ctx.intern_ty(TyKind::Int(IntTy::Int32), false);
         let name = ctx.intern_str("name");
         let age = ctx.intern_str("age");
         let struct_a = ctx.intern_fields(&[(name, var1), (age, int)]);
-        let struct_a = Ty(ctx.intern_ty_kind(TyKind::Struct(FieldList(struct_a), None)));
+        let struct_a = ctx.intern_ty(TyKind::Struct(FieldList(struct_a), None), false);
         let struct_b = ctx.intern_fields(&[(name, str), (age, int)]);
-        let struct_b = Ty(ctx.intern_ty_kind(TyKind::Struct(FieldList(struct_b), None)));
+        let struct_b = ctx.intern_ty(TyKind::Struct(FieldList(struct_b), None), false);
         tc.unify(struct_a, struct_b).unwrap();
         assert_eq!(tc.resolve(var1).unwrap(), str);
     }
@@ -533,13 +538,13 @@ mod test {
     #[test]
     fn unify_structs_field_mismatch() {
         setup!(arena, ctx, tc);
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
+        let str = ctx.intern_ty(TyKind::Str, false);
         let name = ctx.intern_str("name");
         let title = ctx.intern_str("title");
         let struct_a = ctx.intern_fields(&[(name, str)]);
-        let struct_a = Ty(ctx.intern_ty_kind(TyKind::Struct(FieldList(struct_a), None)));
+        let struct_a = ctx.intern_ty(TyKind::Struct(FieldList(struct_a), None), false);
         let struct_b = ctx.intern_fields(&[(title, str)]);
-        let struct_b = Ty(ctx.intern_ty_kind(TyKind::Struct(FieldList(struct_b), None)));
+        let struct_b = ctx.intern_ty(TyKind::Struct(FieldList(struct_b), None), false);
         assert!(tc.unify(struct_a, struct_b).is_err());
     }
 
@@ -566,7 +571,7 @@ mod test {
         let var1 = tc.new_ty_var();
         let var2 = tc.new_ty_var();
         let var3 = tc.new_ty_var();
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
+        let str = ctx.intern_ty(TyKind::Str, false);
         tc.unify(var1, var2).unwrap();
         tc.unify(var2, var3).unwrap();
         tc.unify(var3, str).unwrap();
@@ -579,12 +584,12 @@ mod test {
     #[test]
     fn unify_tuple_arity_mismatch() {
         setup!(arena, ctx, tc);
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
-        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let str = ctx.intern_ty(TyKind::Str, false);
+        let int = ctx.intern_ty(TyKind::Int(IntTy::Int32), false);
         let tuple_a = ctx.intern_tys(&[str, int]);
-        let tuple_a = Ty(ctx.intern_ty_kind(TyKind::Tuple(TyList(tuple_a))));
+        let tuple_a = ctx.intern_ty(TyKind::Tuple(TyList(tuple_a)), false);
         let tuple_b = ctx.intern_tys(&[str]);
-        let tuple_b = Ty(ctx.intern_ty_kind(TyKind::Tuple(TyList(tuple_b))));
+        let tuple_b = ctx.intern_ty(TyKind::Tuple(TyList(tuple_b)), false);
         assert!(tc.unify(tuple_a, tuple_b).is_err());
     }
 
@@ -592,7 +597,7 @@ mod test {
         ($ctx:expr, $tc:expr, [$(($name:expr, $ty:expr)),+], $tail:expr) => {{
             let fields = [$(($ctx.intern_str($name), $ty)),+];
             let r = $ctx.intern_fields(&fields);
-            Ty($ctx.intern_ty_kind(TyKind::Struct(FieldList(r), $tail)))
+            $ctx.intern_ty(TyKind::Struct(FieldList(r), $tail), false)
         }};
     }
 
@@ -600,7 +605,7 @@ mod test {
     #[test]
     fn unify_closed_struct() {
         setup!(arena, ctx, tc);
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
+        let str = ctx.intern_ty(TyKind::Str, false);
         let struct_a = mk_struct!(ctx, tc, [("name", str)], None);
         let struct_b = mk_struct!(ctx, tc, [("name", str)], None);
         assert!(tc.unify(struct_a, struct_b).is_ok());
@@ -611,8 +616,8 @@ mod test {
     #[test]
     fn unify_open_struct_with_closed_superset() {
         setup!(arena, ctx, tc);
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
-        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let str = ctx.intern_ty(TyKind::Str, false);
+        let int = ctx.intern_ty(TyKind::Int(IntTy::Int32), false);
         let age = ctx.intern_str("age");
         let row = tc.new_row_var();
         let open = mk_struct!(ctx, tc, [("name", str)], Some(row));
@@ -628,8 +633,8 @@ mod test {
     #[test]
     fn unify_open_struct_with_closed_subset_fails() {
         setup!(arena, ctx, tc);
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
-        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let str = ctx.intern_ty(TyKind::Str, false);
+        let int = ctx.intern_ty(TyKind::Int(IntTy::Int32), false);
         let row = tc.new_row_var();
         let open = mk_struct!(ctx, tc, [("name", str), ("age", int)], Some(row));
         let closed = mk_struct!(ctx, tc, [("name", str)], None);
@@ -641,8 +646,8 @@ mod test {
     #[test]
     fn unify_two_open_structs() {
         setup!(arena, ctx, tc);
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
-        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let str = ctx.intern_ty(TyKind::Str, false);
+        let int = ctx.intern_ty(TyKind::Int(IntTy::Int32), false);
         let age = ctx.intern_str("age");
         let name = ctx.intern_str("name");
         let row_a = tc.new_row_var();
@@ -668,8 +673,8 @@ mod test {
     #[test]
     fn row_polymorphic_function_call() {
         setup!(arena, ctx, tc);
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
-        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let str = ctx.intern_ty(TyKind::Str, false);
+        let int = ctx.intern_ty(TyKind::Int(IntTy::Int32), false);
         let row = tc.new_row_var();
         // function expects { name: Str | ρ }
         let param_ty = mk_struct!(ctx, tc, [("name", str)], Some(row));
@@ -688,8 +693,8 @@ mod test {
     #[test]
     fn unify_open_struct_field_type_mismatch() {
         setup!(arena, ctx, tc);
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
-        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let str = ctx.intern_ty(TyKind::Str, false);
+        let int = ctx.intern_ty(TyKind::Int(IntTy::Int32), false);
         let row = tc.new_row_var();
         let open = mk_struct!(ctx, tc, [("name", str)], Some(row));
         let closed = mk_struct!(ctx, tc, [("name", int), ("age", int)], None);
@@ -700,8 +705,8 @@ mod test {
     #[test]
     fn unify_two_open_structs_field_type_mismatch() {
         setup!(arena, ctx, tc);
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
-        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let str = ctx.intern_ty(TyKind::Str, false);
+        let int = ctx.intern_ty(TyKind::Int(IntTy::Int32), false);
         let row_a = tc.new_row_var();
         let row_b = tc.new_row_var();
         // both have "name" but with different types
@@ -714,8 +719,8 @@ mod test {
     #[test]
     fn canonical_field_ordering_in_row_tail() {
         setup!(arena, ctx, tc);
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
-        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let str = ctx.intern_ty(TyKind::Str, false);
+        let int = ctx.intern_ty(TyKind::Int(IntTy::Int32), false);
         let row = tc.new_row_var();
         // open struct with "name", closed struct has "age" and "name" - "age" comes first lexically
         let open = mk_struct!(ctx, tc, [("name", str)], Some(row));
@@ -732,8 +737,8 @@ mod test {
     #[test]
     fn canonical_ordering_produces_identical_interned_types() {
         setup!(arena, ctx, tc);
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
-        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let str = ctx.intern_ty(TyKind::Str, false);
+        let int = ctx.intern_ty(TyKind::Int(IntTy::Int32), false);
 
         // First unification
         let row_a = tc.new_row_var();
@@ -762,9 +767,9 @@ mod test {
     #[test]
     fn canonical_ordering_in_two_open_struct_tails() {
         setup!(arena, ctx, tc);
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
-        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
-        let bool = Ty(ctx.intern_ty_kind(TyKind::Bool));
+        let str = ctx.intern_ty(TyKind::Str, false);
+        let int = ctx.intern_ty(TyKind::Int(IntTy::Int32), false);
+        let bool = ctx.intern_ty(TyKind::Bool, false);
         let row_a = tc.new_row_var();
         let row_b = tc.new_row_var();
         // a has "name" and "zebra", b has "age" and "zebra"
@@ -798,15 +803,15 @@ mod test {
         let mut tc2 = super::TypecheckCtx::new(ctx2);
 
         // Same unification in both contexts
-        let str1 = Ty(ctx1.intern_ty_kind(TyKind::Str));
-        let int1 = Ty(ctx1.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let str1 = ctx1.intern_ty(TyKind::Str, false);
+        let int1 = ctx1.intern_ty(TyKind::Int(IntTy::Int32), false);
         let row1 = tc1.new_row_var();
         let open1 = mk_struct!(ctx1, tc1, [("name", str1)], Some(row1));
         let closed1 = mk_struct!(ctx1, tc1, [("zebra", int1), ("age", int1), ("name", str1)], None);
         tc1.unify(open1, closed1).unwrap();
 
-        let str2 = Ty(ctx2.intern_ty_kind(TyKind::Str));
-        let int2 = Ty(ctx2.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let str2 = ctx2.intern_ty(TyKind::Str, false);
+        let int2 = ctx2.intern_ty(TyKind::Int(IntTy::Int32), false);
         let row2 = tc2.new_row_var();
         let open2 = mk_struct!(ctx2, tc2, [("name", str2)], Some(row2));
         let closed2 = mk_struct!(ctx2, tc2, [("zebra", int2), ("age", int2), ("name", str2)], None);
@@ -825,7 +830,7 @@ mod test {
     fn occurs_check_direct() {
         setup!(arena, ctx, tc);
         let var = tc.new_ty_var();
-        let array_var = Ty(ctx.intern_ty_kind(TyKind::Array(var)));
+        let array_var = ctx.intern_ty(TyKind::Array(var), false);
         assert!(tc.unify(var, array_var).is_err());
     }
 
@@ -834,8 +839,8 @@ mod test {
     fn occurs_check_nested() {
         setup!(arena, ctx, tc);
         let var = tc.new_ty_var();
-        let array_var = Ty(ctx.intern_ty_kind(TyKind::Array(var)));
-        let array_array_var = Ty(ctx.intern_ty_kind(TyKind::Array(array_var)));
+        let array_var = ctx.intern_ty(TyKind::Array(var), false);
+        let array_array_var = ctx.intern_ty(TyKind::Array(array_var), false);
         assert!(tc.unify(var, array_array_var).is_err());
     }
 
@@ -845,12 +850,12 @@ mod test {
         setup!(arena, ctx, tc);
         let var1 = tc.new_ty_var();
         let var2 = tc.new_ty_var();
-        let array_var1 = Ty(ctx.intern_ty_kind(TyKind::Array(var1)));
+        let array_var1 = ctx.intern_ty(TyKind::Array(var1), false);
         // bind var2 to Array(var1)
         tc.unify(var2, array_var1).unwrap();
         // now trying to bind var1 to something containing var2 should fail
         // since var2 = Array(var1), this would create var1 = Array(Array(var1))
-        let array_var2 = Ty(ctx.intern_ty_kind(TyKind::Array(var2)));
+        let array_var2 = ctx.intern_ty(TyKind::Array(var2), false);
         assert!(tc.unify(var1, array_var2).is_err());
     }
 
@@ -861,7 +866,7 @@ mod test {
         let var = tc.new_ty_var();
         let name = ctx.intern_str("self");
         let fields = ctx.intern_fields(&[(name, var)]);
-        let struct_ty = Ty(ctx.intern_ty_kind(TyKind::Struct(FieldList(fields), None)));
+        let struct_ty = ctx.intern_ty(TyKind::Struct(FieldList(fields), None), false);
         assert!(tc.unify(var, struct_ty).is_err());
     }
 
@@ -874,13 +879,13 @@ mod test {
         let name = ctx.intern_str("name");
         // open struct where the row tail will be bound to something containing var
         let open = mk_struct!(ctx, tc, [("name", var)], Some(row));
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
-        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let str = ctx.intern_ty(TyKind::Str, false);
+        let int = ctx.intern_ty(TyKind::Int(IntTy::Int32), false);
         // this is fine — binds var to Str, row to { age: Int }
         let closed = mk_struct!(ctx, tc, [("name", str), ("age", int)], None);
         tc.unify(open, closed).unwrap();
         // now try to create a circular type through var
-        let array_var = Ty(ctx.intern_ty_kind(TyKind::Array(var)));
+        let array_var = ctx.intern_ty(TyKind::Array(var), false);
         assert!(tc.unify(var, array_var).is_err());
     }
 
@@ -889,9 +894,9 @@ mod test {
     fn occurs_check_in_tuple() {
         setup!(arena, ctx, tc);
         let var = tc.new_ty_var();
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
+        let str = ctx.intern_ty(TyKind::Str, false);
         let tys = ctx.intern_tys(&[str, var]);
-        let tuple = Ty(ctx.intern_ty_kind(TyKind::Tuple(TyList(tys))));
+        let tuple = ctx.intern_ty(TyKind::Tuple(TyList(tys)), false);
         assert!(tc.unify(var, tuple).is_err());
     }
 
@@ -907,7 +912,7 @@ mod test {
         tc.unify(var2, var3).unwrap();
         // now try to bind var3 to something containing var1
         // this would create a cycle: var1 = var2 = var3 = Array(var1)
-        let array_var1 = Ty(ctx.intern_ty_kind(TyKind::Array(var1)));
+        let array_var1 = ctx.intern_ty(TyKind::Array(var1), false);
         assert!(tc.unify(var3, array_var1).is_err());
     }
 
@@ -916,8 +921,8 @@ mod test {
     fn occurs_check_does_not_break_valid_unification() {
         setup!(arena, ctx, tc);
         let var = tc.new_ty_var();
-        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
-        let array_str = Ty(ctx.intern_ty_kind(TyKind::Array(str)));
+        let str = ctx.intern_ty(TyKind::Str, false);
+        let array_str = ctx.intern_ty(TyKind::Array(str), false);
         assert!(tc.unify(var, array_str).is_ok());
         assert_eq!(tc.resolve(var).unwrap(), array_str);
     }
