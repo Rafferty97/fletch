@@ -486,6 +486,17 @@ mod test {
         assert!(tc.unify(var, int16).is_err());
     }
 
+    #[test]
+    fn unify_int_var_with_ty_var() {
+        setup!(arena, ctx, tc);
+        let var1 = tc.new_ty_var();
+        let var2 = tc.new_int_var();
+        let int16 = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int16)));
+        tc.unify(var1, var2).unwrap();
+        tc.unify(var2, int16).unwrap();
+        assert_eq!(tc.resolve(var1).unwrap(), int16);
+    }
+
     // Unifying two different concrete types should fail.
     #[test]
     fn unify_concrete_mismatch() {
