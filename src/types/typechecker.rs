@@ -104,7 +104,13 @@ impl<'cx> TypecheckCtx<'cx> {
                 RowValue { fields: *b, tail: *b_tail },
             ),
             _ => Err(format!("cannot unify {:?} and {:?}", a, b)),
+        }?;
+
+        if a.nullable() != b.nullable() {
+            Err(format!("cannot unify {:?} and {:?}", a, b))?;
         }
+
+        Ok(())
     }
 
     fn union_value(&mut self, var: TyVar<'cx>, ty: Ty<'cx>) -> Result<(), String> {
