@@ -1,5 +1,3 @@
 Type checker:
 
 - Nullable types
-- Function types
-- Occurs check to prevent infinite types

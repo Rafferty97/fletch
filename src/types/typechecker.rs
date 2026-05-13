@@ -55,18 +55,18 @@ impl<'cx> TypecheckCtx<'cx> {
             (TyKind::TyVar(a), TyKind::TyVar(b)) => {
                 match (self.ty_table.probe_value(*a), self.ty_table.probe_value(*b)) {
                     (Some(a_ty), Some(b_ty)) => self.unify(a_ty, b_ty),
-                    (Some(a_ty), None) => Ok(self.ty_table.union_value(*b, Some(a_ty))),
-                    (None, Some(b_ty)) => Ok(self.ty_table.union_value(*a, Some(b_ty))),
+                    (Some(a_ty), None) => self.union_value(*b, a_ty),
+                    (None, Some(b_ty)) => self.union_value(*a, b_ty),
                     (None, None) => Ok(self.ty_table.union(*a, *b)),
                 }
             }
             (TyKind::TyVar(a), _) => match self.ty_table.probe_value(*a) {
                 Some(a_ty) => self.unify(a_ty, b),
-                None => Ok(self.ty_table.union_value(*a, Some(b))),
+                None => self.union_value(*a, b),
             },
             (_, TyKind::TyVar(b)) => match self.ty_table.probe_value(*b) {
                 Some(b_ty) => self.unify(a, b_ty),
-                None => Ok(self.ty_table.union_value(*b, Some(a))),
+                None => self.union_value(*b, a),
             },
             (TyKind::IntVar(a), TyKind::IntVar(b)) => self.int_table.unify_var_var(*a, *b),
             (TyKind::IntVar(k), TyKind::Int(t)) | (TyKind::Int(t), TyKind::IntVar(k)) => {
@@ -100,6 +100,13 @@ impl<'cx> TypecheckCtx<'cx> {
             ),
             _ => Err(format!("cannot unify {:?} and {:?}", a, b)),
         }
+    }
+
+    fn union_value(&mut self, var: TyVar<'cx>, ty: Ty<'cx>) -> Result<(), String> {
+        if self.occurs(var, ty) {
+            return Err(format!("infinite type"));
+        }
+        Ok(self.ty_table.union_value(var, Some(ty)))
     }
 
     fn unify_rows(&mut self, a: RowValue<'cx>, b: RowValue<'cx>) -> Result<(), String> {
@@ -285,6 +292,42 @@ impl<'cx> TypecheckCtx<'cx> {
             FieldList(self.ctx.intern_fields(&a_fields)),
             FieldList(self.ctx.intern_fields(&b_fields)),
         ))
+    }
+
+    fn occurs(&mut self, var: TyVar<'cx>, ty: Ty<'cx>) -> bool {
+        match ty.kind() {
+            TyKind::Bool => false,
+            TyKind::Int(_) | TyKind::UInt(_) | TyKind::Float(_) => false,
+            TyKind::Str => false,
+            TyKind::Array(inner) => self.occurs(var, *inner),
+            TyKind::Tuple(tys) => tys.tys().iter().any(|t| self.occurs(var, *t)),
+            TyKind::Struct(fields, tail) => {
+                let in_fields = fields.fields().iter().any(|(_, t)| self.occurs(var, *t));
+                let in_tail = tail.map_or(false, |next| self.occurs_in_row(var, next));
+                in_fields || in_tail
+            }
+            TyKind::Enum(fields, tail) => {
+                let in_fields = fields.fields().iter().any(|(_, t)| self.occurs(var, *t));
+                let in_tail = tail.map_or(false, |next| self.occurs_in_row(var, next));
+                in_fields || in_tail
+            }
+            TyKind::TyVar(other) => match self.ty_table.probe_value(*other) {
+                Some(bound) => self.occurs(var, bound),
+                None => self.ty_table.find(*other) == self.ty_table.find(var),
+            },
+            TyKind::IntVar(_) | TyKind::FloatVar(_) => false,
+        }
+    }
+
+    fn occurs_in_row(&mut self, var: TyVar<'cx>, row_var: RowVar<'cx>) -> bool {
+        match self.row_table.probe_value(row_var) {
+            None => false, // unbound row var, can't contain anything yet
+            Some(RowValue { fields, tail }) => {
+                let in_fields = fields.fields().iter().any(|(_, t)| self.occurs(var, *t));
+                let in_tail = tail.map_or(false, |next| self.occurs_in_row(var, next));
+                in_fields || in_tail
+            }
+        }
     }
 }
 
@@ -775,5 +818,107 @@ mod test {
         let fields1: Vec<_> = resolved1.fields.fields().iter().map(|(k, _)| *k).collect();
         let fields2: Vec<_> = resolved2.fields.fields().iter().map(|(k, _)| *k).collect();
         assert_eq!(fields1, fields2);
+    }
+
+    // Unifying a type variable with a type that contains itself should fail
+    #[test]
+    fn occurs_check_direct() {
+        setup!(arena, ctx, tc);
+        let var = tc.new_ty_var();
+        let array_var = Ty(ctx.intern_ty_kind(TyKind::Array(var)));
+        assert!(tc.unify(var, array_var).is_err());
+    }
+
+    // Unifying a type variable with a deeply nested type that contains itself should fail
+    #[test]
+    fn occurs_check_nested() {
+        setup!(arena, ctx, tc);
+        let var = tc.new_ty_var();
+        let array_var = Ty(ctx.intern_ty_kind(TyKind::Array(var)));
+        let array_array_var = Ty(ctx.intern_ty_kind(TyKind::Array(array_var)));
+        assert!(tc.unify(var, array_array_var).is_err());
+    }
+
+    // Unifying two variables where one is already bound to a type containing the other should fail
+    #[test]
+    fn occurs_check_indirect() {
+        setup!(arena, ctx, tc);
+        let var1 = tc.new_ty_var();
+        let var2 = tc.new_ty_var();
+        let array_var1 = Ty(ctx.intern_ty_kind(TyKind::Array(var1)));
+        // bind var2 to Array(var1)
+        tc.unify(var2, array_var1).unwrap();
+        // now trying to bind var1 to something containing var2 should fail
+        // since var2 = Array(var1), this would create var1 = Array(Array(var1))
+        let array_var2 = Ty(ctx.intern_ty_kind(TyKind::Array(var2)));
+        assert!(tc.unify(var1, array_var2).is_err());
+    }
+
+    // Unifying a type variable with a struct containing itself should fail
+    #[test]
+    fn occurs_check_in_struct() {
+        setup!(arena, ctx, tc);
+        let var = tc.new_ty_var();
+        let name = ctx.intern_str("self");
+        let fields = ctx.intern_fields(&[(name, var)]);
+        let struct_ty = Ty(ctx.intern_ty_kind(TyKind::Struct(FieldList(fields), None)));
+        assert!(tc.unify(var, struct_ty).is_err());
+    }
+
+    // Unifying a type variable with a struct whose row tail contains itself should fail
+    #[test]
+    fn occurs_check_in_row_tail() {
+        setup!(arena, ctx, tc);
+        let var = tc.new_ty_var();
+        let row = tc.new_row_var();
+        let name = ctx.intern_str("name");
+        // open struct where the row tail will be bound to something containing var
+        let open = mk_struct!(ctx, tc, [("name", var)], Some(row));
+        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
+        let int = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        // this is fine — binds var to Str, row to { age: Int }
+        let closed = mk_struct!(ctx, tc, [("name", str), ("age", int)], None);
+        tc.unify(open, closed).unwrap();
+        // now try to create a circular type through var
+        let array_var = Ty(ctx.intern_ty_kind(TyKind::Array(var)));
+        assert!(tc.unify(var, array_var).is_err());
+    }
+
+    // Unifying a type variable with a tuple containing itself should fail
+    #[test]
+    fn occurs_check_in_tuple() {
+        setup!(arena, ctx, tc);
+        let var = tc.new_ty_var();
+        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
+        let tys = ctx.intern_tys(&[str, var]);
+        let tuple = Ty(ctx.intern_ty_kind(TyKind::Tuple(TyList(tys))));
+        assert!(tc.unify(var, tuple).is_err());
+    }
+
+    // Occurs check through a chain of variables
+    #[test]
+    fn occurs_check_through_var_chain() {
+        setup!(arena, ctx, tc);
+        let var1 = tc.new_ty_var();
+        let var2 = tc.new_ty_var();
+        let var3 = tc.new_ty_var();
+        // chain: var1 -> var2 -> var3
+        tc.unify(var1, var2).unwrap();
+        tc.unify(var2, var3).unwrap();
+        // now try to bind var3 to something containing var1
+        // this would create a cycle: var1 = var2 = var3 = Array(var1)
+        let array_var1 = Ty(ctx.intern_ty_kind(TyKind::Array(var1)));
+        assert!(tc.unify(var3, array_var1).is_err());
+    }
+
+    // Sanity check — a non-circular type still unifies correctly after occurs check is added
+    #[test]
+    fn occurs_check_does_not_break_valid_unification() {
+        setup!(arena, ctx, tc);
+        let var = tc.new_ty_var();
+        let str = Ty(ctx.intern_ty_kind(TyKind::Str));
+        let array_str = Ty(ctx.intern_ty_kind(TyKind::Array(str)));
+        assert!(tc.unify(var, array_str).is_ok());
+        assert_eq!(tc.resolve(var).unwrap(), array_str);
     }
 }
