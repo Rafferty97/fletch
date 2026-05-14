@@ -59,18 +59,22 @@ impl<'cx> FunctionCtx<'cx> {
         match op.node {
             Add | Sub | Mul | Div => {
                 self.tc.unify(lhs_ty, rhs_ty).map_err(|_| {
-                    let lhs = lhs_ty; //self.tc.resolve(lhs_ty).unwrap_or(lhs_ty);
-                    let rhs = rhs_ty; //self.tc.resolve(rhs_ty).unwrap_or(rhs_ty);
+                    let lhs = self.tc.resolve_partial(lhs_ty).unwrap();
+                    let rhs = self.tc.resolve_partial(rhs_ty).unwrap();
                     format!("no implementation for {lhs} {} {rhs}", op.node)
                 })?;
                 let ty = self.tc.resolve_partial(lhs_ty)?;
                 match ty.kind() {
                     TyKind::Int(_) | TyKind::UInt(_) | TyKind::Float(_) => Ok(ty),
-                    TyKind::IntVar(_) | TyKind::FloatVar(_) => Ok(ty),
-                    TyKind::TyVar(_) => Err(format!("types must be known at this point")),
+                    TyKind::NumVar(_) => Ok(ty),
+                    TyKind::TyVar(_) => {
+                        let ret = self.tc.new_num_var();
+                        self.tc.unify(ty, ret)?;
+                        Ok(ret)
+                    }
                     _ => {
-                        let lhs = lhs_ty; //self.tc.resolve(lhs_ty).unwrap_or(lhs_ty);
-                        let rhs = rhs_ty; //self.tc.resolve(rhs_ty).unwrap_or(rhs_ty);
+                        let lhs = self.tc.resolve_partial(lhs_ty).unwrap();
+                        let rhs = self.tc.resolve_partial(rhs_ty).unwrap();
                         Err(format!("no implementation for {lhs} {} {rhs}", op.node))
                     }
                 }

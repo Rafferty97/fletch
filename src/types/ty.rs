@@ -28,8 +28,7 @@ pub enum TyKind<'tc> {
     Enum(FieldList<'tc>, Option<RowVar<'tc>>),
     Nullable(Ty<'tc>),
     TyVar(TyVar<'tc>),
-    IntVar(IntVar<'tc>),
-    FloatVar(FloatVar<'tc>),
+    NumVar(NumVar<'tc>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -76,56 +75,29 @@ impl Debug for TyVar<'_> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct IntVar<'cx>(u32, PhantomData<&'cx ()>);
+pub struct NumVar<'cx>(u32, PhantomData<&'cx ()>);
 
-impl<'cx> IntVar<'cx> {
+impl<'cx> NumVar<'cx> {
     pub fn new(index: u32) -> Self {
         Self(index, PhantomData)
     }
 }
 
-impl Into<u32> for IntVar<'_> {
+impl Into<u32> for NumVar<'_> {
     fn into(self) -> u32 {
         self.0
     }
 }
 
-impl Debug for IntVar<'_> {
+impl Debug for NumVar<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "IntVar({})", self.0)
+        write!(f, "NumVat({})", self.0)
     }
 }
 
-impl Display for IntVar<'_> {
+impl Display for NumVar<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{integer}}")
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
-pub struct FloatVar<'cx>(u32, PhantomData<&'cx ()>);
-
-impl<'cx> FloatVar<'cx> {
-    pub fn new(index: u32) -> Self {
-        Self(index, PhantomData)
-    }
-}
-
-impl Into<u32> for FloatVar<'_> {
-    fn into(self) -> u32 {
-        self.0
-    }
-}
-
-impl Debug for FloatVar<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "FloatVar({})", self.0)
-    }
-}
-
-impl Display for FloatVar<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{float}}")
+        write!(f, "{{number}}")
     }
 }
 
@@ -172,8 +144,7 @@ impl Display for Ty<'_> {
             TyKind::Str => write!(f, "str"),
             TyKind::Array(t) => write!(f, "[{t}]"),
             TyKind::TyVar(_) => write!(f, "?"),
-            TyKind::IntVar(_) => write!(f, "{{integer}}"),
-            TyKind::FloatVar(_) => write!(f, "{{float}}"),
+            TyKind::NumVar(_) => write!(f, "{{number}}"),
             _ => todo!(),
         }
     }
@@ -189,6 +160,7 @@ impl Display for IntTy {
         }
     }
 }
+
 impl Display for UIntTy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
@@ -199,6 +171,7 @@ impl Display for UIntTy {
         }
     }
 }
+
 impl Display for FloatTy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {

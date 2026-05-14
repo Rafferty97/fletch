@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::marker::PhantomData;
 
 use ena::unify::{InPlace, NoError, UnificationTable, UnifyKey, UnifyValue};
@@ -5,15 +6,12 @@ use hashbrown::HashMap;
 
 use crate::arena::{Ctx, Symbol};
 use crate::types::fold::TyFolder;
-use crate::types::{
-    FieldList, FloatTy, FloatVar, IntTy, IntVar, RowVar, Ty, TyKind, TyVar, UIntTy,
-};
+use crate::types::{FieldList, FloatTy, IntTy, NumVar, RowVar, Ty, TyKind, TyVar, UIntTy};
 
 pub struct TypecheckCtx<'cx> {
     ctx: Ctx<'cx>,
     ty_table: UnificationTable<InPlace<TyVar<'cx>>>,
-    int_table: UnificationTable<InPlace<IntVar<'cx>>>,
-    float_table: UnificationTable<InPlace<FloatVar<'cx>>>,
+    num_table: UnificationTable<InPlace<NumVar<'cx>>>,
     row_table: UnificationTable<InPlace<RowVar<'cx>>>,
     scopes: Vec<HashMap<Symbol, Ty<'cx>>>,
 }
@@ -23,8 +21,7 @@ impl<'cx> TypecheckCtx<'cx> {
         Self {
             ctx,
             ty_table: UnificationTable::new(),
-            int_table: UnificationTable::new(),
-            float_table: UnificationTable::new(),
+            num_table: UnificationTable::new(),
             row_table: UnificationTable::new(),
             scopes: vec![HashMap::new()],
         }
@@ -63,14 +60,19 @@ impl<'cx> TypecheckCtx<'cx> {
         Ty(self.ctx.intern_ty_kind(TyKind::TyVar(ty_var)))
     }
 
+    pub fn new_num_var(&mut self) -> Ty<'cx> {
+        let var = self.num_table.new_key(None);
+        Ty(self.ctx.intern_ty_kind(TyKind::NumVar(var)))
+    }
+
     pub fn new_int_var(&mut self) -> Ty<'cx> {
-        let int_var = self.int_table.new_key(None);
-        Ty(self.ctx.intern_ty_kind(TyKind::IntVar(int_var)))
+        let var = self.num_table.new_key(Some(NumType::AnyInt));
+        Ty(self.ctx.intern_ty_kind(TyKind::NumVar(var)))
     }
 
     pub fn new_float_var(&mut self) -> Ty<'cx> {
-        let float_var = self.float_table.new_key(None);
-        Ty(self.ctx.intern_ty_kind(TyKind::FloatVar(float_var)))
+        let var = self.num_table.new_key(Some(NumType::AnyFloat));
+        Ty(self.ctx.intern_ty_kind(TyKind::NumVar(var)))
     }
 
     pub fn new_row_var(&mut self) -> RowVar<'cx> {
@@ -99,16 +101,15 @@ impl<'cx> TypecheckCtx<'cx> {
                 Some(to) => self.coerce(from, to),
                 None => self.union_value(*to, from),
             },
-            (TyKind::IntVar(a), TyKind::IntVar(b)) => self.int_table.unify_var_var(*a, *b),
-            (TyKind::IntVar(k), TyKind::Int(t)) | (TyKind::Int(t), TyKind::IntVar(k)) => {
-                self.int_table.unify_var_value(*k, Some(IntValue::Int(*t)))
+            (TyKind::NumVar(a), TyKind::NumVar(b)) => self.num_table.unify_var_var(*a, *b),
+            (TyKind::NumVar(k), TyKind::Int(t)) | (TyKind::Int(t), TyKind::NumVar(k)) => {
+                self.num_table.unify_var_value(*k, Some(NumType::Int(*t)))
             }
-            (TyKind::IntVar(k), TyKind::UInt(t)) | (TyKind::UInt(t), TyKind::IntVar(k)) => {
-                self.int_table.unify_var_value(*k, Some(IntValue::UInt(*t)))
+            (TyKind::NumVar(k), TyKind::UInt(t)) | (TyKind::UInt(t), TyKind::NumVar(k)) => {
+                self.num_table.unify_var_value(*k, Some(NumType::UInt(*t)))
             }
-            (TyKind::FloatVar(a), TyKind::FloatVar(b)) => self.float_table.unify_var_var(*a, *b),
-            (TyKind::FloatVar(k), TyKind::Float(t)) | (TyKind::Float(t), TyKind::FloatVar(k)) => {
-                self.float_table.unify_var_value(*k, Some(*t))
+            (TyKind::NumVar(k), TyKind::Float(t)) | (TyKind::Float(t), TyKind::NumVar(k)) => {
+                self.num_table.unify_var_value(*k, Some(NumType::Float(*t)))
             }
             (TyKind::Array(a), TyKind::Array(b)) => self.coerce(*a, *b),
             (TyKind::Tuple(a), TyKind::Tuple(b)) => {
@@ -248,16 +249,15 @@ impl<'cx> TypecheckCtx<'cx> {
                 Some(b_ty) => self.unify(a, b_ty),
                 None => self.union_value(*b, a),
             },
-            (TyKind::IntVar(a), TyKind::IntVar(b)) => self.int_table.unify_var_var(*a, *b),
-            (TyKind::IntVar(k), TyKind::Int(t)) | (TyKind::Int(t), TyKind::IntVar(k)) => {
-                self.int_table.unify_var_value(*k, Some(IntValue::Int(*t)))
+            (TyKind::NumVar(a), TyKind::NumVar(b)) => self.num_table.unify_var_var(*a, *b),
+            (TyKind::NumVar(k), TyKind::Int(t)) | (TyKind::Int(t), TyKind::NumVar(k)) => {
+                self.num_table.unify_var_value(*k, Some(NumType::Int(*t)))
             }
-            (TyKind::IntVar(k), TyKind::UInt(t)) | (TyKind::UInt(t), TyKind::IntVar(k)) => {
-                self.int_table.unify_var_value(*k, Some(IntValue::UInt(*t)))
+            (TyKind::NumVar(k), TyKind::UInt(t)) | (TyKind::UInt(t), TyKind::NumVar(k)) => {
+                self.num_table.unify_var_value(*k, Some(NumType::UInt(*t)))
             }
-            (TyKind::FloatVar(a), TyKind::FloatVar(b)) => self.float_table.unify_var_var(*a, *b),
-            (TyKind::FloatVar(k), TyKind::Float(t)) | (TyKind::Float(t), TyKind::FloatVar(k)) => {
-                self.float_table.unify_var_value(*k, Some(*t))
+            (TyKind::NumVar(k), TyKind::Float(t)) | (TyKind::Float(t), TyKind::NumVar(k)) => {
+                self.num_table.unify_var_value(*k, Some(NumType::Float(*t)))
             }
             (TyKind::Array(a), TyKind::Array(b)) => self.unify(*a, *b),
             (TyKind::Tuple(a), TyKind::Tuple(b)) => {
@@ -446,16 +446,15 @@ impl<'cx> TypecheckCtx<'cx> {
                         Some(ty) => self.fold_ty(ty),
                         None => Ok(ty),
                     },
-                    TyKind::IntVar(var) => match self.0.int_table.probe_value(*var) {
-                        Some(IntValue::Int(t)) => Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Int(t)))),
-                        Some(IntValue::UInt(t)) => {
+                    TyKind::NumVar(var) => match self.0.num_table.probe_value(*var) {
+                        Some(NumType::Int(t)) => Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Int(t)))),
+                        Some(NumType::UInt(t)) => {
                             Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::UInt(t))))
                         }
-                        None => Ok(ty),
-                    },
-                    TyKind::FloatVar(var) => match self.0.float_table.probe_value(*var) {
-                        Some(t) => Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Float(t)))),
-                        None => Ok(ty),
+                        Some(NumType::Float(t)) => {
+                            Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Float(t))))
+                        }
+                        _ => Ok(ty),
                     },
                     _ => self.super_fold_ty(ty),
                 }
@@ -491,16 +490,21 @@ impl<'cx> TypecheckCtx<'cx> {
                         Some(ty) => self.fold_ty(ty),
                         _ => Err(format!("unresolved type")),
                     },
-                    TyKind::IntVar(var) => match self.0.int_table.probe_value(*var) {
-                        Some(IntValue::Int(t)) => Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Int(t)))),
-                        Some(IntValue::UInt(t)) => {
+                    TyKind::NumVar(var) => match self.0.num_table.probe_value(*var) {
+                        Some(NumType::Int(t)) => Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Int(t)))),
+                        Some(NumType::UInt(t)) => {
                             Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::UInt(t))))
                         }
+                        Some(NumType::Float(t)) => {
+                            Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Float(t))))
+                        }
+                        Some(NumType::AnyInt) => {
+                            Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Int(IntTy::Int32))))
+                        }
+                        Some(NumType::AnyFloat) => {
+                            Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Float(FloatTy::Float64))))
+                        }
                         None => Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)))),
-                    },
-                    TyKind::FloatVar(var) => match self.0.float_table.probe_value(*var) {
-                        Some(t) => Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Float(t)))),
-                        None => Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Float(FloatTy::Float64)))),
                     },
                     _ => self.super_fold_ty(ty),
                 }
@@ -563,7 +567,7 @@ impl<'cx> TypecheckCtx<'cx> {
                 Some(bound) => self.occurs(var, bound),
                 None => self.ty_table.find(*other) == self.ty_table.find(var),
             },
-            TyKind::IntVar(_) | TyKind::FloatVar(_) => false,
+            TyKind::NumVar(_) => false,
         }
     }
 
@@ -604,13 +608,28 @@ impl<'cx> UnifyValue for Ty<'cx> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum IntValue {
+pub enum NumType {
     Int(IntTy),
     UInt(UIntTy),
+    Float(FloatTy),
+    AnyInt,
+    AnyFloat,
 }
 
-impl<'cx> UnifyKey for IntVar<'cx> {
-    type Value = Option<IntValue>;
+impl Display for NumType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Int(t) => write!(f, "{t}"),
+            Self::UInt(t) => write!(f, "{t}"),
+            Self::Float(t) => write!(f, "{t}"),
+            Self::AnyInt => write!(f, "{{integer}}"),
+            Self::AnyFloat => write!(f, "{{float}}"),
+        }
+    }
+}
+
+impl<'cx> UnifyKey for NumVar<'cx> {
+    type Value = Option<NumType>;
 
     fn index(&self) -> u32 {
         (*self).into()
@@ -621,39 +640,24 @@ impl<'cx> UnifyKey for IntVar<'cx> {
     }
 
     fn tag() -> &'static str {
-        "IntVar"
+        "NumVar"
     }
 }
 
-impl UnifyValue for IntValue {
+impl UnifyValue for NumType {
     type Error = String;
 
     fn unify_values(a: &Self, b: &Self) -> Result<Self, Self::Error> {
-        (a == b).then_some(*a).ok_or_else(|| "mismatched int types".into())
-    }
-}
-
-impl<'cx> UnifyKey for FloatVar<'cx> {
-    type Value = Option<FloatTy>;
-
-    fn index(&self) -> u32 {
-        (*self).into()
-    }
-
-    fn from_index(u: u32) -> Self {
-        Self::new(u)
-    }
-
-    fn tag() -> &'static str {
-        "FloatVar"
-    }
-}
-
-impl UnifyValue for FloatTy {
-    type Error = String;
-
-    fn unify_values(a: &Self, b: &Self) -> Result<Self, Self::Error> {
-        (a == b).then_some(*a).ok_or_else(|| "mismatched float types".into())
+        match (*a, *b) {
+            (a, b) if a == b => Ok(a),
+            (Self::AnyInt, t @ Self::Int(_)) => Ok(t),
+            (Self::AnyInt, t @ Self::UInt(_)) => Ok(t),
+            (Self::AnyFloat, t @ Self::Float(_)) => Ok(t),
+            (t @ Self::Int(_), Self::AnyInt) => Ok(t),
+            (t @ Self::UInt(_), Self::AnyInt) => Ok(t),
+            (t @ Self::Float(_), Self::AnyFloat) => Ok(t),
+            _ => Err(format!("mismatched types: {} and {}", a, b)),
+        }
     }
 }
 

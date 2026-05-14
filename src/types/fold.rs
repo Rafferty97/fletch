@@ -56,7 +56,7 @@ pub trait TyFolder<'cx> {
                     false => Ty(self.ctx().intern_ty_kind(TyKind::Nullable(folded))),
                 }
             }
-            TyKind::TyVar(_) | TyKind::IntVar(_) | TyKind::FloatVar(_) => ty,
+            TyKind::TyVar(_) | TyKind::NumVar(_) => ty,
         })
     }
 
