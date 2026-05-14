@@ -35,9 +35,10 @@ impl<'cx> TypecheckCtx<'cx> {
     }
 
     pub fn get_variable(&self, name: Symbol) -> Result<Ty<'cx>, String> {
-        self.curr_scope()
-            .get(&name)
-            .copied()
+        self.scopes
+            .iter()
+            .rev()
+            .find_map(|scope| scope.get(&name).copied())
             .ok_or_else(|| format!("unknown identifier: {}", self.ctx.get_str(name)))
     }
 

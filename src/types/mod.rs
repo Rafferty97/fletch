@@ -27,16 +27,14 @@ impl<'cx> FunctionCtx<'cx> {
     }
 
     fn check_expr(&mut self, expr: &Expr) -> Result<Ty<'cx>, String> {
-        match &expr.kind {
+        let ty = match &expr.kind {
             ExprKind::Lit(lit) => self.check_lit(*lit),
             ExprKind::Var(ident) => self.check_var(*ident),
             ExprKind::Binary(op, lhs, rhs) => self.check_binop(op, lhs, rhs),
-            ExprKind::Paren(inner) => {
-                let ty = self.check_expr(inner)?;
-                self.ctx.set_node_ty(expr.id, ty);
-                Ok(ty)
-            }
-        }
+            ExprKind::Paren(inner) => self.check_expr(inner),
+        }?;
+        self.ctx.set_node_ty(expr.id, ty);
+        Ok(ty)
     }
 
     fn check_lit(&mut self, lit: Lit) -> Result<Ty<'cx>, String> {

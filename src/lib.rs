@@ -36,5 +36,5 @@ pub fn run(src: &str, mut out: impl Write) {
         }
     };
 
-    write!(out, "{} :: {:?}", print_expr(ctx, &expr), ty).unwrap();
+    write!(out, "{} :: {}", print_expr(ctx, &expr), ty).unwrap();
 }
