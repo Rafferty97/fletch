@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use ena::unify::{InPlace, NoError, UnificationTable, UnifyKey, UnifyValue};
 use hashbrown::HashMap;
 
-use crate::arena::Ctx;
+use crate::arena::{Ctx, Symbol};
 use crate::types::fold::TyFolder;
 use crate::types::{
     FieldList, FloatTy, FloatVar, IntTy, IntVar, RowVar, Ty, TyKind, TyVar, UIntTy,
@@ -15,6 +15,7 @@ pub struct TypecheckCtx<'cx> {
     int_table: UnificationTable<InPlace<IntVar<'cx>>>,
     float_table: UnificationTable<InPlace<FloatVar<'cx>>>,
     row_table: UnificationTable<InPlace<RowVar<'cx>>>,
+    scopes: Vec<HashMap<Symbol, Ty<'cx>>>,
 }
 
 impl<'cx> TypecheckCtx<'cx> {
@@ -25,7 +26,35 @@ impl<'cx> TypecheckCtx<'cx> {
             int_table: UnificationTable::new(),
             float_table: UnificationTable::new(),
             row_table: UnificationTable::new(),
+            scopes: vec![HashMap::new()],
         }
+    }
+
+    pub fn bind_variable(&mut self, name: Symbol, ty: Ty<'cx>) {
+        self.curr_scope_mut().insert(name, ty);
+    }
+
+    pub fn get_variable(&self, name: Symbol) -> Result<Ty<'cx>, String> {
+        self.curr_scope()
+            .get(&name)
+            .copied()
+            .ok_or_else(|| format!("unknown identifier: {}", self.ctx.get_str(name)))
+    }
+
+    pub fn push_scope(&mut self) {
+        self.scopes.push(HashMap::new());
+    }
+
+    pub fn pop_scope(&mut self) {
+        self.scopes.pop();
+    }
+
+    fn curr_scope(&self) -> &HashMap<Symbol, Ty<'cx>> {
+        self.scopes.last().unwrap()
+    }
+
+    fn curr_scope_mut(&mut self) -> &mut HashMap<Symbol, Ty<'cx>> {
+        self.scopes.last_mut().unwrap()
     }
 
     pub fn new_ty_var(&mut self) -> Ty<'cx> {
