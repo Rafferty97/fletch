@@ -1225,4 +1225,28 @@ mod test {
         assert!(tc.coerce(ty1, ty2).is_err());
         assert!(tc.coerce(ty2, ty1).is_err());
     }
+
+    #[test]
+    fn coerce_generic_return_into_nullable_array() {
+        setup!(arena, ctx, tc);
+
+        // Simulate the return type of empty<T>() -> T[]
+        // T is a fresh type variable, return type is T[]
+        let t = tc.new_ty_var();
+        let return_ty = Ty(ctx.intern_ty_kind(TyKind::Array(t)));
+
+        // Expected type from annotation: (i32[])?
+        let i32_ty = Ty(ctx.intern_ty_kind(TyKind::Int(IntTy::Int32)));
+        let i32_array = Ty(ctx.intern_ty_kind(TyKind::Array(i32_ty)));
+        let expected = Ty(ctx.intern_ty_kind(TyKind::Nullable(i32_array)));
+
+        // Coerce return type against expected type
+        assert!(tc.coerce(return_ty, expected).is_ok());
+
+        // T should have been resolved to i32
+        assert_eq!(tc.resolve(t).unwrap(), i32_ty);
+
+        // The return type should resolve to i32[]
+        assert_eq!(tc.resolve(return_ty).unwrap(), i32_array);
+    }
 }

@@ -1,0 +1,4 @@
+let x = 5          // unannotated — infer, bind x to IntVar
+let x: i32 = 5     // annotated — coerce RHS against annotation, bind x to i32
+let x = 3 + 4.0    // error — type mismatch in RHS
+x + 1              // variable reference — look up x, unify with IntVar
