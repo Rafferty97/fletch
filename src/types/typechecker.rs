@@ -419,6 +419,51 @@ impl<'cx> TypecheckCtx<'cx> {
         Ok(self.ty_table.union_value(var, Some(ty)))
     }
 
+    pub fn resolve_partial(&mut self, ty: Ty<'cx>) -> Result<Ty<'cx>, String> {
+        struct Resolver<'a, 'cx>(&'a mut TypecheckCtx<'cx>);
+
+        impl<'a, 'cx> TyFolder<'cx> for Resolver<'a, 'cx> {
+            type Error = String;
+
+            fn ctx(&self) -> Ctx<'cx> {
+                self.0.ctx
+            }
+
+            fn fold_ty(&mut self, ty: Ty<'cx>) -> Result<Ty<'cx>, Self::Error> {
+                match ty.kind() {
+                    &TyKind::Struct(fields, Some(tail)) => {
+                        let fields = self.0.resolve_row(RowValue { fields, tail: Some(tail) })?;
+                        let ty = Ty(self.0.ctx.intern_ty_kind(TyKind::Struct(fields, None)));
+                        self.super_fold_ty(ty)
+                    }
+                    &TyKind::Enum(fields, Some(tail)) => {
+                        let fields = self.0.resolve_row(RowValue { fields, tail: Some(tail) })?;
+                        let ty = Ty(self.0.ctx.intern_ty_kind(TyKind::Enum(fields, None)));
+                        self.super_fold_ty(ty)
+                    }
+                    TyKind::TyVar(var) => match self.0.ty_table.probe_value(*var) {
+                        Some(ty) => self.fold_ty(ty),
+                        None => Ok(ty),
+                    },
+                    TyKind::IntVar(var) => match self.0.int_table.probe_value(*var) {
+                        Some(IntValue::Int(t)) => Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Int(t)))),
+                        Some(IntValue::UInt(t)) => {
+                            Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::UInt(t))))
+                        }
+                        None => Ok(ty),
+                    },
+                    TyKind::FloatVar(var) => match self.0.float_table.probe_value(*var) {
+                        Some(t) => Ok(Ty(self.0.ctx.intern_ty_kind(TyKind::Float(t)))),
+                        None => Ok(ty),
+                    },
+                    _ => self.super_fold_ty(ty),
+                }
+            }
+        }
+
+        Resolver(self).fold_ty(ty)
+    }
+
     pub fn resolve(&mut self, ty: Ty<'cx>) -> Result<Ty<'cx>, String> {
         struct Resolver<'a, 'cx>(&'a mut TypecheckCtx<'cx>);
 

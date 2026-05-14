@@ -1,4 +1,8 @@
-use std::{fmt::Debug, marker::PhantomData, ops::Deref};
+use std::{
+    fmt::{Debug, Display},
+    marker::PhantomData,
+    ops::Deref,
+};
 
 use crate::arena::{Interned, Symbol};
 
@@ -92,6 +96,12 @@ impl Debug for IntVar<'_> {
     }
 }
 
+impl Display for IntVar<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{integer}}")
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct FloatVar<'cx>(u32, PhantomData<&'cx ()>);
 
@@ -110,6 +120,12 @@ impl Into<u32> for FloatVar<'_> {
 impl Debug for FloatVar<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "FloatVar({})", self.0)
+    }
+}
+
+impl Display for FloatVar<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{float}}")
     }
 }
 
@@ -143,6 +159,52 @@ impl<'cx> Ty<'cx> {
 impl<'cx> Debug for Ty<'cx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}", self.kind())
+    }
+}
+
+impl Display for Ty<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.kind() {
+            TyKind::Bool => write!(f, "bool"),
+            TyKind::Int(t) => write!(f, "{t}"),
+            TyKind::UInt(t) => write!(f, "{t}"),
+            TyKind::Float(t) => write!(f, "{t}"),
+            TyKind::Str => write!(f, "str"),
+            TyKind::Array(t) => write!(f, "[{t}]"),
+            TyKind::TyVar(_) => write!(f, "?"),
+            TyKind::IntVar(_) => write!(f, "{{integer}}"),
+            TyKind::FloatVar(_) => write!(f, "{{float}}"),
+            _ => todo!(),
+        }
+    }
+}
+
+impl Display for IntTy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::Int8 => write!(f, "i8"),
+            Self::Int16 => write!(f, "i16"),
+            Self::Int32 => write!(f, "i32"),
+            Self::Int64 => write!(f, "i64"),
+        }
+    }
+}
+impl Display for UIntTy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::UInt8 => write!(f, "u8"),
+            Self::UInt16 => write!(f, "u16"),
+            Self::UInt32 => write!(f, "u32"),
+            Self::UInt64 => write!(f, "u64"),
+        }
+    }
+}
+impl Display for FloatTy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::Float32 => write!(f, "f32"),
+            Self::Float64 => write!(f, "f64"),
+        }
     }
 }
 

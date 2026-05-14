@@ -1,9 +1,11 @@
 use std::sync::{Mutex, RwLock};
 
 use bumpalo::Bump;
+use hashbrown::HashMap;
 pub use interned::*;
 pub use symbol::*;
 
+use crate::ast::NodeId;
 use crate::diagnostics::{DiagCtx, DiagnosticHandler};
 use crate::types::{Ty, TyKind};
 
@@ -22,6 +24,7 @@ pub struct CtxInner<'cx> {
     ty_interner: Mutex<Interner<'cx, TyKind<'cx>>>,
     ty_list_interner: Mutex<Interner<'cx, [Ty<'cx>]>>,
     field_list_interner: Mutex<Interner<'cx, [(Symbol, Ty<'cx>)]>>,
+    node_tys: Mutex<HashMap<NodeId, Ty<'cx>>>,
 }
 
 impl<'cx> Ctx<'cx> {
@@ -33,6 +36,7 @@ impl<'cx> Ctx<'cx> {
             ty_interner: Mutex::new(Interner::new()),
             ty_list_interner: Mutex::new(Interner::new()),
             field_list_interner: Mutex::new(Interner::new()),
+            node_tys: Mutex::new(HashMap::new()),
         });
         Self { inner }
     }
@@ -65,5 +69,9 @@ impl<'cx> Ctx<'cx> {
 
     pub fn get_str(&self, symbol: Symbol) -> &'cx str {
         self.inner.symbol_interner.read().unwrap().get_str(symbol)
+    }
+
+    pub fn set_node_ty(&self, node_id: NodeId, ty: Ty<'cx>) {
+        self.inner.node_tys.lock().unwrap().insert(node_id, ty);
     }
 }

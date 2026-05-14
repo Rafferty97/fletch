@@ -49,7 +49,8 @@ impl<'cx, 'src> Parser<'cx, 'src> {
                 let span = Span::new(start, self.previous.span.end());
                 Expr { id: self.next_id(), kind: ExprKind::Paren(expr.into()), span }
             }
-            _ => todo!("{:?}", self.previous.kind),
+            // _ => todo!("{:?}", self.previous.kind),
+            _ => Err(self.error_at_previous("unexpected token"))?,
         };
 
         loop {
@@ -82,6 +83,10 @@ impl<'cx, 'src> Parser<'cx, 'src> {
         let span = Span::cover(lhs.span, rhs.span);
         let kind = ExprKind::Binary(op, lhs.into(), rhs.into());
         Ok(Expr { id: self.next_id(), kind, span })
+    }
+
+    fn raw(&self, token: Token) -> &str {
+        self.lexer.get_raw(token.span)
     }
 
     fn ident(&mut self, token: Token) -> Ident {
@@ -143,6 +148,10 @@ impl<'cx, 'src> Parser<'cx, 'src> {
 
     fn error_at_current(&self, msg: impl Into<String>) -> Diagnostic {
         Diagnostic::error(msg, self.current.span)
+    }
+
+    fn error_at_previous(&self, msg: impl Into<String>) -> Diagnostic {
+        Diagnostic::error(msg, self.previous.span)
     }
 }
 

@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::arena::Symbol;
 use crate::lexer::LitKind;
 use crate::span::{Span, Spanned};
@@ -42,4 +44,15 @@ pub enum BinOpKind {
     Sub,
     Mul,
     Div,
+}
+
+impl Display for BinOpKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::Add => write!(f, "+"),
+            Self::Sub => write!(f, "-"),
+            Self::Mul => write!(f, "*"),
+            Self::Div => write!(f, "/"),
+        }
+    }
 }
