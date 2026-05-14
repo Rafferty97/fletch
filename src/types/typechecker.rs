@@ -537,11 +537,11 @@ impl<'cx> UnifyKey for TyVar<'cx> {
     type Value = Option<Ty<'cx>>;
 
     fn index(&self) -> u32 {
-        self.0
+        (*self).into()
     }
 
     fn from_index(u: u32) -> Self {
-        Self(u, PhantomData)
+        Self::new(u)
     }
 
     fn tag() -> &'static str {
@@ -567,11 +567,11 @@ impl<'cx> UnifyKey for IntVar<'cx> {
     type Value = Option<IntValue>;
 
     fn index(&self) -> u32 {
-        self.0
+        (*self).into()
     }
 
     fn from_index(u: u32) -> Self {
-        Self(u, PhantomData)
+        Self::new(u)
     }
 
     fn tag() -> &'static str {
@@ -591,11 +591,11 @@ impl<'cx> UnifyKey for FloatVar<'cx> {
     type Value = Option<FloatTy>;
 
     fn index(&self) -> u32 {
-        self.0
+        (*self).into()
     }
 
     fn from_index(u: u32) -> Self {
-        Self(u, PhantomData)
+        Self::new(u)
     }
 
     fn tag() -> &'static str {
@@ -615,11 +615,11 @@ impl<'cx> UnifyKey for RowVar<'cx> {
     type Value = Option<RowValue<'cx>>;
 
     fn index(&self) -> u32 {
-        self.0
+        (*self).into()
     }
 
     fn from_index(u: u32) -> Self {
-        Self(u, PhantomData)
+        Self::new(u)
     }
 
     fn tag() -> &'static str {
