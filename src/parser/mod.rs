@@ -1,6 +1,7 @@
 use crate::arena::Ctx;
 use crate::ast::{
-    BinOpKind, Expr, ExprKind, Ident, LetStmt, Lit, NodeId, Stmt, StmtKind, Ty, TyKind,
+    BinOpKind, Block, Expr, ExprKind, Func, Ident, Item, ItemKind, LetStmt, Lit, NodeId, Stmt,
+    StmtKind, Ty, TyKind,
 };
 use crate::diagnostics::Diagnostic;
 use crate::lexer::{Lexer, Token, TokenKind};
@@ -26,6 +27,12 @@ impl<'cx, 'src> Parser<'cx, 'src> {
         parser
     }
 
+    pub fn parse_toplevel_item(&mut self) -> Result<Item> {
+        let result = self.parse_item()?;
+        self.consume(TokenKind::Eof, "unexpected token")?;
+        Ok(result)
+    }
+
     pub fn parse_toplevel_stmt(&mut self) -> Result<Stmt> {
         let result = self.parse_stmt()?;
         self.consume(TokenKind::Eof, "unexpected token")?;
@@ -40,6 +47,84 @@ impl<'cx, 'src> Parser<'cx, 'src> {
 
     pub fn is_eof(&self) -> bool {
         self.current.kind == TokenKind::Eof
+    }
+
+    fn parse_item(&mut self) -> Result<Item> {
+        let id = self.next_id();
+
+        let kind = match self.current.kind {
+            TokenKind::Func => {
+                self.advance();
+                ItemKind::Func(self.parse_func()?)
+            }
+            _ => ItemKind::Stmt(self.parse_stmt()?), // FIXME: temp
+        };
+        // _ => Err(self.error_at_current("unexpected token"))?,
+
+        Ok(Item { id, kind })
+    }
+
+    fn parse_func(&mut self) -> Result<Func> {
+        // Function name
+        self.consume(TokenKind::Ident, "expected function name")?;
+        let name = self.ident(self.previous);
+
+        // Parameter list
+        self.consume(TokenKind::LeftParen, "expected '('")?;
+        let mut params = vec![];
+        while !self.matches(TokenKind::RightParen) {
+            self.consume(TokenKind::Ident, "expected parameter name")?;
+            let name = self.ident(self.previous);
+
+            self.consume(TokenKind::Colon, "expected ':'")?;
+            let ty = self.parse_ty()?;
+
+            params.push((name, ty));
+
+            self.advance();
+            match self.previous.kind {
+                TokenKind::Comma => continue,
+                TokenKind::RightParen => break,
+                _ => Err(self.error_at_previous("expected ',' or ')'"))?,
+            }
+        }
+
+        // Return type
+        let ret = self.parse_ty()?;
+
+        // Function body
+        let body = self.parse_body()?;
+
+        Ok(Func { name, params, ret, body })
+    }
+
+    fn parse_body(&mut self) -> Result<Block> {
+        self.consume(TokenKind::LeftBracket, "expected '{'")?;
+
+        let mut stmts = vec![];
+
+        let tail = loop {
+            if self.matches(TokenKind::RightBracket) {
+                break None;
+            }
+
+            let stmt = self.parse_stmt()?;
+
+            self.advance();
+            match self.previous.kind {
+                TokenKind::Semi => stmts.push(stmt),
+                TokenKind::RightBracket => break Some(stmt),
+                _ => Err(self.error_at_previous("expected ';' or '}'"))?,
+            }
+        };
+
+        let tail = match tail {
+            Some(Stmt { kind: StmtKind::Expr(expr), .. }) => Some(*expr),
+            Some(_) => Err(self.error_at_previous("tail statement must be an expression"))?,
+            None => None,
+        };
+
+        Ok(Block { stmts, tail })
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt> {

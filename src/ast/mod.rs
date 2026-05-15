@@ -10,6 +10,32 @@ pub mod print;
 pub struct NodeId(pub u32);
 
 #[derive(Clone, Debug)]
+pub struct Item {
+    pub id: NodeId,
+    pub kind: ItemKind,
+}
+
+#[derive(Clone, Debug)]
+pub enum ItemKind {
+    Func(Func),
+    Stmt(Stmt), // temp
+}
+
+#[derive(Clone, Debug)]
+pub struct Func {
+    pub name: Ident,
+    pub params: Vec<(Ident, Ty)>,
+    pub ret: Ty,
+    pub body: Block,
+}
+
+#[derive(Clone, Debug)]
+pub struct Block {
+    pub stmts: Vec<Stmt>,
+    pub tail: Option<Expr>,
+}
+
+#[derive(Clone, Debug)]
 pub struct Stmt {
     pub id: NodeId,
     pub kind: StmtKind,

@@ -15,6 +15,8 @@ pub enum TokenKind {
     Lit(LitKind),
     LeftParen,
     RightParen,
+    LeftBracket,
+    RightBracket,
     Plus,
     Minus,
     Star,
@@ -22,7 +24,10 @@ pub enum TokenKind {
     Equals,
     Colon,
     QuestionMark,
+    Semi,
+    Comma,
     Let,
+    Func,
     Unknown,
     #[default]
     Eof,
@@ -64,6 +69,7 @@ impl<'src> Lexer<'src> {
                     "false" => TokenKind::Lit(LitKind::Bool),
                     "true" => TokenKind::Lit(LitKind::Bool),
                     "let" => TokenKind::Let,
+                    "fn" => TokenKind::Func,
                     _ => TokenKind::Ident,
                 }
             }
@@ -89,6 +95,8 @@ impl<'src> Lexer<'src> {
             },
             '(' => TokenKind::LeftParen,
             ')' => TokenKind::RightParen,
+            '{' => TokenKind::LeftBracket,
+            '}' => TokenKind::RightBracket,
             '+' => TokenKind::Plus,
             '-' => TokenKind::Minus,
             '*' => TokenKind::Star,
@@ -96,6 +104,8 @@ impl<'src> Lexer<'src> {
             '=' => TokenKind::Equals,
             ':' => TokenKind::Colon,
             '?' => TokenKind::QuestionMark,
+            ';' => TokenKind::Semi,
+            ',' => TokenKind::Comma,
             _ => TokenKind::Unknown,
         };
 

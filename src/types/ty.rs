@@ -24,6 +24,7 @@ pub enum TyKind<'tc> {
     Tuple(TyList<'tc>),
     Struct(FieldList<'tc>, Option<RowVar<'tc>>),
     Enum(FieldList<'tc>, Option<RowVar<'tc>>),
+    Func(FieldList<'tc>, Ty<'tc>),
     Nullable(Ty<'tc>),
     TyVar(TyVar<'tc>),
     NumVar(NumVar<'tc>),
@@ -143,6 +144,20 @@ impl Display for Ty<'_> {
             TyKind::Array(t) => write!(f, "[{t}]"),
             TyKind::TyVar(_) => write!(f, "?"),
             TyKind::NumVar(_) => write!(f, "{{number}}"),
+            TyKind::Func(params, ret) => {
+                write!(f, "fn(")?;
+                match &**params {
+                    [] => {}
+                    [(_, ty)] => write!(f, "{ty}")?,
+                    [(_, ty), rest @ ..] => {
+                        write!(f, "{ty}")?;
+                        for (name, ty) in rest {
+                            write!(f, ", {ty}")?;
+                        }
+                    }
+                }
+                write!(f, ") -> {ret}")
+            }
             TyKind::Nullable(t) => write!(f, "{t}?"),
             _ => todo!(),
         }

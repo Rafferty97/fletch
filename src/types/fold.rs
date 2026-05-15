@@ -49,6 +49,14 @@ pub trait TyFolder<'cx> {
                     false => Ty(self.ctx().intern_ty_kind(TyKind::Enum(folded, *tail))),
                 }
             }
+            TyKind::Func(params, ret) => {
+                let f_params = self.fold_fields(*params)?;
+                let f_ret = self.fold_ty(*ret)?;
+                match f_params == *params && f_ret == *ret {
+                    true => ty,
+                    false => Ty(self.ctx().intern_ty_kind(TyKind::Func(f_params, f_ret))),
+                }
+            }
             TyKind::Nullable(inner) => {
                 let folded = self.fold_ty(*inner)?;
                 match folded == *inner {

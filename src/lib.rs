@@ -3,7 +3,9 @@
 use std::io::Write;
 
 use bumpalo::Bump;
+use colored::Colorize;
 
+use crate::ast::ItemKind;
 use crate::ast::{Stmt, StmtKind, print::print_expr};
 use crate::types::{FunctionCtx, check_expr};
 
@@ -71,30 +73,55 @@ pub fn run_repl(mut io: impl ReplIo) {
             continue;
         }
 
-        let stmt = loop {
+        let item = loop {
             let mut parser = parser::Parser::new(ctx, &line);
-            match parser.parse_toplevel_stmt() {
-                Ok(stmt) => break stmt,
+            match parser.parse_toplevel_item() {
+                Ok(item) => break item,
                 Err(_) if parser.is_eof() => io.read_line(true, &mut line),
                 Err(err) => {
-                    write!(io.write(), "Parse error: {}\n", err.message).unwrap();
+                    let span = err.labels.get(0).map(|l| l.span);
+                    if let Some(span) = span {
+                        write!(io.write(), "Parse error: {} at {span:?}\n", err.message).unwrap();
+                        write!(io.write(), "{}", &line[..span.start().into()].bright_black())
+                            .unwrap();
+                        write!(
+                            io.write(),
+                            "{}",
+                            &line[span.start().into()..span.end().into()].bright_red()
+                        )
+                        .unwrap();
+                        write!(io.write(), "{}", &line[span.end().into()..].bright_black())
+                            .unwrap();
+                    } else {
+                        write!(io.write(), "Parse error: {}\n", err.message).unwrap();
+                    }
                     continue 'outer;
                 }
             }
         };
 
-        match stmt.kind {
-            StmtKind::Let(r#let) => {
-                match func_ctx.check_let(&r#let).and_then(|ty| func_ctx.resolve_partial(ty)) {
+        match item.kind {
+            ItemKind::Func(func) => {
+                match func_ctx.check_func(&func).and_then(|ty| func_ctx.resolve(ty)) {
                     Ok(ty) => {
-                        let name = r#let.name.sym;
+                        let name = func.name.sym;
                         func_ctx.tc.bind_variable(name, ty);
-                        write!(io.write(), "{} :: {}\n", ctx.get_str(r#let.name.sym), ty).unwrap();
+                        write!(io.write(), "{} :: {}\n", ctx.get_str(name), ty).unwrap()
                     }
                     Err(err) => write!(io.write(), "Type error: {err}\n").unwrap(),
                 };
             }
-            StmtKind::Expr(expr) => {
+            ItemKind::Stmt(Stmt { kind: StmtKind::Let(r#let), .. }) => {
+                match func_ctx.check_let(&r#let).and_then(|ty| func_ctx.resolve_partial(ty)) {
+                    Ok(ty) => {
+                        let name = r#let.name.sym;
+                        func_ctx.tc.bind_variable(name, ty);
+                        write!(io.write(), "{} :: {}\n", ctx.get_str(name), ty).unwrap();
+                    }
+                    Err(err) => write!(io.write(), "Type error: {err}\n").unwrap(),
+                };
+            }
+            ItemKind::Stmt(Stmt { kind: StmtKind::Expr(expr), .. }) => {
                 match func_ctx.check_expr(&expr).and_then(|ty| func_ctx.resolve_partial(ty)) {
                     Ok(ty) => write!(io.write(), "{} :: {}\n", print_expr(ctx, &expr), ty).unwrap(),
                     Err(err) => write!(io.write(), "Type error: {err}\n").unwrap(),

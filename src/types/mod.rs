@@ -1,7 +1,7 @@
 pub use ty::*;
 
 use crate::arena::Ctx;
-use crate::ast::{self, BinOp, BinOpKind, Expr, ExprKind, Ident, LetStmt, Lit};
+use crate::ast::{self, BinOp, BinOpKind, Expr, ExprKind, Func, Ident, LetStmt, Lit};
 use crate::lexer::LitKind;
 use crate::types::typechecker::TypecheckCtx;
 
@@ -32,6 +32,23 @@ impl<'cx> FunctionCtx<'cx> {
 
     pub fn resolve_partial(&mut self, ty: Ty<'cx>) -> Result<Ty<'cx>, String> {
         self.tc.resolve_partial(ty)
+    }
+
+    pub fn check_func(&mut self, func: &Func) -> Result<Ty<'cx>, String> {
+        self.tc.push_scope(); // FIXME: functions actually need entire own function ctx
+
+        let params = func
+            .params
+            .iter()
+            .map(|(name, ty)| Ok((name.sym, self.check_ty(ty)?)))
+            .collect::<Result<Vec<_>, String>>()?;
+        let params = FieldList(self.ctx.intern_fields(&params));
+
+        let ret = self.check_ty(&func.ret)?;
+
+        self.tc.pop_scope();
+
+        Ok(Ty(self.ctx.intern_ty_kind(TyKind::Func(params, ret))))
     }
 
     pub fn check_let(&mut self, stmt: &LetStmt) -> Result<Ty<'cx>, String> {

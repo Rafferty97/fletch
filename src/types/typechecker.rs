@@ -146,6 +146,11 @@ impl<'cx> TypecheckCtx<'cx> {
                 RowValue { fields: *from, tail: *from_tail },
                 RowValue { fields: *to, tail: *to_tail },
             ),
+            (TyKind::Func(from_params, from_ret), TyKind::Func(to_params, to_ret)) => {
+                self.match_fields(*to_params, *from_params, Self::coerce)?;
+                self.coerce(*from_ret, *to_ret)?;
+                Ok(())
+            }
             (TyKind::Nullable(from), TyKind::Nullable(to)) => self.coerce(*from, *to),
             (_, TyKind::Nullable(to)) => self.coerce(from, *to),
             _ => Err(format!("cannot coerce {from:?} into {to:?}")),
@@ -294,6 +299,11 @@ impl<'cx> TypecheckCtx<'cx> {
                 RowValue { fields: *a, tail: *a_tail },
                 RowValue { fields: *b, tail: *b_tail },
             ),
+            (TyKind::Func(from_params, from_ret), TyKind::Func(to_params, to_ret)) => {
+                self.match_fields(*to_params, *from_params, Self::unify)?;
+                self.unify(*from_ret, *to_ret)?;
+                Ok(())
+            }
             (TyKind::Nullable(a), TyKind::Nullable(b)) => self.unify(*a, *b),
             _ => Err(format!("cannot unify {:?} and {:?}", a, b)),
         }
@@ -578,6 +588,11 @@ impl<'cx> TypecheckCtx<'cx> {
                 let in_fields = fields.iter().any(|(_, t)| self.occurs(var, *t));
                 let in_tail = tail.map_or(false, |next| self.occurs_in_row(var, next));
                 in_fields || in_tail
+            }
+            TyKind::Func(params, ret) => {
+                let in_params = params.iter().any(|(_, t)| self.occurs(var, *t));
+                let in_ret = self.occurs(var, *ret);
+                in_params || in_ret
             }
             TyKind::Nullable(inner) => self.occurs(var, *inner),
             TyKind::TyVar(other) => match self.ty_table.probe_value(*other) {
