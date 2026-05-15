@@ -1,27 +1,33 @@
-use std::io::{self, BufRead, Write};
+use std::io::{self, Stdin, Stdout, Write};
+
+use fletch::ReplIo;
+
+struct StdIo {
+    stdin: Stdin,
+    stdout: Stdout,
+}
+
+impl StdIo {
+    pub fn new() -> Self {
+        Self { stdin: io::stdin(), stdout: io::stdout() }
+    }
+}
+
+impl ReplIo for StdIo {
+    fn read_line(&mut self, cont: bool, out: &mut String) {
+        match cont {
+            false => write!(self.stdout, "> ").unwrap(),
+            true => write!(self.stdout, "| ").unwrap(),
+        }
+        self.stdout.flush().unwrap();
+        self.stdin.read_line(out).unwrap();
+    }
+
+    fn write(&mut self) -> &mut impl Write {
+        &mut self.stdout
+    }
+}
 
 fn main() {
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let mut out = io::BufWriter::new(stdout.lock());
-
-    write!(&mut out, "> ").unwrap();
-    out.flush().unwrap();
-
-    fletch::run_repl(|run| {
-        for line in stdin.lock().lines() {
-            let line = line.expect("Failed to read line");
-            if line.trim() == ".exit" {
-                break;
-            }
-            if line.trim().is_empty() {
-                write!(&mut out, "> ").unwrap();
-                out.flush().unwrap();
-                continue;
-            }
-            run(line, &mut out);
-            write!(&mut out, "\n> ").unwrap();
-            out.flush().unwrap();
-        }
-    });
+    fletch::run_repl(StdIo::new());
 }

@@ -38,6 +38,10 @@ impl<'cx, 'src> Parser<'cx, 'src> {
         Ok(result)
     }
 
+    pub fn is_eof(&self) -> bool {
+        self.current.kind == TokenKind::Eof
+    }
+
     fn parse_stmt(&mut self) -> Result<Stmt> {
         let id = self.next_id();
         let start = self.current.span.start();
