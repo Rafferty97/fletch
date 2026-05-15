@@ -10,6 +10,25 @@ pub mod print;
 pub struct NodeId(pub u32);
 
 #[derive(Clone, Debug)]
+pub struct Stmt {
+    pub id: NodeId,
+    pub kind: StmtKind,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub enum StmtKind {
+    Let(LetStmt),
+    Expr(Box<Expr>),
+}
+
+#[derive(Clone, Debug)]
+pub struct LetStmt {
+    pub name: Ident,
+    pub expr: Box<Expr>,
+}
+
+#[derive(Clone, Debug)]
 pub struct Expr {
     pub id: NodeId,
     pub kind: ExprKind,

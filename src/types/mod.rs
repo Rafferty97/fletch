@@ -17,7 +17,7 @@ pub fn check_expr<'cx>(ctx: Ctx<'cx>, expr: &Expr) -> Result<Ty<'cx>, String> {
 
 pub struct FunctionCtx<'cx> {
     ctx: Ctx<'cx>,
-    tc: TypecheckCtx<'cx>,
+    pub tc: TypecheckCtx<'cx>,
 }
 
 impl<'cx> FunctionCtx<'cx> {
@@ -28,6 +28,10 @@ impl<'cx> FunctionCtx<'cx> {
 
     pub fn resolve(&mut self, ty: Ty<'cx>) -> Result<Ty<'cx>, String> {
         self.tc.resolve(ty)
+    }
+
+    pub fn resolve_partial(&mut self, ty: Ty<'cx>) -> Result<Ty<'cx>, String> {
+        self.tc.resolve_partial(ty)
     }
 
     pub fn check_expr(&mut self, expr: &Expr) -> Result<Ty<'cx>, String> {

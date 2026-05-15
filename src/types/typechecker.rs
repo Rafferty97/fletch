@@ -39,6 +39,18 @@ impl<'cx> TypecheckCtx<'cx> {
             .ok_or_else(|| format!("unknown identifier: {}", self.ctx.get_str(name)))
     }
 
+    pub fn debug_env(&self) {
+        for (idx, scope) in self.scopes.iter().enumerate() {
+            println!("scope {idx}:");
+            for (name, ty) in scope {
+                println!("    {} :: {}", self.ctx.get_str(*name), ty);
+            }
+            if scope.is_empty() {
+                println!("    <empty>");
+            }
+        }
+    }
+
     pub fn push_scope(&mut self) {
         self.scopes.push(HashMap::new());
     }

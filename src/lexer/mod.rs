@@ -19,6 +19,8 @@ pub enum TokenKind {
     Minus,
     Star,
     Slash,
+    Equals,
+    Let,
     Unknown,
     #[default]
     Eof,
@@ -59,6 +61,7 @@ impl<'src> Lexer<'src> {
                 match self.get_raw(self.mk_span(start)) {
                     "false" => TokenKind::Lit(LitKind::Bool),
                     "true" => TokenKind::Lit(LitKind::Bool),
+                    "let" => TokenKind::Let,
                     _ => TokenKind::Ident,
                 }
             }
@@ -88,6 +91,7 @@ impl<'src> Lexer<'src> {
             '-' => TokenKind::Minus,
             '*' => TokenKind::Star,
             '/' => TokenKind::Slash,
+            '=' => TokenKind::Equals,
             _ => TokenKind::Unknown,
         };
 

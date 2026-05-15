@@ -1,5 +1,5 @@
 use crate::arena::Ctx;
-use crate::ast::{BinOpKind, Expr, ExprKind, Ident, Lit, NodeId};
+use crate::ast::{BinOpKind, Expr, ExprKind, Ident, LetStmt, Lit, NodeId, Stmt, StmtKind};
 use crate::diagnostics::Diagnostic;
 use crate::lexer::{Lexer, Token, TokenKind};
 use crate::span::{Span, Spanned};
@@ -24,10 +24,44 @@ impl<'cx, 'src> Parser<'cx, 'src> {
         parser
     }
 
+    pub fn parse_toplevel_stmt(&mut self) -> Result<Stmt> {
+        let result = self.parse_stmt()?;
+        self.consume(TokenKind::Eof, "unexpected token")?;
+        Ok(result)
+    }
+
     pub fn parse_toplevel_expr(&mut self) -> Result<Expr> {
         let result = self.parse_expr()?;
         self.consume(TokenKind::Eof, "unexpected token")?;
         Ok(result)
+    }
+
+    fn parse_stmt(&mut self) -> Result<Stmt> {
+        let id = self.next_id();
+        let start = self.current.span.start();
+
+        let kind = match self.current.kind {
+            TokenKind::Let => StmtKind::Let(self.parse_let()?),
+            _ => StmtKind::Expr(self.parse_expr()?.into()),
+        };
+
+        let end = self.previous.span.end();
+        let span = Span::new(start, end);
+
+        Ok(Stmt { id, kind, span })
+    }
+
+    fn parse_let(&mut self) -> Result<LetStmt> {
+        self.advance();
+
+        self.consume(TokenKind::Ident, "expected an identifier")?;
+        let name = self.ident(self.previous);
+
+        self.consume(TokenKind::Equals, "expected '=' after identifer")?;
+
+        let expr = self.parse_expr()?.into();
+
+        Ok(LetStmt { name, expr })
     }
 
     fn parse_expr(&mut self) -> Result<Expr> {

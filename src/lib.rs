@@ -5,7 +5,7 @@ use std::io::Write;
 use bumpalo::Bump;
 
 use crate::{
-    ast::print::print_expr,
+    ast::{Stmt, StmtKind, print::print_expr},
     types::{FunctionCtx, check_expr},
 };
 
@@ -51,26 +51,37 @@ where
     let arena = Bump::new();
     let mut handler = diagnostics::Diagnostics::new();
     let ctx = arena::Ctx::new(&arena, &mut handler);
+    let mut func_ctx = FunctionCtx::new(ctx);
 
     inner(&mut |line, mut out| {
+        if line.starts_with('.') {
+            match &*line {
+                ".env" => func_ctx.tc.debug_env(),
+                line => write!(out, "Unknown command: {line}").unwrap(),
+            }
+            return;
+        }
+
         let mut parser = parser::Parser::new(ctx, &line);
-        let expr = match parser.parse_toplevel_expr() {
-            Ok(expr) => expr,
-            Err(err) => {
-                write!(out, "Parse error: {}", err.message).unwrap();
-                return;
-            }
-        };
 
-        let mut func_ctx = FunctionCtx::new(ctx);
-        let ty = match func_ctx.check_expr(&expr).and_then(|ty| func_ctx.resolve(ty)) {
-            Ok(expr) => expr,
-            Err(err) => {
-                write!(out, "Type error: {err}").unwrap();
-                return;
+        match parser.parse_toplevel_stmt() {
+            Ok(Stmt { kind: StmtKind::Let(r#let), .. }) => {
+                match func_ctx.check_expr(&r#let.expr).and_then(|ty| func_ctx.resolve_partial(ty)) {
+                    Ok(ty) => {
+                        let name = r#let.name.sym;
+                        func_ctx.tc.bind_variable(name, ty);
+                        write!(out, "{} :: {}", ctx.get_str(r#let.name.sym), ty).unwrap();
+                    }
+                    Err(err) => write!(out, "Type error: {err}").unwrap(),
+                };
             }
+            Ok(Stmt { kind: StmtKind::Expr(expr), .. }) => {
+                match func_ctx.check_expr(&expr).and_then(|ty| func_ctx.resolve_partial(ty)) {
+                    Ok(ty) => write!(out, "{} :: {}", print_expr(ctx, &expr), ty).unwrap(),
+                    Err(err) => write!(out, "Type error: {err}").unwrap(),
+                };
+            }
+            Err(err) => write!(out, "Parse error: {}", err.message).unwrap(),
         };
-
-        write!(out, "{} :: {}", print_expr(ctx, &expr), ty).unwrap();
     });
 }
