@@ -3,19 +3,19 @@ use std::fmt::Display;
 use crate::arena::Ctx;
 use crate::ast::{BinOp, BinOpKind, Expr, ExprKind, Lit};
 
-pub fn print_expr<'cx>(ctx: Ctx<'cx>, expr: &'cx Expr) -> String {
+pub fn print_expr<'a, 'cx>(ctx: Ctx<'cx>, expr: &'a Expr) -> String {
     format!("{}", PrettyPrint(ctx, expr))
 }
 
-struct PrettyPrint<'a, T>(Ctx<'a>, &'a T);
+struct PrettyPrint<'a, 'cx, T>(Ctx<'cx>, &'a T);
 
-impl<'a, T> PrettyPrint<'a, T> {
-    fn with<U>(&self, value: &'a U) -> PrettyPrint<'a, U> {
+impl<'a, 'cx, T> PrettyPrint<'a, 'cx, T> {
+    fn with<U>(&self, value: &'a U) -> PrettyPrint<'a, 'cx, U> {
         PrettyPrint(self.0, value)
     }
 }
 
-impl Display for PrettyPrint<'_, Expr> {
+impl Display for PrettyPrint<'_, '_, Expr> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.1.kind {
             ExprKind::Lit(lit) => write!(f, "{}", self.with(lit)),
@@ -30,7 +30,7 @@ impl Display for PrettyPrint<'_, Expr> {
     }
 }
 
-impl Display for PrettyPrint<'_, Lit> {
+impl Display for PrettyPrint<'_, '_, Lit> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0.get_str(self.1.sym))
     }

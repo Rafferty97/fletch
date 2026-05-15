@@ -24,7 +24,13 @@ impl<'cx, 'src> Parser<'cx, 'src> {
         parser
     }
 
-    pub fn parse_expr(&mut self) -> Result<Expr> {
+    pub fn parse_toplevel_expr(&mut self) -> Result<Expr> {
+        let result = self.parse_expr()?;
+        self.consume(TokenKind::Eof, "unexpected token")?;
+        Ok(result)
+    }
+
+    fn parse_expr(&mut self) -> Result<Expr> {
         self.parse_precedence(Precedence::Lowest)
     }
 

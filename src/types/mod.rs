@@ -12,21 +12,25 @@ mod typechecker;
 pub fn check_expr<'cx>(ctx: Ctx<'cx>, expr: &Expr) -> Result<Ty<'cx>, String> {
     let mut func_ctx = FunctionCtx::new(ctx);
     let ty = func_ctx.check_expr(expr)?;
-    func_ctx.tc.resolve(ty)
+    func_ctx.resolve(ty)
 }
 
-struct FunctionCtx<'cx> {
+pub struct FunctionCtx<'cx> {
     ctx: Ctx<'cx>,
     tc: TypecheckCtx<'cx>,
 }
 
 impl<'cx> FunctionCtx<'cx> {
-    fn new(ctx: Ctx<'cx>) -> Self {
+    pub fn new(ctx: Ctx<'cx>) -> Self {
         let tc = TypecheckCtx::new(ctx);
         Self { ctx, tc }
     }
 
-    fn check_expr(&mut self, expr: &Expr) -> Result<Ty<'cx>, String> {
+    pub fn resolve(&mut self, ty: Ty<'cx>) -> Result<Ty<'cx>, String> {
+        self.tc.resolve(ty)
+    }
+
+    pub fn check_expr(&mut self, expr: &Expr) -> Result<Ty<'cx>, String> {
         let ty = match &expr.kind {
             ExprKind::Lit(lit) => self.check_lit(*lit),
             ExprKind::Var(ident) => self.check_var(*ident),
