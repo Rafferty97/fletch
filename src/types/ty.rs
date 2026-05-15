@@ -1,8 +1,6 @@
-use std::{
-    fmt::{Debug, Display},
-    marker::PhantomData,
-    ops::Deref,
-};
+use std::fmt::{Debug, Display};
+use std::marker::PhantomData;
+use std::ops::Deref;
 
 use crate::arena::{Interned, Symbol};
 

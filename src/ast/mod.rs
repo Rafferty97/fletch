@@ -25,6 +25,7 @@ pub enum StmtKind {
 #[derive(Clone, Debug)]
 pub struct LetStmt {
     pub name: Ident,
+    pub ty: Option<Ty>,
     pub expr: Box<Expr>,
 }
 
@@ -74,4 +75,15 @@ impl Display for BinOpKind {
             Self::Div => write!(f, "/"),
         }
     }
+}
+
+#[derive(Clone, Debug)]
+pub struct Ty {
+    pub kind: TyKind,
+    pub span: Span,
+}
+
+#[derive(Clone, Debug)]
+pub enum TyKind {
+    Var(Ident),
 }

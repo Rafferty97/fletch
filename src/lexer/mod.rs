@@ -20,6 +20,7 @@ pub enum TokenKind {
     Star,
     Slash,
     Equals,
+    Colon,
     Let,
     Unknown,
     #[default]
@@ -92,6 +93,7 @@ impl<'src> Lexer<'src> {
             '*' => TokenKind::Star,
             '/' => TokenKind::Slash,
             '=' => TokenKind::Equals,
+            ':' => TokenKind::Colon,
             _ => TokenKind::Unknown,
         };
 

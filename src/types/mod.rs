@@ -1,7 +1,7 @@
 pub use ty::*;
 
 use crate::arena::Ctx;
-use crate::ast::{BinOp, BinOpKind, Expr, ExprKind, Ident, Lit};
+use crate::ast::{self, BinOp, BinOpKind, Expr, ExprKind, Ident, LetStmt, Lit};
 use crate::lexer::LitKind;
 use crate::types::typechecker::TypecheckCtx;
 
@@ -32,6 +32,37 @@ impl<'cx> FunctionCtx<'cx> {
 
     pub fn resolve_partial(&mut self, ty: Ty<'cx>) -> Result<Ty<'cx>, String> {
         self.tc.resolve_partial(ty)
+    }
+
+    pub fn check_let(&mut self, stmt: &LetStmt) -> Result<Ty<'cx>, String> {
+        let expected = stmt.ty.as_ref().map(|ty| self.check_ty(ty)).transpose()?;
+        let actual = self.check_expr(&stmt.expr)?;
+
+        if let Some(expected) = expected {
+            self.tc.coerce(actual, expected)?;
+        }
+
+        Ok(expected.unwrap_or(actual))
+    }
+
+    pub fn check_ty(&mut self, ty: &ast::Ty) -> Result<Ty<'cx>, String> {
+        Ok(match &ty.kind {
+            ast::TyKind::Var(ident) => match self.ctx.get_str(ident.sym) {
+                "bool" => Ty(self.ctx.intern_ty_kind(TyKind::Bool)),
+                "i8" => Ty(self.ctx.intern_ty_kind(TyKind::Int(IntTy::Int8))),
+                "i16" => Ty(self.ctx.intern_ty_kind(TyKind::Int(IntTy::Int16))),
+                "i32" => Ty(self.ctx.intern_ty_kind(TyKind::Int(IntTy::Int32))),
+                "i64" => Ty(self.ctx.intern_ty_kind(TyKind::Int(IntTy::Int64))),
+                "u8" => Ty(self.ctx.intern_ty_kind(TyKind::UInt(UIntTy::UInt8))),
+                "u16" => Ty(self.ctx.intern_ty_kind(TyKind::UInt(UIntTy::UInt16))),
+                "u32" => Ty(self.ctx.intern_ty_kind(TyKind::UInt(UIntTy::UInt32))),
+                "u64" => Ty(self.ctx.intern_ty_kind(TyKind::UInt(UIntTy::UInt64))),
+                "f32" => Ty(self.ctx.intern_ty_kind(TyKind::Float(FloatTy::Float32))),
+                "f64" => Ty(self.ctx.intern_ty_kind(TyKind::Float(FloatTy::Float64))),
+                "str" => Ty(self.ctx.intern_ty_kind(TyKind::Str)),
+                str => Err(format!("unknown type: {str}"))?,
+            },
+        })
     }
 
     pub fn check_expr(&mut self, expr: &Expr) -> Result<Ty<'cx>, String> {

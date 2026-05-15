@@ -1,5 +1,7 @@
 use crate::arena::Ctx;
-use crate::ast::{BinOpKind, Expr, ExprKind, Ident, LetStmt, Lit, NodeId, Stmt, StmtKind};
+use crate::ast::{
+    BinOpKind, Expr, ExprKind, Ident, LetStmt, Lit, NodeId, Stmt, StmtKind, Ty, TyKind,
+};
 use crate::diagnostics::Diagnostic;
 use crate::lexer::{Lexer, Token, TokenKind};
 use crate::span::{Span, Spanned};
@@ -57,11 +59,24 @@ impl<'cx, 'src> Parser<'cx, 'src> {
         self.consume(TokenKind::Ident, "expected an identifier")?;
         let name = self.ident(self.previous);
 
+        let ty = if self.matches(TokenKind::Colon) {
+            Some(self.parse_ty()?)
+        } else {
+            None
+        };
+
         self.consume(TokenKind::Equals, "expected '=' after identifer")?;
 
         let expr = self.parse_expr()?.into();
 
-        Ok(LetStmt { name, expr })
+        Ok(LetStmt { name, ty, expr })
+    }
+
+    fn parse_ty(&mut self) -> Result<Ty> {
+        self.consume(TokenKind::Ident, "unexpected token")?;
+        let ident = self.ident(self.previous);
+        let span = ident.span;
+        Ok(Ty { kind: TyKind::Var(ident), span })
     }
 
     fn parse_expr(&mut self) -> Result<Expr> {

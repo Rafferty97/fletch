@@ -39,16 +39,21 @@ impl<'cx> TypecheckCtx<'cx> {
             .ok_or_else(|| format!("unknown identifier: {}", self.ctx.get_str(name)))
     }
 
-    pub fn debug_env(&self) {
-        for (idx, scope) in self.scopes.iter().enumerate() {
+    pub fn debug_env(&mut self) {
+        let mut scopes = std::mem::take(&mut self.scopes);
+
+        for (idx, scope) in scopes.iter().enumerate() {
             println!("scope {idx}:");
             for (name, ty) in scope {
+                let ty = self.resolve_partial(*ty).unwrap_or(*ty);
                 println!("    {} :: {}", self.ctx.get_str(*name), ty);
             }
             if scope.is_empty() {
                 println!("    <empty>");
             }
         }
+
+        self.scopes = scopes;
     }
 
     pub fn push_scope(&mut self) {

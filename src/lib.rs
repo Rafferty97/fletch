@@ -66,7 +66,7 @@ where
 
         match parser.parse_toplevel_stmt() {
             Ok(Stmt { kind: StmtKind::Let(r#let), .. }) => {
-                match func_ctx.check_expr(&r#let.expr).and_then(|ty| func_ctx.resolve_partial(ty)) {
+                match func_ctx.check_let(&r#let).and_then(|ty| func_ctx.resolve_partial(ty)) {
                     Ok(ty) => {
                         let name = r#let.name.sym;
                         func_ctx.tc.bind_variable(name, ty);
