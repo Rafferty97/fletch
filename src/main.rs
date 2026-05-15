@@ -11,8 +11,13 @@ fn main() {
     fletch::run_repl(|run| {
         for line in stdin.lock().lines() {
             let line = line.expect("Failed to read line");
-            if line.is_empty() {
+            if line.trim() == ".exit" {
                 break;
+            }
+            if line.trim().is_empty() {
+                write!(&mut out, "> ").unwrap();
+                out.flush().unwrap();
+                continue;
             }
             run(line, &mut out);
             write!(&mut out, "\n> ").unwrap();
