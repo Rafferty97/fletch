@@ -210,6 +210,7 @@ impl<'cx, 'src> Parser<'cx, 'src> {
                 TokenKind::Minus => Precedence::Term,
                 TokenKind::Star => Precedence::Factor,
                 TokenKind::Slash => Precedence::Factor,
+                TokenKind::LeftParen => Precedence::Call,
                 _ => break Ok(expr),
             };
             if prec > curr_prec {
@@ -222,6 +223,7 @@ impl<'cx, 'src> Parser<'cx, 'src> {
                 TokenKind::Minus => self.parse_binary(expr, BinOpKind::Sub, curr_prec)?,
                 TokenKind::Star => self.parse_binary(expr, BinOpKind::Mul, curr_prec)?,
                 TokenKind::Slash => self.parse_binary(expr, BinOpKind::Div, curr_prec)?,
+                TokenKind::LeftParen => self.parse_call(expr)?,
                 _ => todo!("{:?}", self.current.kind),
             };
         }
@@ -233,6 +235,25 @@ impl<'cx, 'src> Parser<'cx, 'src> {
         let op = Spanned::new(op, self.previous.span);
         let span = Span::cover(lhs.span, rhs.span);
         let kind = ExprKind::Binary(op, lhs.into(), rhs.into());
+        Ok(Expr { id: self.next_id(), kind, span })
+    }
+
+    fn parse_call(&mut self, callee: Expr) -> Result<Expr> {
+        let mut args = vec![];
+        while !self.matches(TokenKind::RightParen) {
+            args.push(self.parse_expr()?);
+
+            self.advance();
+            match self.previous.kind {
+                TokenKind::Comma => continue,
+                TokenKind::RightParen => break,
+                _ => Err(self.error_at_previous("expected ',' or ')'"))?,
+            }
+        }
+
+        let span = Span::cover(callee.span, self.previous.span);
+        let kind = ExprKind::Call(callee.into(), args);
+
         Ok(Expr { id: self.next_id(), kind, span })
     }
 

@@ -90,7 +90,7 @@ impl Into<u32> for NumVar<'_> {
 
 impl Debug for NumVar<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "NumVat({})", self.0)
+        write!(f, "NumVar({})", self.0)
     }
 }
 
@@ -146,14 +146,10 @@ impl Display for Ty<'_> {
             TyKind::NumVar(_) => write!(f, "{{number}}"),
             TyKind::Func(params, ret) => {
                 write!(f, "fn(")?;
-                match &**params {
-                    [] => {}
-                    [(_, ty)] => write!(f, "{ty}")?,
-                    [(_, ty), rest @ ..] => {
-                        write!(f, "{ty}")?;
-                        for (name, ty) in rest {
-                            write!(f, ", {ty}")?;
-                        }
+                if let [(_, first), rest @ ..] = &**params {
+                    write!(f, "{first}")?;
+                    for (_, arg) in rest {
+                        write!(f, ", {arg}")?;
                     }
                 }
                 write!(f, ") -> {ret}")

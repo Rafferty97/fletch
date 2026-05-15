@@ -26,6 +26,16 @@ impl Display for PrettyPrint<'_, '_, Expr> {
                 write!(f, "{} {} {}", lhs, op, rhs)
             }
             ExprKind::Paren(expr) => write!(f, "({})", self.with(&**expr)),
+            ExprKind::Call(callee, args) => {
+                write!(f, "{}(", self.with(&**callee))?;
+                if let [first, rest @ ..] = &**args {
+                    write!(f, "{}", self.with(first))?;
+                    for arg in rest {
+                        write!(f, ", {}", self.with(arg))?;
+                    }
+                }
+                write!(f, ")")
+            }
         }
     }
 }

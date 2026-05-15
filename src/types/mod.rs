@@ -92,6 +92,20 @@ impl<'cx> FunctionCtx<'cx> {
             ExprKind::Var(ident) => self.check_var(*ident),
             ExprKind::Binary(op, lhs, rhs) => self.check_binop(op, lhs, rhs),
             ExprKind::Paren(inner) => self.check_expr(inner),
+            ExprKind::Call(callee, args) => {
+                let (params, ret) = match self.check_expr(callee)?.kind() {
+                    TyKind::Func(params, ret) => (*params, *ret),
+                    _ => Err("callee is not a function")?,
+                };
+                if params.len() != args.len() {
+                    Err(format!("expected {} arguments, got {}", params.len(), args.len()))?;
+                }
+                for ((_, param), arg) in params.iter().zip(args) {
+                    let arg = self.check_expr(arg)?;
+                    self.tc.coerce(arg, *param)?;
+                }
+                Ok(ret)
+            }
         }?;
         self.ctx.set_node_ty(expr.id, ty);
         Ok(ty)

@@ -68,6 +68,7 @@ pub enum ExprKind {
     Var(Ident),
     Binary(BinOp, Box<Expr>, Box<Expr>),
     Paren(Box<Expr>),
+    Call(Box<Expr>, Vec<Expr>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
