@@ -90,6 +90,7 @@ impl<'cx, 'src> Parser<'cx, 'src> {
         }
 
         // Return type
+        self.consume(TokenKind::Arrow, "expected '->'")?;
         let ret = self.parse_ty()?;
 
         // Function body

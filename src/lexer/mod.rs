@@ -19,6 +19,7 @@ pub enum TokenKind {
     RightBracket,
     Plus,
     Minus,
+    Arrow,
     Star,
     Slash,
     Equals,
@@ -98,7 +99,13 @@ impl<'src> Lexer<'src> {
             '{' => TokenKind::LeftBracket,
             '}' => TokenKind::RightBracket,
             '+' => TokenKind::Plus,
-            '-' => TokenKind::Minus,
+            '-' => match self.peek() {
+                Some('>') => {
+                    self.advance();
+                    TokenKind::Arrow
+                }
+                _ => TokenKind::Minus,
+            },
             '*' => TokenKind::Star,
             '/' => TokenKind::Slash,
             '=' => TokenKind::Equals,
