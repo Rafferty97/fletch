@@ -62,6 +62,10 @@ impl<'cx> FunctionCtx<'cx> {
                 "str" => Ty(self.ctx.intern_ty_kind(TyKind::Str)),
                 str => Err(format!("unknown type: {str}"))?,
             },
+            ast::TyKind::Nullable(inner) => {
+                let inner = self.check_ty(&*inner)?;
+                Ty(self.ctx.intern_ty_kind(TyKind::Nullable(inner.into())))
+            }
         })
     }
 

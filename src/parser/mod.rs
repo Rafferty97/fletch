@@ -80,7 +80,14 @@ impl<'cx, 'src> Parser<'cx, 'src> {
         self.consume(TokenKind::Ident, "unexpected token")?;
         let ident = self.ident(self.previous);
         let span = ident.span;
-        Ok(Ty { kind: TyKind::Var(ident), span })
+        let mut ty = Ty { kind: TyKind::Var(ident), span };
+
+        if self.matches(TokenKind::QuestionMark) {
+            let span = Span::cover(ty.span, self.previous.span);
+            ty = Ty { kind: TyKind::Nullable(ty.into()), span };
+        }
+
+        Ok(ty)
     }
 
     fn parse_expr(&mut self) -> Result<Expr> {

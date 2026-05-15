@@ -143,6 +143,7 @@ impl Display for Ty<'_> {
             TyKind::Array(t) => write!(f, "[{t}]"),
             TyKind::TyVar(_) => write!(f, "?"),
             TyKind::NumVar(_) => write!(f, "{{number}}"),
+            TyKind::Nullable(t) => write!(f, "{t}?"),
             _ => todo!(),
         }
     }

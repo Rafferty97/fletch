@@ -86,4 +86,5 @@ pub struct Ty {
 #[derive(Clone, Debug)]
 pub enum TyKind {
     Var(Ident),
+    Nullable(Box<Ty>),
 }

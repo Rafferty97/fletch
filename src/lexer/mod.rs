@@ -21,6 +21,7 @@ pub enum TokenKind {
     Slash,
     Equals,
     Colon,
+    QuestionMark,
     Let,
     Unknown,
     #[default]
@@ -94,6 +95,7 @@ impl<'src> Lexer<'src> {
             '/' => TokenKind::Slash,
             '=' => TokenKind::Equals,
             ':' => TokenKind::Colon,
+            '?' => TokenKind::QuestionMark,
             _ => TokenKind::Unknown,
         };
 
