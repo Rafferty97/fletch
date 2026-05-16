@@ -34,6 +34,12 @@ pub trait DiagnosticHandler {
     fn emit(&mut self, diag: Diagnostic);
 }
 
+pub struct NullHandler;
+
+impl DiagnosticHandler for NullHandler {
+    fn emit(&mut self, diag: Diagnostic) {}
+}
+
 pub struct DiagCtx<'a> {
     handler: &'a mut dyn DiagnosticHandler,
 }

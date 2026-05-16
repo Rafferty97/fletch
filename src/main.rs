@@ -1,33 +1,49 @@
-use std::io::{self, Stdin, Stdout, Write};
+use std::borrow::Cow;
 
-use fletch::ReplIo;
-
-struct StdIo {
-    stdin: Stdin,
-    stdout: Stdout,
-}
-
-impl StdIo {
-    pub fn new() -> Self {
-        Self { stdin: io::stdin(), stdout: io::stdout() }
-    }
-}
-
-impl ReplIo for StdIo {
-    fn read_line(&mut self, cont: bool, out: &mut String) {
-        match cont {
-            false => write!(self.stdout, "> ").unwrap(),
-            true => write!(self.stdout, "| ").unwrap(),
-        }
-        self.stdout.flush().unwrap();
-        self.stdin.read_line(out).unwrap();
-    }
-
-    fn write(&mut self) -> &mut impl Write {
-        &mut self.stdout
-    }
-}
+use reedline::{Prompt, PromptEditMode, PromptHistorySearch, Reedline, Signal};
 
 fn main() {
-    fletch::run_repl(StdIo::new());
+    fletch::run_repl(|mut ctx| {
+        let mut line_editor = Reedline::create().with_validator(ctx.validator());
+
+        loop {
+            let sig = line_editor.read_line(&LangPrompt);
+            match sig {
+                Ok(Signal::Success(buffer)) => match buffer.trim() {
+                    ".env" => ctx.print_env(),
+                    ".exit" => break,
+                    _ => ctx.eval(&buffer),
+                },
+                Ok(Signal::CtrlD) | Ok(Signal::CtrlC) => break,
+                x => println!("Event: {:?}", x),
+            }
+        }
+    });
+}
+
+struct LangPrompt;
+
+impl Prompt for LangPrompt {
+    fn render_prompt_left(&self) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
+
+    fn render_prompt_right(&self) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
+
+    fn render_prompt_indicator(&self, _mode: PromptEditMode) -> Cow<'_, str> {
+        Cow::Borrowed("> ")
+    }
+
+    fn render_prompt_multiline_indicator(&self) -> Cow<'_, str> {
+        Cow::Borrowed("… ") // same visual width as "〉 "
+    }
+
+    fn render_prompt_history_search_indicator(
+        &self,
+        _history: PromptHistorySearch,
+    ) -> Cow<'_, str> {
+        Cow::Borrowed("")
+    }
 }
