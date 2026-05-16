@@ -20,6 +20,7 @@ mod lexer;
 mod parser;
 mod span;
 mod types;
+mod vm;
 
 pub fn run_repl(inner: impl FnOnce(ReplCtx)) {
     let arena = Bump::new();
