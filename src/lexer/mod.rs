@@ -23,6 +23,7 @@ pub enum TokenKind {
     Star,
     Slash,
     Equals,
+    EqualsEquals,
     Colon,
     QuestionMark,
     Semi,
@@ -99,16 +100,16 @@ impl<'src> Lexer<'src> {
             '{' => TokenKind::LeftBracket,
             '}' => TokenKind::RightBracket,
             '+' => TokenKind::Plus,
-            '-' => match self.peek() {
-                Some('>') => {
-                    self.advance();
-                    TokenKind::Arrow
-                }
-                _ => TokenKind::Minus,
+            '-' => match self.matches('>') {
+                true => TokenKind::Arrow,
+                false => TokenKind::Minus,
             },
             '*' => TokenKind::Star,
             '/' => TokenKind::Slash,
-            '=' => TokenKind::Equals,
+            '=' => match self.matches('=') {
+                true => TokenKind::EqualsEquals,
+                false => TokenKind::Equals,
+            },
             ':' => TokenKind::Colon,
             '?' => TokenKind::QuestionMark,
             ';' => TokenKind::Semi,
@@ -135,6 +136,15 @@ impl<'src> Lexer<'src> {
 
     fn peek(&self) -> Option<char> {
         self.chars.clone().next()
+    }
+
+    fn matches(&mut self, char: char) -> bool {
+        if self.peek() == Some(char) {
+            self.advance();
+            true
+        } else {
+            false
+        }
     }
 
     fn pos(&self) -> BytePos {

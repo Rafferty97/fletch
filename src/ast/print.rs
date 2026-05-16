@@ -53,6 +53,7 @@ impl Display for BinOp {
             BinOpKind::Sub => "-",
             BinOpKind::Mul => "*",
             BinOpKind::Div => "/",
+            BinOpKind::Eq => "==",
         };
         write!(f, "{}", sym)
     }

@@ -91,6 +91,7 @@ pub enum BinOpKind {
     Sub,
     Mul,
     Div,
+    Eq,
 }
 
 impl Display for BinOpKind {
@@ -100,6 +101,7 @@ impl Display for BinOpKind {
             Self::Sub => write!(f, "-"),
             Self::Mul => write!(f, "*"),
             Self::Div => write!(f, "/"),
+            Self::Eq => write!(f, "=="),
         }
     }
 }

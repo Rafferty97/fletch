@@ -153,6 +153,14 @@ impl<'cx> FunctionCtx<'cx> {
                     }
                 }
             }
+            Eq => {
+                self.tc.unify(lhs_ty, rhs_ty).map_err(|_| {
+                    let lhs = self.tc.resolve_partial(lhs_ty).unwrap();
+                    let rhs = self.tc.resolve_partial(rhs_ty).unwrap();
+                    format!("cannot compare {lhs} with {rhs}")
+                })?;
+                Ok(Ty(self.ctx.intern_ty_kind(TyKind::Bool)))
+            }
         }
     }
 }

@@ -211,6 +211,7 @@ impl<'cx, 'src> Parser<'cx, 'src> {
                 TokenKind::Minus => Precedence::Term,
                 TokenKind::Star => Precedence::Factor,
                 TokenKind::Slash => Precedence::Factor,
+                TokenKind::EqualsEquals => Precedence::Equality,
                 TokenKind::LeftParen => Precedence::Call,
                 _ => break Ok(expr),
             };
@@ -224,6 +225,7 @@ impl<'cx, 'src> Parser<'cx, 'src> {
                 TokenKind::Minus => self.parse_binary(expr, BinOpKind::Sub, curr_prec)?,
                 TokenKind::Star => self.parse_binary(expr, BinOpKind::Mul, curr_prec)?,
                 TokenKind::Slash => self.parse_binary(expr, BinOpKind::Div, curr_prec)?,
+                TokenKind::EqualsEquals => self.parse_binary(expr, BinOpKind::Eq, curr_prec)?,
                 TokenKind::LeftParen => self.parse_call(expr)?,
                 _ => todo!("{:?}", self.current.kind),
             };
