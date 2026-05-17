@@ -24,6 +24,10 @@ pub enum TokenKind {
     Slash,
     Equals,
     EqualsEquals,
+    Lt,
+    LtEq,
+    Gt,
+    GtEq,
     Colon,
     QuestionMark,
     Semi,
@@ -106,6 +110,14 @@ impl<'src> Lexer<'src> {
             },
             '*' => TokenKind::Star,
             '/' => TokenKind::Slash,
+            '<' => match self.matches('=') {
+                true => TokenKind::LtEq,
+                false => TokenKind::Lt,
+            },
+            '>' => match self.matches('=') {
+                true => TokenKind::GtEq,
+                false => TokenKind::Gt,
+            },
             '=' => match self.matches('=') {
                 true => TokenKind::EqualsEquals,
                 false => TokenKind::Equals,

@@ -207,11 +207,11 @@ impl<'cx, 'src> Parser<'cx, 'src> {
 
         loop {
             let curr_prec = match self.current.kind {
-                TokenKind::Plus => Precedence::Term,
-                TokenKind::Minus => Precedence::Term,
-                TokenKind::Star => Precedence::Factor,
-                TokenKind::Slash => Precedence::Factor,
+                TokenKind::Plus | TokenKind::Minus => Precedence::Term,
+                TokenKind::Star | TokenKind::Slash => Precedence::Factor,
                 TokenKind::EqualsEquals => Precedence::Equality,
+                TokenKind::Lt | TokenKind::LtEq => Precedence::Comparison,
+                TokenKind::Gt | TokenKind::GtEq => Precedence::Comparison,
                 TokenKind::LeftParen => Precedence::Call,
                 _ => break Ok(expr),
             };
@@ -226,6 +226,10 @@ impl<'cx, 'src> Parser<'cx, 'src> {
                 TokenKind::Star => self.parse_binary(expr, BinOpKind::Mul, curr_prec)?,
                 TokenKind::Slash => self.parse_binary(expr, BinOpKind::Div, curr_prec)?,
                 TokenKind::EqualsEquals => self.parse_binary(expr, BinOpKind::Eq, curr_prec)?,
+                TokenKind::Lt => self.parse_binary(expr, BinOpKind::Lt, curr_prec)?,
+                TokenKind::LtEq => self.parse_binary(expr, BinOpKind::LtEq, curr_prec)?,
+                TokenKind::Gt => self.parse_binary(expr, BinOpKind::Gt, curr_prec)?,
+                TokenKind::GtEq => self.parse_binary(expr, BinOpKind::GtEq, curr_prec)?,
                 TokenKind::LeftParen => self.parse_call(expr)?,
                 _ => todo!("{:?}", self.current.kind),
             };

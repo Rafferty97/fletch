@@ -39,35 +39,42 @@ impl<'cx> FunctionCtx<'cx> {
     pub fn check_func(&mut self, func: &Func) -> Result<Ty<'cx>, String> {
         self.tc.push_scope(); // FIXME: functions actually need entire own function ctx
 
-        let params = func
-            .params
-            .iter()
-            .map(|(name, ty)| Ok((name.sym, self.check_ty(ty)?)))
-            .collect::<Result<Vec<_>, String>>()?;
-        let params = FieldList(self.ctx.intern_fields(&params));
+        let result = (|| {
+            let params = func
+                .params
+                .iter()
+                .map(|(name, ty)| Ok((name.sym, self.check_ty(ty)?)))
+                .collect::<Result<Vec<_>, String>>()?;
+            let params = FieldList(self.ctx.intern_fields(&params));
 
-        let ret = self.check_ty(&func.ret)?;
+            let ret = self.check_ty(&func.ret)?;
+
+            let body = self.check_block(&func.body)?;
+            self.tc.coerce(body, ret)?;
+
+            Ok(Ty(self.ctx.intern_ty_kind(TyKind::Func(params, ret))))
+        })();
 
         self.tc.pop_scope();
-
-        Ok(Ty(self.ctx.intern_ty_kind(TyKind::Func(params, ret))))
+        result
     }
 
     pub fn check_block(&mut self, block: &Block) -> Result<Ty<'cx>, String> {
         self.tc.push_scope();
 
-        for stmt in &block.stmts {
-            self.check_stmt(stmt)?;
-        }
+        let result = (|| {
+            for stmt in &block.stmts {
+                self.check_stmt(stmt)?;
+            }
 
-        let ret = match &block.tail {
-            Some(tail) => self.check_expr(tail)?,
-            None => self.ctx.new_unit(),
-        };
+            Ok(match &block.tail {
+                Some(tail) => self.check_expr(tail)?,
+                None => self.ctx.new_unit(),
+            })
+        })();
 
         self.tc.pop_scope();
-
-        Ok(ret)
+        result
     }
 
     pub fn check_stmt(&mut self, stmt: &Stmt) -> Result<(), String> {
@@ -181,7 +188,7 @@ impl<'cx> FunctionCtx<'cx> {
                     }
                 }
             }
-            Eq => {
+            Eq | Lt | LtEq | Gt | GtEq => {
                 self.tc.unify(lhs_ty, rhs_ty).map_err(|_| {
                     let lhs = self.tc.resolve_partial(lhs_ty).unwrap();
                     let rhs = self.tc.resolve_partial(rhs_ty).unwrap();

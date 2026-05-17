@@ -92,6 +92,10 @@ pub enum BinOpKind {
     Mul,
     Div,
     Eq,
+    Lt,
+    LtEq,
+    Gt,
+    GtEq,
 }
 
 impl Display for BinOpKind {
@@ -102,6 +106,10 @@ impl Display for BinOpKind {
             Self::Mul => write!(f, "*"),
             Self::Div => write!(f, "/"),
             Self::Eq => write!(f, "=="),
+            Self::Lt => write!(f, "<"),
+            Self::LtEq => write!(f, "<="),
+            Self::Gt => write!(f, ">"),
+            Self::GtEq => write!(f, ">="),
         }
     }
 }

@@ -54,6 +54,10 @@ impl Display for BinOp {
             BinOpKind::Mul => "*",
             BinOpKind::Div => "/",
             BinOpKind::Eq => "==",
+            BinOpKind::Lt => "<",
+            BinOpKind::LtEq => "<=",
+            BinOpKind::Gt => ">",
+            BinOpKind::GtEq => ">=",
         };
         write!(f, "{}", sym)
     }
