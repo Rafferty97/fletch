@@ -73,30 +73,34 @@ impl ReplCtx<'_> {
                     Err(err) => println!("Type error: {err}"),
                 };
             }
-            ItemKind::Stmt(Stmt { kind: StmtKind::Let(r#let), .. }) => {
-                match self
-                    .func_ctx
-                    .check_let(&r#let)
-                    .and_then(|ty| self.func_ctx.resolve_partial(ty))
-                {
-                    Ok(ty) => {
-                        let name = r#let.name.sym;
-                        self.func_ctx.tc.bind_variable(name, ty);
-                        println!("{} :: {}", self.ctx.get_str(name), ty);
-                    }
-                    Err(err) => println!("Type error: {err}"),
-                };
-            }
-            ItemKind::Stmt(Stmt { kind: StmtKind::Expr(expr), .. }) => {
-                match self
-                    .func_ctx
-                    .check_expr(&expr)
-                    .and_then(|ty| self.func_ctx.resolve_partial(ty))
-                {
-                    Ok(ty) => println!("{} :: {}", print_expr(self.ctx, &expr), ty),
-                    Err(err) => println!("Type error: {err}"),
-                };
-            }
+            ItemKind::Stmt(stmt) => match self.func_ctx.check_stmt(&stmt) {
+                Ok(()) => {}
+                Err(err) => println!("Type error: {err}"),
+            },
+            // ItemKind::Stmt(Stmt { kind: StmtKind::Let(r#let), .. }) => {
+            //     match self
+            //         .func_ctx
+            //         .check_let(&r#let)
+            //         .and_then(|ty| self.func_ctx.resolve_partial(ty))
+            //     {
+            //         Ok(ty) => {
+            //             let name = r#let.name.sym;
+            //             self.func_ctx.tc.bind_variable(name, ty);
+            //             println!("{} :: {}", self.ctx.get_str(name), ty);
+            //         }
+            //         Err(err) => println!("Type error: {err}"),
+            //     };
+            // }
+            // ItemKind::Stmt(Stmt { kind: StmtKind::Expr(expr), .. }) => {
+            //     match self
+            //         .func_ctx
+            //         .check_expr(&expr)
+            //         .and_then(|ty| self.func_ctx.resolve_partial(ty))
+            //     {
+            //         Ok(ty) => println!("{} :: {}", print_expr(self.ctx, &expr), ty),
+            //         Err(err) => println!("Type error: {err}"),
+            //     };
+            // }
         };
     }
 

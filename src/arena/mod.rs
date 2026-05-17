@@ -7,7 +7,7 @@ pub use symbol::*;
 
 use crate::ast::NodeId;
 use crate::diagnostics::{DiagCtx, DiagnosticHandler};
-use crate::types::{Ty, TyKind};
+use crate::types::{Ty, TyKind, TyList};
 
 mod interned;
 mod symbol;
@@ -47,6 +47,11 @@ impl<'cx> Ctx<'cx> {
 
     pub fn intern_ty_kind(&mut self, kind: TyKind<'cx>) -> Interned<'cx, TyKind<'cx>> {
         self.inner.ty_interner.lock().unwrap().intern(self.inner.arena, kind)
+    }
+
+    pub fn new_unit(&mut self) -> Ty<'cx> {
+        let list = TyList(self.intern_tys(&[]));
+        Ty(self.intern_ty_kind(TyKind::Tuple(list)))
     }
 
     pub fn intern_tys(&mut self, tys: &[Ty<'cx>]) -> Interned<'cx, [Ty<'cx>]> {

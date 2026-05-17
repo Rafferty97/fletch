@@ -1,7 +1,9 @@
 pub use ty::*;
 
 use crate::arena::Ctx;
-use crate::ast::{self, BinOp, BinOpKind, Expr, ExprKind, Func, Ident, LetStmt, Lit};
+use crate::ast::{
+    self, BinOp, BinOpKind, Block, Expr, ExprKind, Func, Ident, LetStmt, Lit, Stmt, StmtKind,
+};
 use crate::lexer::LitKind;
 use crate::types::typechecker::TypecheckCtx;
 
@@ -51,7 +53,31 @@ impl<'cx> FunctionCtx<'cx> {
         Ok(Ty(self.ctx.intern_ty_kind(TyKind::Func(params, ret))))
     }
 
-    pub fn check_let(&mut self, stmt: &LetStmt) -> Result<Ty<'cx>, String> {
+    pub fn check_block(&mut self, block: &Block) -> Result<Ty<'cx>, String> {
+        self.tc.push_scope();
+
+        for stmt in &block.stmts {
+            self.check_stmt(stmt)?;
+        }
+
+        let ret = match &block.tail {
+            Some(tail) => self.check_expr(tail)?,
+            None => self.ctx.new_unit(),
+        };
+
+        self.tc.pop_scope();
+
+        Ok(ret)
+    }
+
+    pub fn check_stmt(&mut self, stmt: &Stmt) -> Result<(), String> {
+        match &stmt.kind {
+            StmtKind::Let(r#let) => self.check_let(r#let),
+            StmtKind::Expr(expr) => self.check_expr(expr).map(|_| ()),
+        }
+    }
+
+    pub fn check_let(&mut self, stmt: &LetStmt) -> Result<(), String> {
         let expected = stmt.ty.as_ref().map(|ty| self.check_ty(ty)).transpose()?;
         let actual = self.check_expr(&stmt.expr)?;
 
@@ -59,7 +85,9 @@ impl<'cx> FunctionCtx<'cx> {
             self.tc.coerce(actual, expected)?;
         }
 
-        Ok(expected.unwrap_or(actual))
+        self.tc.bind_variable(stmt.name.sym, expected.unwrap_or(actual));
+
+        Ok(())
     }
 
     pub fn check_ty(&mut self, ty: &ast::Ty) -> Result<Ty<'cx>, String> {
