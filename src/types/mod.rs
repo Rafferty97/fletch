@@ -49,6 +49,10 @@ impl<'cx> FunctionCtx<'cx> {
 
             let ret = self.check_ty(&func.ret)?;
 
+            for (name, ty) in params {
+                self.tc.bind_variable(name, ty);
+            }
+
             let body = self.check_block(&func.body)?;
             self.tc.coerce(body, ret)?;
 
