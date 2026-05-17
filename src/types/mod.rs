@@ -20,12 +20,14 @@ pub fn check_expr<'cx>(ctx: Ctx<'cx>, expr: &Expr) -> Result<Ty<'cx>, String> {
 pub struct FunctionCtx<'cx> {
     ctx: Ctx<'cx>,
     pub tc: TypecheckCtx<'cx>,
+    bindings: Vec<(Ident, Ty<'cx>)>,
 }
 
 impl<'cx> FunctionCtx<'cx> {
     pub fn new(ctx: Ctx<'cx>) -> Self {
         let tc = TypecheckCtx::new(ctx);
-        Self { ctx, tc }
+        let bindings = Vec::new();
+        Self { ctx, tc, bindings }
     }
 
     pub fn resolve(&mut self, ty: Ty<'cx>) -> Result<Ty<'cx>, String> {
@@ -36,31 +38,36 @@ impl<'cx> FunctionCtx<'cx> {
         self.tc.resolve_partial(ty)
     }
 
+    pub fn finalise(mut self) -> Result<(), String> {
+        for (ident, ty) in self.bindings {
+            self.tc.resolve(ty)?;
+        }
+
+        Ok(())
+    }
+
     pub fn check_func(&mut self, func: &Func) -> Result<Ty<'cx>, String> {
-        self.tc.push_scope(); // FIXME: functions actually need entire own function ctx
+        let mut fctx = FunctionCtx::new(self.ctx);
 
-        let result = (|| {
-            let params = func
-                .params
-                .iter()
-                .map(|(name, ty)| Ok((name.sym, self.check_ty(ty)?)))
-                .collect::<Result<Vec<_>, String>>()?;
-            let params = FieldList(self.ctx.intern_fields(&params));
+        let params = func
+            .params
+            .iter()
+            .map(|(name, ty)| Ok((name.sym, fctx.check_ty(ty)?)))
+            .collect::<Result<Vec<_>, String>>()?;
+        let params = FieldList(self.ctx.intern_fields(&params));
 
-            let ret = self.check_ty(&func.ret)?;
+        let ret = fctx.check_ty(&func.ret)?;
 
-            for (name, ty) in params {
-                self.tc.bind_variable(name, ty);
-            }
+        for (name, ty) in params {
+            fctx.tc.bind_variable(name, ty);
+        }
 
-            let body = self.check_block(&func.body)?;
-            self.tc.coerce(body, ret)?;
+        let body = fctx.check_block(&func.body)?;
+        fctx.tc.coerce(body, ret)?;
 
-            Ok(Ty(self.ctx.intern_ty_kind(TyKind::Func(params, ret))))
-        })();
+        fctx.finalise()?;
 
-        self.tc.pop_scope();
-        result
+        Ok(Ty(self.ctx.intern_ty_kind(TyKind::Func(params, ret))))
     }
 
     pub fn check_block(&mut self, block: &Block) -> Result<Ty<'cx>, String> {
@@ -96,7 +103,9 @@ impl<'cx> FunctionCtx<'cx> {
             self.tc.coerce(actual, expected)?;
         }
 
-        self.tc.bind_variable(stmt.name.sym, expected.unwrap_or(actual));
+        let ty = expected.unwrap_or(actual);
+        self.tc.bind_variable(stmt.name.sym, ty);
+        self.bindings.push((stmt.name, ty));
 
         Ok(())
     }
