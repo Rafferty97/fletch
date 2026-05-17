@@ -41,6 +41,7 @@ pub enum TokenKind {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum LitKind {
+    Null,
     Bool,
     Integer,
     Float,
@@ -72,6 +73,7 @@ impl<'src> Lexer<'src> {
             c if c.is_alphabetic() || c == '_' => {
                 self.advance_while(|c| c.is_alphanumeric() || c == '_');
                 match self.get_raw(self.mk_span(start)) {
+                    "null" => TokenKind::Lit(LitKind::Null),
                     "false" => TokenKind::Lit(LitKind::Bool),
                     "true" => TokenKind::Lit(LitKind::Bool),
                     "let" => TokenKind::Let,

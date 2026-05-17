@@ -161,6 +161,10 @@ impl<'cx> FunctionCtx<'cx> {
 
     fn check_lit(&mut self, lit: Lit) -> Result<Ty<'cx>, String> {
         match lit.kind {
+            LitKind::Null => {
+                let var = self.tc.new_ty_var();
+                Ok(Ty(self.ctx.intern_ty_kind(TyKind::Nullable(var))))
+            }
             LitKind::Bool => Ok(Ty(self.ctx.intern_ty_kind(TyKind::Bool))),
             LitKind::Integer => Ok(self.tc.new_int_var()),
             LitKind::Float => Ok(self.tc.new_float_var()),
@@ -201,7 +205,17 @@ impl<'cx> FunctionCtx<'cx> {
                     }
                 }
             }
-            Eq | Lt | LtEq | Gt | GtEq => {
+            Eq => {
+                // FIXME: unification is too strict
+                self.tc.unify(lhs_ty, rhs_ty).map_err(|_| {
+                    let lhs = self.tc.resolve_partial(lhs_ty).unwrap();
+                    let rhs = self.tc.resolve_partial(rhs_ty).unwrap();
+                    format!("cannot compare {lhs} with {rhs}")
+                })?;
+                Ok(Ty(self.ctx.intern_ty_kind(TyKind::Bool)))
+            }
+            Lt | LtEq | Gt | GtEq => {
+                // FIXME: Arguments must be numeric
                 self.tc.unify(lhs_ty, rhs_ty).map_err(|_| {
                     let lhs = self.tc.resolve_partial(lhs_ty).unwrap();
                     let rhs = self.tc.resolve_partial(rhs_ty).unwrap();
