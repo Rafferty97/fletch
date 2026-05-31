@@ -1,2 +1,2 @@
 mod interner;
-mod ty;
+mod typecheck;
