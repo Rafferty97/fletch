@@ -18,6 +18,8 @@ pub struct CommonTypes<'ty> {
     pub opt_str: Ty<'ty>,
     pub empty_array: Ty<'ty>,
     pub empty_tuple: Ty<'ty>,
+    pub top: Ty<'ty>,
+    pub err: Ty<'ty>,
 }
 
 impl<'ty> TyInterners<'ty> {
@@ -36,7 +38,10 @@ impl<'ty> TyInterners<'ty> {
         let opt_bool = mk_ty(TyKind::Nullable(bool));
         let opt_str = mk_ty(TyKind::Nullable(str));
         let empty_array = mk_ty(TyKind::Array(never));
-        let empty_tuple = mk_ty(TyKind::Tuple(&[]));
+        let empty_ty_slice = ty_slice.intern_slice(arena, &[]);
+        let empty_tuple = mk_ty(TyKind::Tuple(empty_ty_slice));
+        let top = mk_ty(TyKind::Top);
+        let err = mk_ty(TyKind::Err);
 
         let common_types = CommonTypes {
             never,
@@ -47,6 +52,8 @@ impl<'ty> TyInterners<'ty> {
             opt_str,
             empty_array,
             empty_tuple,
+            top,
+            err,
         };
 
         Self {

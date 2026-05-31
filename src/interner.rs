@@ -24,10 +24,16 @@ impl<'a, T: ?Sized> PartialEq for Interned<'a, T> {
 
 impl<'a, T: ?Sized> Eq for Interned<'a, T> {}
 
-impl<'a, T> Deref for Interned<'a, T> {
+impl<'a, T: ?Sized> Deref for Interned<'a, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
+        self.0
+    }
+}
+
+impl<'a, T> AsRef<T> for Interned<'a, T> {
+    fn as_ref(&self) -> &T {
         self.0
     }
 }

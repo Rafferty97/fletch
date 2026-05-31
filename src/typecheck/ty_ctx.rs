@@ -37,4 +37,17 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
     pub fn mk_array(&self, elem: Ty<'ty>) -> Ty<'ty> {
         self.mk_ty_from_kind(TyKind::Array(elem))
     }
+
+    pub fn mk_tuple(&self, tys: &[Ty<'ty>]) -> Ty<'ty> {
+        let tys = self.interners.ty_slice.intern_slice(self.arena, tys);
+        self.mk_ty_from_kind(TyKind::Tuple(tys))
+    }
+
+    pub fn mk_top(&self) -> Ty<'ty> {
+        self.interners.common_types.top
+    }
+
+    pub fn mk_err(&self) -> Ty<'ty> {
+        self.interners.common_types.err
+    }
 }

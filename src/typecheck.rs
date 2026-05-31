@@ -1,5 +1,7 @@
 use crate::interner::Interned;
 
+pub use ty_ctx::TyCtx;
+
 mod ty_ctx;
 mod ty_interners;
 
@@ -13,5 +15,71 @@ pub enum TyKind<'ty> {
     Str,
     Nullable(Ty<'ty>),
     Array(Ty<'ty>),
-    Tuple(&'ty [Ty<'ty>]),
+    Tuple(Interned<'ty, [Ty<'ty>]>),
+    Top,
+    Err,
+}
+
+impl<'ty> Ty<'ty> {
+    pub fn kind(self) -> TyKind<'ty> {
+        *self.0
+    }
+}
+
+impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
+    pub fn meet(self, lhs: Ty<'ty>, rhs: Ty<'ty>) -> Ty<'ty> {
+        match (lhs.kind(), rhs.kind()) {
+            _ if lhs == rhs => lhs,
+
+            (TyKind::Err, _) | (_, TyKind::Err) => self.mk_err(),
+
+            (TyKind::Top, _) => rhs,
+            (_, TyKind::Top) => lhs,
+
+            (TyKind::Nullable(lhs), TyKind::Nullable(rhs)) => self.mk_nullable(self.meet(lhs, rhs)),
+            (TyKind::Nullable(lhs), _) => self.meet(lhs, rhs),
+            (_, TyKind::Nullable(rhs)) => self.meet(lhs, rhs),
+
+            (TyKind::Array(lhs), TyKind::Array(rhs)) => self.mk_array(self.meet(lhs, rhs)),
+
+            (TyKind::Tuple(lhs), TyKind::Tuple(rhs)) if lhs.len() == rhs.len() => {
+                let tys: Vec<_> = lhs
+                    .iter()
+                    .zip(rhs.iter())
+                    .map(|(&lhs, &rhs)| self.meet(lhs, rhs))
+                    .collect();
+                self.mk_tuple(&tys)
+            }
+
+            _ => self.mk_never(),
+        }
+    }
+
+    pub fn join(self, lhs: Ty<'ty>, rhs: Ty<'ty>) -> Ty<'ty> {
+        match (lhs.kind(), rhs.kind()) {
+            _ if lhs == rhs => lhs,
+
+            (TyKind::Err, _) | (_, TyKind::Err) => self.mk_err(),
+
+            (TyKind::Never, _) => rhs,
+            (_, TyKind::Never) => lhs,
+
+            (TyKind::Nullable(lhs), TyKind::Nullable(rhs)) => self.mk_nullable(self.join(lhs, rhs)),
+            (TyKind::Nullable(lhs), _) => self.mk_nullable(self.join(lhs, rhs)),
+            (_, TyKind::Nullable(rhs)) => self.mk_nullable(self.join(lhs, rhs)),
+
+            (TyKind::Array(lhs), TyKind::Array(rhs)) => self.mk_array(self.join(lhs, rhs)),
+
+            (TyKind::Tuple(lhs), TyKind::Tuple(rhs)) if lhs.len() == rhs.len() => {
+                let tys: Vec<_> = lhs
+                    .iter()
+                    .zip(rhs.iter())
+                    .map(|(&lhs, &rhs)| self.join(lhs, rhs))
+                    .collect();
+                self.mk_tuple(&tys)
+            }
+
+            _ => self.mk_top(),
+        }
+    }
 }
