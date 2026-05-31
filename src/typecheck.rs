@@ -82,4 +82,26 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
             _ => self.mk_top(),
         }
     }
+
+    pub fn is_subtype(self, sub: Ty<'ty>, sup: Ty<'ty>) -> bool {
+        match (sub.kind(), sup.kind()) {
+            _ if sub == sup => true,
+
+            (TyKind::Err, _) | (_, TyKind::Err) => true,
+            (TyKind::Never, _) | (_, TyKind::Top) => true,
+
+            (TyKind::Nullable(sub), TyKind::Nullable(sup)) => self.is_subtype(sub, sup),
+            (TyKind::Nullable(_), _) => false,
+            (_, TyKind::Nullable(sup)) => self.is_subtype(sub, sup),
+
+            (TyKind::Array(sub), TyKind::Array(sup)) => self.is_subtype(sub, sup),
+
+            (TyKind::Tuple(sub), TyKind::Tuple(sup)) if sub.len() == sup.len() => sub
+                .iter()
+                .zip(sup.iter())
+                .all(|(&sub, &sup)| self.is_subtype(sub, sup)),
+
+            _ => false,
+        }
+    }
 }
