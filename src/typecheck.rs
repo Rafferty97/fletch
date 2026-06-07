@@ -12,12 +12,39 @@ pub struct Ty<'ty>(Interned<'ty, TyKind<'ty>>);
 pub enum TyKind<'ty> {
     Never,
     Bool,
+    Int(IntTy),
+    UInt(UIntTy),
+    Float(FloatTy),
+    IntLiteral,
+    FloatLiteral,
     Str,
     Nullable(Ty<'ty>),
     Array(Ty<'ty>),
     Tuple(Interned<'ty, [Ty<'ty>]>),
     Top,
     Err,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub enum IntTy {
+    Int8,
+    Int16,
+    Int32,
+    Int64,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub enum UIntTy {
+    UInt8,
+    UInt16,
+    UInt32,
+    UInt64,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub enum FloatTy {
+    Float32,
+    Float64,
 }
 
 impl<'ty> Ty<'ty> {
@@ -35,6 +62,15 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
 
             (TyKind::Top, _) => rhs,
             (_, TyKind::Top) => lhs,
+
+            (TyKind::Int(lhs), TyKind::Int(rhs)) => self.mk_int(lhs.min(rhs)),
+            (TyKind::UInt(lhs), TyKind::UInt(rhs)) => self.mk_uint(lhs.min(rhs)),
+            (TyKind::Float(lhs), TyKind::Float(rhs)) => self.mk_float(lhs.min(rhs)),
+
+            (TyKind::IntLiteral, TyKind::Int(_) | TyKind::UInt(_)) => lhs,
+            (TyKind::Int(_) | TyKind::UInt(_), TyKind::IntLiteral) => rhs,
+            (TyKind::FloatLiteral, TyKind::Float(_)) => lhs,
+            (TyKind::Float(_), TyKind::FloatLiteral) => rhs,
 
             (TyKind::Nullable(lhs), TyKind::Nullable(rhs)) => self.mk_nullable(self.meet(lhs, rhs)),
             (TyKind::Nullable(lhs), _) => self.meet(lhs, rhs),
@@ -63,6 +99,15 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
 
             (TyKind::Never, _) => rhs,
             (_, TyKind::Never) => lhs,
+
+            (TyKind::Int(lhs), TyKind::Int(rhs)) => self.mk_int(lhs.max(rhs)),
+            (TyKind::UInt(lhs), TyKind::UInt(rhs)) => self.mk_uint(lhs.max(rhs)),
+            (TyKind::Float(lhs), TyKind::Float(rhs)) => self.mk_float(lhs.max(rhs)),
+
+            (TyKind::IntLiteral, TyKind::Int(_) | TyKind::UInt(_)) => rhs,
+            (TyKind::Int(_) | TyKind::UInt(_), TyKind::IntLiteral) => lhs,
+            (TyKind::FloatLiteral, TyKind::Float(_)) => rhs,
+            (TyKind::Float(_), TyKind::FloatLiteral) => lhs,
 
             (TyKind::Nullable(lhs), TyKind::Nullable(rhs)) => self.mk_nullable(self.join(lhs, rhs)),
             (TyKind::Nullable(lhs), _) => self.mk_nullable(self.join(lhs, rhs)),

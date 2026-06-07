@@ -65,10 +65,13 @@ where
 }
 
 pub fn parse(src: &'_ str) -> Result<Expr, Vec<Rich<'_, Token<'_>>>> {
-    let token_iter = Token::lexer(src).spanned().map(|(tok, span)| match tok {
-        Ok(tok) => (tok, span.into()),
-        Err(()) => (Token::Error, span.into()),
-    });
+    let token_iter = Token::lexer(src)
+        .spanned()
+        .map(|(tok, span)| match tok {
+            Ok(tok) => (tok, span.into()),
+            Err(()) => (Token::Error, span.into()),
+        })
+        .filter(|(tok, _)| !matches!(tok, Token::Newline));
 
     let token_stream = Stream::from_iter(token_iter).map((0..src.len()).into(), |(t, s)| (t, s));
 

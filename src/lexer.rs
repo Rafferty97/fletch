@@ -1,7 +1,7 @@
 use logos::Logos;
 
 #[derive(Clone, Copy, Logos, Debug, PartialEq)]
-#[logos(skip r"[ \t\n\f]+")]
+#[logos(skip r"[ \t\r\f]+")]
 pub enum Token<'a> {
     #[regex("[a-zA-Z_][a-zA-Z_0-9]*", |lex| lex.slice())]
     Ident(&'a str),
@@ -23,6 +23,10 @@ pub enum Token<'a> {
     CloseParen,
     #[regex("//[^\n]*", allow_greedy = true)]
     Comment,
+    #[token(";")]
+    Semi,
+    #[regex("\n+")]
+    Newline,
     #[logos(error = Token)]
     Error,
 }

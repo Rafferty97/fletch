@@ -1,5 +1,7 @@
 use bumpalo::Bump;
 
+use crate::typecheck::{FloatTy, IntTy, UIntTy};
+
 use super::ty_interners::TyInterners;
 use super::{Ty, TyKind};
 
@@ -28,6 +30,21 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
 
     pub fn mk_null(&self) -> Ty<'ty> {
         self.interners.common_types.opt_never
+    }
+
+    pub fn mk_int(&self, ty: IntTy) -> Ty<'ty> {
+        // FIXME: pre-intern
+        self.mk_ty_from_kind(TyKind::Int(ty))
+    }
+
+    pub fn mk_uint(&self, ty: UIntTy) -> Ty<'ty> {
+        // FIXME: pre-intern
+        self.mk_ty_from_kind(TyKind::UInt(ty))
+    }
+
+    pub fn mk_float(&self, ty: FloatTy) -> Ty<'ty> {
+        // FIXME: pre-intern
+        self.mk_ty_from_kind(TyKind::Float(ty))
     }
 
     pub fn mk_nullable(&self, inner: Ty<'ty>) -> Ty<'ty> {
