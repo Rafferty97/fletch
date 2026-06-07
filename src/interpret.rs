@@ -5,7 +5,7 @@ use std::{
 
 use thiserror::Error;
 
-use crate::ast::{BinOp, Expr, ExprKind};
+use crate::ast::{BinOp, Block, Expr, ExprKind, StmtKind};
 
 #[derive(Clone, Debug)]
 pub enum Value {
@@ -23,14 +23,28 @@ pub enum RuntimeError {
     Internal(Box<str>),
 }
 
-pub fn eval(expr: &Expr) -> Result<Value, RuntimeError> {
+pub fn eval(block: &Block) -> Result<(), RuntimeError> {
+    for stmt in &block.stmts {
+        match &stmt.kind {
+            StmtKind::Let(_, _, expr) => {
+                eval_expr(&*expr)?;
+            }
+            StmtKind::Expr(expr) => {
+                eval_expr(&*expr)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+pub fn eval_expr(expr: &Expr) -> Result<Value, RuntimeError> {
     match &expr.kind {
         ExprKind::Var(_) => todo!(),
         ExprKind::IntLiteral(lit) => Ok(Value::Int32(lit.parse()?)),
         ExprKind::FloatLiteral(lit) => Ok(Value::Float64(lit.parse()?)),
         ExprKind::Binary(op, lhs, rhs) => {
-            let lhs = eval(lhs)?;
-            let rhs = eval(rhs)?;
+            let lhs = eval_expr(lhs)?;
+            let rhs = eval_expr(rhs)?;
             Ok(match (op, lhs, rhs) {
                 (BinOp::Add, Value::Int32(lhs), Value::Int32(rhs)) => Value::Int32(lhs + rhs),
                 (BinOp::Add, Value::Float64(lhs), Value::Float64(rhs)) => Value::Float64(lhs + rhs),

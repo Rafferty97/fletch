@@ -23,6 +23,10 @@ pub enum Token<'a> {
     CloseParen,
     #[regex("//[^\n]*", allow_greedy = true)]
     Comment,
+    #[token("let")]
+    Let,
+    #[token("=")]
+    Eq,
     #[token(";")]
     Semi,
     #[regex("\n+")]

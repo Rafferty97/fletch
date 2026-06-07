@@ -4,7 +4,7 @@ use chumsky::pratt::*;
 use chumsky::prelude::*;
 use logos::Logos;
 
-use crate::ast::{BinOp, Expr, ExprKind, NodeId};
+use crate::ast::{BinOp, Block, Expr, ExprKind, Node, NodeId, Stmt, StmtKind};
 use crate::lexer::Token;
 
 struct ParseState {
@@ -21,18 +21,18 @@ impl ParseState {
 
 type Extra<'src> = extra::Full<Rich<'src, Token<'src>>, SimpleState<ParseState>, ()>;
 
-fn make_expr<'src, I>(kind: ExprKind, e: &mut MapExtra<'src, '_, I, Extra<'src>>) -> Expr
+fn make_node<'src, I, T>(kind: T, e: &mut MapExtra<'src, '_, I, Extra<'src>>) -> Node<T>
 where
     I: ValueInput<'src, Token = Token<'src>, Span = SimpleSpan>,
 {
-    Expr {
+    Node {
         id: e.state().alloc_id(),
         kind,
         span: e.span().into(),
     }
 }
 
-fn parser<'src, I>() -> impl Parser<'src, I, Expr, Extra<'src>>
+fn expr_parser<'src, I>() -> impl Parser<'src, I, Expr, Extra<'src>>
 where
     I: ValueInput<'src, Token = Token<'src>, Span = SimpleSpan>,
 {
@@ -44,27 +44,56 @@ where
         };
 
         let atom = atom
-            .map_with(make_expr)
+            .map_with(make_node)
             .or(expr.delimited_by(just(Token::OpenParen), just(Token::CloseParen)));
 
         atom.pratt((
             infix(left(2), just(Token::Asterisk), |l, _, r, e| {
-                make_expr(ExprKind::Binary(BinOp::Mul, Box::new(l), Box::new(r)), e)
+                make_node(ExprKind::Binary(BinOp::Mul, Box::new(l), Box::new(r)), e)
             }),
             infix(left(2), just(Token::Solidus), |l, _, r, e| {
-                make_expr(ExprKind::Binary(BinOp::Div, Box::new(l), Box::new(r)), e)
+                make_node(ExprKind::Binary(BinOp::Div, Box::new(l), Box::new(r)), e)
             }),
             infix(left(1), just(Token::Plus), |l, _, r, e| {
-                make_expr(ExprKind::Binary(BinOp::Add, Box::new(l), Box::new(r)), e)
+                make_node(ExprKind::Binary(BinOp::Add, Box::new(l), Box::new(r)), e)
             }),
             infix(left(1), just(Token::Minus), |l, _, r, e| {
-                make_expr(ExprKind::Binary(BinOp::Sub, Box::new(l), Box::new(r)), e)
+                make_node(ExprKind::Binary(BinOp::Sub, Box::new(l), Box::new(r)), e)
             }),
         ))
     })
 }
 
-pub fn parse(src: &'_ str) -> Result<Expr, Vec<Rich<'_, Token<'_>>>> {
+fn stmt_parser<'src, I>(
+    expr: impl Parser<'src, I, Expr, Extra<'src>>,
+) -> impl Parser<'src, I, Stmt, Extra<'src>>
+where
+    I: ValueInput<'src, Token = Token<'src>, Span = SimpleSpan>,
+{
+    let keyword = just(Token::Let);
+    let name = select! { Token::Ident(s) => s }.labelled("variable name");
+    // let annotation = just(Token::Colon).ignore_then(ty).or_not();
+    let init = just(Token::Eq).ignore_then(expr);
+
+    keyword
+        .ignore_then(name)
+        // .then(annotation)
+        .then(init)
+        .then_ignore(just(Token::Semi))
+        .map(|(name, expr)| StmtKind::Let(name.into(), None, expr.into()))
+        .map_with(make_node)
+}
+
+fn parser<'src, I>(
+    stmt: impl Parser<'src, I, Stmt, Extra<'src>>,
+) -> impl Parser<'src, I, Block, Extra<'src>>
+where
+    I: ValueInput<'src, Token = Token<'src>, Span = SimpleSpan>,
+{
+    stmt.repeated().collect().map(|stmts| Block { stmts })
+}
+
+pub fn parse(src: &'_ str) -> Result<Block, Vec<Rich<'_, Token<'_>>>> {
     let token_iter = Token::lexer(src)
         .spanned()
         .map(|(tok, span)| match tok {
@@ -77,7 +106,11 @@ pub fn parse(src: &'_ str) -> Result<Expr, Vec<Rich<'_, Token<'_>>>> {
 
     let mut state = SimpleState::from(ParseState { next_id: 0 });
 
-    parser()
+    let expr = expr_parser();
+    let stmt = stmt_parser(expr);
+    let block = parser(stmt);
+
+    block
         .parse_with_state(token_stream, &mut state)
         .into_result()
 }
@@ -88,7 +121,7 @@ mod test {
 
     #[test]
     fn test_expr() {
-        let src = "2 + (4 * 8)";
+        let src = "let x = 2 + (4 * 8);";
         parse(src).unwrap();
     }
 }
