@@ -2,6 +2,7 @@ use crate::interner::Interned;
 
 pub use ty_ctx::TyCtx;
 
+mod infer;
 mod ty_ctx;
 mod ty_interners;
 
