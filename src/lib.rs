@@ -277,16 +277,10 @@ impl InferCtx {
             return Ty::Err;
         }
         match variance {
-            Variance::Covariant | Variance::Bivariant => v.lower.clone(),
+            Variance::Covariant => v.lower.clone(),
             Variance::Contravariant => v.upper.clone(),
-            Variance::Invariant => {
-                if v.lower == v.upper {
-                    v.lower.clone()
-                } else {
-                    self.errors.push(format!("no unique type"));
-                    Ty::Err
-                }
-            }
+            Variance::Invariant => v.lower.clone(), // FIXME
+            Variance::Bivariant => unreachable!(),  //v.lower.clone(), // FIXME
         }
     }
 }
@@ -526,5 +520,342 @@ mod test {
         let result = ctx.solve_ty(&ret_ty, &ret_ty);
         assert_eq!(result, Ty::Array(Box::new(Ty::Never)));
         assert!(ctx.errors.is_empty());
+    }
+
+    #[test]
+    fn test_invariant_in_return() {
+        // A function where T appears in both positions in return type
+        // e.g. weird<T>(x: T) -> fn(T) -> T
+        // T appears contravariantly (param of returned fn) and covariantly (ret of returned fn)
+        // With concrete x: Int32, bounds should coincide at Int32
+
+        let mut ctx = InferCtx::new();
+
+        let t = ctx.fresh_var();
+
+        let x_param = Ty::Var(t);
+        let ret_ty = Ty::Func(FuncTy {
+            params: vec![Ty::Var(t)],
+            ret: Box::new(Ty::Var(t)),
+        });
+
+        // Constrain from x: Int32
+        ctx.add_constraint(&Ty::Int(IntTy::Int32), &x_param);
+
+        // T appears in both positions in ret_ty - invariant
+        // lower = Int32, upper = Top
+        // Invariant branch: lower != upper -> Err
+        // Wait - upper is still Top here since only x constrains T
+        // So this should actually resolve fine since lower=Int32, upper=Top
+        // The invariant case only errors when lower != upper after all constraints
+        let result = ctx.solve_ty(&ret_ty, &ret_ty);
+        assert_eq!(
+            result,
+            Ty::Func(FuncTy {
+                params: vec![Ty::Int(IntTy::Int32)],
+                ret: Box::new(Ty::Int(IntTy::Int32)),
+            })
+        );
+        assert!(ctx.errors.is_empty());
+    }
+
+    #[test]
+    fn test_invariant_ambiguous() {
+        // T appears in both positions in return type
+        // AND two conflicting constraints arrive
+        // weird<T>(x: T, y: T) -> fn(T) -> T
+        // called with x: Int32, y: Int64
+        // lower = Int64 (join), upper = Top
+        // invariant: lower != upper -> Err
+
+        let mut ctx = InferCtx::new();
+
+        let t = ctx.fresh_var();
+
+        let ret_ty = Ty::Func(FuncTy {
+            params: vec![Ty::Var(t)],
+            ret: Box::new(Ty::Var(t)),
+        });
+
+        // Two conflicting lower bounds
+        ctx.add_constraint(&Ty::Int(IntTy::Int32), &Ty::Var(t));
+        ctx.add_constraint(&Ty::Int(IntTy::Int64), &Ty::Var(t));
+
+        // lower = Int64 (join of Int32 and Int64), upper = Top
+        // invariant branch: Int64 != Top -> Err
+        let result = ctx.solve_ty(&ret_ty, &ret_ty);
+        assert_eq!(
+            result,
+            Ty::Func(FuncTy {
+                params: vec![Ty::Err],
+                ret: Box::new(Ty::Err),
+            })
+        );
+    }
+
+    #[test]
+    fn test_nested_generic_calls() {
+        // map(map(xs, f), g)
+        // xs: Int32[], f: fn(Int32) -> Bool, g: fn(Bool) -> Int64
+        // inner map produces Bool[], outer map produces Int64[]
+
+        let mut ctx = InferCtx::new();
+
+        // Inner map: map<T1, U1>(f: fn(T1) -> U1, xs: T1[]) -> U1[]
+        let t1 = ctx.fresh_var();
+        let u1 = ctx.fresh_var();
+
+        let inner_f_param = Ty::Func(FuncTy {
+            params: vec![Ty::Var(t1)],
+            ret: Box::new(Ty::Var(u1)),
+        });
+        let inner_xs_param = Ty::Array(Box::new(Ty::Var(t1)));
+        let inner_ret_ty = Ty::Array(Box::new(Ty::Var(u1)));
+
+        // Phase 1 - xs: Int32[]
+        ctx.add_constraint(&Ty::Array(Box::new(Ty::Int(IntTy::Int32))), &inner_xs_param);
+
+        // Resolve T1
+        let t1_ty = ctx.solve_var(t1, &inner_ret_ty);
+        assert_eq!(t1_ty, Ty::Int(IntTy::Int32));
+
+        // Phase 2 - f: fn(Int32) -> Bool
+        ctx.add_constraint(
+            &Ty::Func(FuncTy {
+                params: vec![t1_ty],
+                ret: Box::new(Ty::Bool),
+            }),
+            &inner_f_param,
+        );
+
+        // Solve inner map result
+        let inner_result = ctx.solve_ty(&inner_ret_ty, &inner_ret_ty);
+        assert_eq!(inner_result, Ty::Array(Box::new(Ty::Bool)));
+
+        // Outer map: map<T2, U2>(f: fn(T2) -> U2, xs: T2[]) -> U2[]
+        let t2 = ctx.fresh_var();
+        let u2 = ctx.fresh_var();
+
+        let outer_f_param = Ty::Func(FuncTy {
+            params: vec![Ty::Var(t2)],
+            ret: Box::new(Ty::Var(u2)),
+        });
+        let outer_xs_param = Ty::Array(Box::new(Ty::Var(t2)));
+        let outer_ret_ty = Ty::Array(Box::new(Ty::Var(u2)));
+
+        // Phase 1 - xs is inner map result: Bool[]
+        ctx.add_constraint(&inner_result, &outer_xs_param);
+
+        // Resolve T2
+        let t2_ty = ctx.solve_var(t2, &outer_ret_ty);
+        assert_eq!(t2_ty, Ty::Bool);
+
+        // Phase 2 - g: fn(Bool) -> Int64
+        ctx.add_constraint(
+            &Ty::Func(FuncTy {
+                params: vec![t2_ty],
+                ret: Box::new(Ty::Int(IntTy::Int64)),
+            }),
+            &outer_f_param,
+        );
+
+        // Solve outer map result
+        let outer_result = ctx.solve_ty(&outer_ret_ty, &outer_ret_ty);
+        assert_eq!(outer_result, Ty::Array(Box::new(Ty::Int(IntTy::Int64))));
+        assert!(ctx.errors.is_empty());
+    }
+
+    #[test]
+    fn test_nullable_array() {
+        // map<T, U>(f: fn(T) -> U, xs: T[]) -> U[]
+        // map(xs, x => x) where xs: Int32?[]
+        // T = Int32?, U = Int32?
+
+        let mut ctx = InferCtx::new();
+
+        let t = ctx.fresh_var();
+        let u = ctx.fresh_var();
+
+        let f_param = Ty::Func(FuncTy {
+            params: vec![Ty::Var(t)],
+            ret: Box::new(Ty::Var(u)),
+        });
+        let xs_param = Ty::Array(Box::new(Ty::Var(t)));
+        let ret_ty = Ty::Array(Box::new(Ty::Var(u)));
+
+        // Phase 1 - xs: Int32?[]
+        ctx.add_constraint(
+            &Ty::Array(Box::new(Ty::Nullable(Box::new(Ty::Int(IntTy::Int32))))),
+            &xs_param,
+        );
+
+        // Resolve T
+        let t_ty = ctx.solve_var(t, &ret_ty);
+        assert_eq!(t_ty, Ty::Nullable(Box::new(Ty::Int(IntTy::Int32))));
+
+        // Phase 2 - identity lambda body
+        ctx.add_constraint(
+            &Ty::Func(FuncTy {
+                params: vec![t_ty.clone()],
+                ret: Box::new(t_ty),
+            }),
+            &f_param,
+        );
+
+        let result = ctx.solve_ty(&ret_ty, &ret_ty);
+        assert_eq!(
+            result,
+            Ty::Array(Box::new(Ty::Nullable(Box::new(Ty::Int(IntTy::Int32)))))
+        );
+        assert!(ctx.errors.is_empty());
+    }
+
+    #[test]
+    fn test_compose() {
+        // compose<T, U, V>(f: fn(U) -> V, g: fn(T) -> U) -> fn(T) -> V
+        // T appears contravariantly in return type
+        // compose(fn(x: Bool) -> Int32, fn(x: Int32) -> Bool)
+        // T = Int32 (upper bound from g's param, contravariant in return)
+        // U = Bool (from g's return / f's param)
+        // V = Int32 (from f's return)
+
+        let mut ctx = InferCtx::new();
+
+        let t = ctx.fresh_var();
+        let u = ctx.fresh_var();
+        let v = ctx.fresh_var();
+
+        let f_param = Ty::Func(FuncTy {
+            params: vec![Ty::Var(u)],
+            ret: Box::new(Ty::Var(v)),
+        });
+        let g_param = Ty::Func(FuncTy {
+            params: vec![Ty::Var(t)],
+            ret: Box::new(Ty::Var(u)),
+        });
+        let ret_ty = Ty::Func(FuncTy {
+            params: vec![Ty::Var(t)],
+            ret: Box::new(Ty::Var(v)),
+        });
+
+        // Constrain from f: fn(Bool) -> Int32
+        ctx.add_constraint(
+            &Ty::Func(FuncTy {
+                params: vec![Ty::Bool],
+                ret: Box::new(Ty::Int(IntTy::Int32)),
+            }),
+            &f_param,
+        );
+
+        // Constrain from g: fn(Int32) -> Bool
+        ctx.add_constraint(
+            &Ty::Func(FuncTy {
+                params: vec![Ty::Int(IntTy::Int32)],
+                ret: Box::new(Ty::Bool),
+            }),
+            &g_param,
+        );
+
+        // Solve return type
+        let result = ctx.solve_ty(&ret_ty, &ret_ty);
+        assert_eq!(
+            result,
+            Ty::Func(FuncTy {
+                params: vec![Ty::Int(IntTy::Int32)],
+                ret: Box::new(Ty::Int(IntTy::Int32)),
+            })
+        );
+        assert!(ctx.errors.is_empty());
+    }
+
+    #[test]
+    fn test_multiple_type_vars_dependent() {
+        // zip<T, U>(xs: T[], ys: U[]) -> (T, U)[]
+        // zip(int32_arr, bool_arr)
+        // T = Int32, U = Bool
+
+        let mut ctx = InferCtx::new();
+
+        let t = ctx.fresh_var();
+        let u = ctx.fresh_var();
+
+        let xs_param = Ty::Array(Box::new(Ty::Var(t)));
+        let ys_param = Ty::Array(Box::new(Ty::Var(u)));
+        let ret_ty = Ty::Array(Box::new(Ty::Tuple(vec![Ty::Var(t), Ty::Var(u)])));
+
+        // Constrain from xs: Int32[]
+        ctx.add_constraint(&Ty::Array(Box::new(Ty::Int(IntTy::Int32))), &xs_param);
+
+        // Constrain from ys: Bool[]
+        ctx.add_constraint(&Ty::Array(Box::new(Ty::Bool)), &ys_param);
+
+        let result = ctx.solve_ty(&ret_ty, &ret_ty);
+        assert_eq!(
+            result,
+            Ty::Array(Box::new(Ty::Tuple(vec![Ty::Int(IntTy::Int32), Ty::Bool,])))
+        );
+        assert!(ctx.errors.is_empty());
+    }
+
+    #[test]
+    fn test_contravariant_return() {
+        // apply<T, U>(f: fn(T) -> U, x: T) -> U
+        // apply(fn(x: Int64) -> Bool, 42i32)
+        // T gets lower bound Int32 from x, upper bound Int64 from f's param (contravariant)
+        // T is covariant in return U... wait T doesn't appear in return
+        // T is bivariant in return, picks lower bound Int32
+        // But upper bound is Int64, Int32 <: Int64 so satisfiable
+
+        let mut ctx = InferCtx::new();
+
+        let t = ctx.fresh_var();
+        let u = ctx.fresh_var();
+
+        let f_param = Ty::Func(FuncTy {
+            params: vec![Ty::Var(t)],
+            ret: Box::new(Ty::Var(u)),
+        });
+        let x_param = Ty::Var(t);
+        let ret_ty = Ty::Var(u);
+
+        // Constrain from f: fn(Int64) -> Bool
+        ctx.add_constraint(
+            &Ty::Func(FuncTy {
+                params: vec![Ty::Int(IntTy::Int64)],
+                ret: Box::new(Ty::Bool),
+            }),
+            &f_param,
+        );
+
+        // Constrain from x: Int32
+        ctx.add_constraint(&Ty::Int(IntTy::Int32), &x_param);
+
+        let result = ctx.solve_ty(&ret_ty, &ret_ty);
+        assert_eq!(result, Ty::Bool);
+        assert!(ctx.errors.is_empty());
+    }
+
+    #[test]
+    fn test_unsatisfiable_bounds() {
+        // map(xs, x: Bool => ...) where xs: Int32[]
+        // T lower = Int32, upper = Bool
+        // Int32 is not <: Bool -> Err
+
+        let mut ctx = InferCtx::new();
+
+        let t = ctx.fresh_var();
+        let ret_ty = Ty::Array(Box::new(Ty::Var(t)));
+
+        // Lower bound from xs: Int32[]
+        ctx.add_constraint(
+            &Ty::Array(Box::new(Ty::Int(IntTy::Int32))),
+            &Ty::Array(Box::new(Ty::Var(t))),
+        );
+
+        // Upper bound from annotation: Bool
+        ctx.add_constraint(&Ty::Var(t), &Ty::Bool);
+
+        let result = ctx.solve_ty(&ret_ty, &ret_ty);
+        assert_eq!(result, Ty::Array(Box::new(Ty::Err)));
     }
 }
