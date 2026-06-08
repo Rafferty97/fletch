@@ -2,9 +2,9 @@ use crate::interner::Interned;
 
 pub use ty_ctx::TyCtx;
 
-mod infer;
 mod ty_ctx;
 mod ty_interners;
+mod variance;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Ty<'ty>(Interned<'ty, TyKind<'ty>>);
@@ -23,6 +23,7 @@ pub enum TyKind<'ty> {
     Array(Ty<'ty>),
     Tuple(Interned<'ty, [Ty<'ty>]>),
     Top,
+    Var(VarId),
     Err,
 }
 
@@ -47,6 +48,9 @@ pub enum FloatTy {
     Float32,
     Float64,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct VarId(u32);
 
 impl<'ty> Ty<'ty> {
     pub fn kind(self) -> TyKind<'ty> {
