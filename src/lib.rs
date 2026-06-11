@@ -166,114 +166,141 @@ pub fn check_subtype(a: &Ty, b: &Ty) -> bool {
 #[derive(Default)]
 struct InferCtx {
     bounds: HashMap<ParamId, (Ty, Ty)>,
+    params: HashMap<ParamId, Ty>,
+}
+
+impl InferCtx {
+    fn subst_params(&mut self) -> Result<(), String> {
+        self.params = self
+            .bounds
+            .iter()
+            .map(|(id, (lower, upper))| Ok((*id, reconcile(upper, lower)?)))
+            .collect::<Result<_, String>>()?;
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
 struct FuncDecl {
     params: Vec<Ty>,
     ret: Ty,
-    type_params: usize,
+    type_params: Vec<ParamId>,
+}
+
+struct Mock(Ty);
+
+struct FuncCall {
+    func: FuncDecl,
+    args: Vec<Box<dyn Expr>>,
+}
+
+trait Expr {
+    fn solve(&self, ctx: &mut InferCtx, expected: &Ty) -> Result<Ty, String>;
+    fn check(&self, ctx: &InferCtx) -> Result<Ty, String>;
+}
+
+impl Expr for Mock {
+    fn solve(&self, _ctx: &mut InferCtx, _expected: &Ty) -> Result<Ty, String> {
+        Ok(self.0.clone())
+    }
+
+    fn check(&self, _ctx: &InferCtx) -> Result<Ty, String> {
+        Ok(self.0.clone())
+    }
+}
+
+impl Expr for FuncCall {
+    fn solve(&self, ctx: &mut InferCtx, expected: &Ty) -> Result<Ty, String> {
+        fn print_bounds(bounds: &[(Ty, Ty)]) {
+            print!("Bounds: ");
+            if bounds.is_empty() {
+                println!("<empty>");
+                return;
+            }
+            for bound in bounds {
+                print!("{bound:?}\t");
+            }
+            println!();
+        }
+
+        for id in &self.func.type_params {
+            ctx.bounds.entry(*id).or_insert((Ty::Never, Ty::Unknown));
+        }
+
+        if self.args.len() != self.func.params.len() {
+            Err(format!(
+                "expected {} arguments, got {}",
+                self.func.params.len(),
+                self.args.len()
+            ))?;
+        };
+
+        update_bounds(ctx, &self.func.ret, expected, true)?;
+        // print_bounds(&bounds);
+
+        loop {
+            let mut changed = false;
+
+            for (arg, param) in self.args.iter().zip(&self.func.params) {
+                let expected = substitute_bounded(ctx, param, true);
+                let actual = arg.solve(ctx, &expected)?;
+                println!("    {param} => exp: {expected}\tact: {actual}");
+                changed |= update_bounds(ctx, param, &actual, false)?;
+            }
+            // print_bounds(&bounds);
+
+            if !changed {
+                break;
+            }
+        }
+
+        Ok(substitute_bounded(ctx, &self.func.ret, false))
+    }
+
+    fn check(&self, ctx: &InferCtx) -> Result<Ty, String> {
+        // Check arguments
+        for (arg, param) in self.args.iter().zip(&self.func.params) {
+            let expected = substitute(&ctx, param);
+            let actual = arg.check(ctx)?;
+            reconcile(&expected, &actual)?;
+        }
+
+        // Return type
+        Ok(substitute(&ctx, &self.func.ret))
+    }
 }
 
 fn check_func_call_outer(
-    func: &FuncDecl,
-    args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>],
+    func: FuncDecl,
+    args: Vec<Box<dyn Expr>>,
     expected: &Ty,
 ) -> Result<Ty, String> {
-    check_func_call(&mut InferCtx::default(), func, args, expected)
+    let func_call = FuncCall { func, args };
+    let mut ctx = InferCtx::default();
+    func_call.solve(&mut ctx, expected)?;
+    ctx.subst_params()?;
+    func_call.check(&ctx)
 }
 
-fn check_func_call(
-    ctx: &mut InferCtx,
-    func: &FuncDecl,
-    args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>],
-    expected: &Ty,
-) -> Result<Ty, String> {
-    fn print_bounds(bounds: &[(Ty, Ty)]) {
-        print!("Bounds: ");
-        if bounds.is_empty() {
-            println!("<empty>");
-            return;
-        }
-        for bound in bounds {
-            print!("{bound:?}\t");
-        }
-        println!();
-    }
-
-    for i in 0..func.type_params {
-        ctx.bounds
-            .entry(ParamId(i as u32))
-            .or_insert((Ty::Never, Ty::Unknown));
-    }
-
-    if args.len() != func.params.len() {
-        Err(format!(
-            "expected {} arguments, got {}",
-            func.params.len(),
-            args.len()
-        ))?;
-    };
-
-    update_bounds(ctx, &func.ret, expected, true)?;
-    // print_bounds(&bounds);
-
-    loop {
-        let mut changed = false;
-
-        for (arg, param) in args.iter().zip(&func.params) {
-            let expected = substitute_bounded(ctx, param, true);
-            let actual = arg(&expected)?;
-            println!("    {param} => exp: {expected}\tact: {actual}");
-            changed |= update_bounds(ctx, param, &actual, false)?;
-        }
-        // print_bounds(&bounds);
-
-        if !changed {
-            break;
-        }
-    }
-
-    Ok(substitute_bounded(ctx, &func.ret, false))
-
-    // // Resolve type parameters
-    // print_bounds(&bounds);
-    // let param_tys = bounds
-    //     .iter()
-    //     .map(|(lower, upper)| reconcile(upper, lower))
-    //     .collect::<Result<Vec<_>, _>>()?;
-    // println!("resolved = {param_tys:?}");
-
-    // // Check arguments
-    // for (arg, param) in args.iter().zip(&func.params) {
-    //     let expected = substitute(param, &param_tys);
-    //     let actual = arg(&expected)?;
-    //     reconcile(&expected, &actual)?;
-    // }
-
-    // // Return type
-    // Ok(substitute(&func.ret, &param_tys))
-}
-
-fn substitute(ty: &Ty, vars: &[Ty]) -> Ty {
+fn substitute(ctx: &InferCtx, ty: &Ty) -> Ty {
     match ty {
-        Ty::Nullable(inner) => Ty::Nullable(substitute(inner, vars).into()),
-        Ty::Array(inner) => Ty::Array(substitute(inner, vars).into()),
+        Ty::Nullable(inner) => Ty::Nullable(substitute(ctx, inner).into()),
+        Ty::Array(inner) => Ty::Array(substitute(ctx, inner).into()),
         Ty::Tuple(tys) => tys
             .iter()
-            .map(|param| substitute(param, vars))
+            .map(|param| substitute(ctx, param))
             .collect::<Vec<_>>()
             .pipe(Ty::Tuple),
         Ty::Func(func) => {
             let params = func
                 .params
                 .iter()
-                .map(|param| substitute(param, vars))
+                .map(|param| substitute(ctx, param))
                 .collect();
-            let ret = substitute(&func.ret, vars).into();
+            let ret = substitute(ctx, &func.ret).into();
             Ty::Func(FuncTy { params, ret })
         }
-        Ty::Param(id) => vars[id.0 as usize].clone(),
+        Ty::Param(id) => ctx.params[id].clone(),
         _ => ty.clone(),
     }
 }
@@ -546,59 +573,16 @@ mod test {
     /// (because the parameter is unannotated — it is not the authority on its
     /// own type). This mirrors how an unannotated lambda behaves: checked
     /// against whatever expected type flows down, but reporting `sink` upward.
-    fn unannotated_lambda(
-        body: impl Fn(&Ty) -> Result<Ty, String> + 'static,
-    ) -> Box<dyn Fn(&Ty) -> Result<Ty, String>> {
-        Box::new(move |ty| {
-            let Ty::Func(FuncTy { params, .. }) = ty else {
-                return Err(format!("{ty:?} is not a function!"));
-            };
-            let [pty] = &params[..] else {
-                return Err(format!("expected 1 argument, got {}", params.len()));
-            };
-            let ret = body(pty)?;
-            Ok(func(vec![Ty::Infer], ret))
-        })
+    fn unannotated_lambda(ret: Ty) -> Box<dyn Expr> {
+        Box::new(Mock(func(vec![Ty::Infer], ret)))
     }
 
     /// A lambda with an *annotated* parameter of type `annot`. It checks its
     /// body against `annot` (ignoring the expected parameter type that flows
     /// down) and reports `annot` in its parameter position — because an
     /// annotation IS an authoritative statement about the parameter type.
-    fn annotated_lambda(
-        annot: Ty,
-        body: impl Fn(&Ty) -> Result<Ty, String> + 'static,
-    ) -> Box<dyn Fn(&Ty) -> Result<Ty, String>> {
-        Box::new(move |_expected| {
-            let ret = body(&annot)?;
-            Ok(func(vec![annot.clone()], ret))
-        })
-    }
-
-    /// Numeric body: `x => x <op> <literal>`. Given the parameter type, returns
-    /// the same numeric type (the result of e.g. `x + 1`). `Never` parameter
-    /// yields `Never`; a concrete int yields that int; anything else is a type
-    /// error.
-    fn numeric_body(pty: &Ty) -> Result<Ty, String> {
-        match pty {
-            Ty::Never => Ok(Ty::Never),
-            Ty::Int(i) => Ok(Ty::Int(*i)),
-            // sink flowing into the body: the parameter type isn't known yet.
-            // The body can't be checked, so it reports sink onward.
-            Ty::Infer => Ok(Ty::Infer),
-            _ => Err(format!("{pty:?} is not a number!")),
-        }
-    }
-
-    /// Boolean-predicate body: `x => x <cmp> <literal>` — same parameter
-    /// constraints as `numeric_body` but always returns `Bool`.
-    fn predicate_body(pty: &Ty) -> Result<Ty, String> {
-        match pty {
-            Ty::Never => Ok(Ty::Bool),
-            Ty::Int(_) => Ok(Ty::Bool),
-            Ty::Infer => Ok(Ty::Bool),
-            _ => Err(format!("{pty:?} is not a number!")),
-        }
+    fn annotated_lambda(annot: Ty, ret: Ty) -> Box<dyn Expr> {
+        Box::new(Mock(func(vec![annot], ret)))
     }
 
     // ============================================================
@@ -607,15 +591,12 @@ mod test {
     #[test]
     fn test_case1_baseline_map() {
         let (t, u) = (0, 1);
-        let func_decl = &FuncDecl {
+        let func_decl = FuncDecl {
             params: vec![arr(param(t)), func(vec![param(t)], param(u))],
             ret: arr(param(u)),
-            type_params: 2,
+            type_params: vec![ParamId(t), ParamId(u)],
         };
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[
-            Box::new(|_| Ok(arr(i32_()))),
-            unannotated_lambda(numeric_body),
-        ];
+        let args = vec![Box::new(Mock(arr(i32_()))), unannotated_lambda(i32_())];
         let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         assert_eq!(result, arr(i32_()));
         assert!(!contains_sink(&result));
@@ -627,14 +608,14 @@ mod test {
     #[test]
     fn test_case2_empty_producer() {
         let (t, u) = (0, 1);
-        let func_decl = &FuncDecl {
+        let func_decl = FuncDecl {
             params: vec![arr(param(t)), func(vec![param(t)], param(u))],
             ret: arr(param(u)),
-            type_params: 2,
+            type_params: vec![ParamId(t), ParamId(u)],
         };
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[
-            Box::new(|_| Ok(arr(Ty::Never))),
-            unannotated_lambda(numeric_body),
+        let args = vec![
+            Box::new(Mock(arr(Ty::Never))),
+            unannotated_lambda(Ty::Never),
         ];
         let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         // T = never (genuine producer contribution), U = never, result never[]
@@ -648,13 +629,13 @@ mod test {
     #[test]
     fn test_case3_two_producers_join() {
         let t = 0;
-        let func_decl = &FuncDecl {
+        let func_decl = FuncDecl {
             params: vec![arr(param(t)), arr(param(t))],
             ret: arr(Ty::Tuple(vec![param(t), param(t)])),
-            type_params: 1,
+            type_params: vec![ParamId(t)],
         };
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] =
-            &[Box::new(|_| Ok(arr(i32_()))), Box::new(|_| Ok(arr(i64_())))];
+        let args: Vec<Box<dyn Expr>> =
+            vec![Box::new(Mock(arr(i32_()))), Box::new(Mock(arr(i64_())))];
         let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         // join(i32, i64) = i64
         assert_eq!(result, arr(Ty::Tuple(vec![i64_(), i64_()])));
@@ -670,19 +651,19 @@ mod test {
     #[test]
     fn test_case4_two_consumers_with_producer() {
         let t = 0;
-        let func_decl = &FuncDecl {
+        let func_decl = FuncDecl {
             params: vec![
                 func(vec![param(t)], Ty::Bool),
                 func(vec![param(t)], Ty::Bool),
                 param(t),
             ],
             ret: Ty::Bool,
-            type_params: 1,
+            type_params: vec![ParamId(t)],
         };
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[
-            unannotated_lambda(predicate_body),
-            unannotated_lambda(predicate_body),
-            Box::new(|_| Ok(i32_())), // x : i32, the producer
+        let args = vec![
+            unannotated_lambda(Ty::Bool),
+            unannotated_lambda(Ty::Bool),
+            Box::new(Mock(i32_())), // x : i32, the producer
         ];
         let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         // T resolves from the producer; return is Bool regardless.
@@ -700,19 +681,14 @@ mod test {
     #[test]
     fn test_case5a_producer_vs_consumer_ambiguous() {
         let t = 0;
-        let func_decl = &FuncDecl {
+        let func_decl = FuncDecl {
             params: vec![param(t), func(vec![param(t)], Ty::Bool)],
             ret: func(vec![param(t)], int(IntTy::Int32)),
-            type_params: 1,
+            type_params: vec![ParamId(t)],
         };
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] =
-            &[Box::new(|_| Ok(i32_())), unannotated_lambda(predicate_body)];
-        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
-        // Ambiguous: no canonical most-specific T. sink must reach the root.
-        assert!(
-            contains_sink(&result),
-            "expected ambiguity (sink at root), got {result:?}"
-        );
+        let args = vec![Box::new(Mock(i32_())), unannotated_lambda(Ty::Bool)];
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap_err();
+        assert!(result.contains("annotation required"))
     }
 
     // ============================================================
@@ -723,13 +699,12 @@ mod test {
     #[test]
     fn test_case5b_producer_with_annotation_resolves() {
         let t = 0;
-        let func_decl = &FuncDecl {
+        let func_decl = FuncDecl {
             params: vec![param(t), func(vec![param(t)], Ty::Bool)],
             ret: func(vec![param(t)], int(IntTy::Int32)),
-            type_params: 1,
+            type_params: vec![ParamId(t)],
         };
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] =
-            &[Box::new(|_| Ok(i32_())), unannotated_lambda(predicate_body)];
+        let args = vec![Box::new(Mock(i32_())), unannotated_lambda(Ty::Bool)];
         let expected = func(vec![i32_()], int(IntTy::Int32));
         let result = check_func_call_outer(func_decl, args, &expected).unwrap();
         let result = reconcile(&expected, &result).unwrap();
@@ -744,17 +719,14 @@ mod test {
     #[test]
     fn test_case6_unconstrained_contravariant_ambiguous() {
         let t = 0;
-        let func_decl = &FuncDecl {
+        let func_decl = FuncDecl {
             params: vec![func(vec![param(t)], Ty::Bool)],
             ret: func(vec![param(t)], int(IntTy::Int32)),
-            type_params: 1,
+            type_params: vec![ParamId(t)],
         };
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[unannotated_lambda(predicate_body)];
-        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
-        assert!(
-            contains_sink(&result),
-            "expected ambiguity (sink at root), got {result:?}"
-        );
+        let args = vec![unannotated_lambda(Ty::Bool)];
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap_err();
+        assert!(result.contains("annotation required"))
     }
 
     // ============================================================
@@ -767,17 +739,17 @@ mod test {
     #[test]
     fn test_case7_annotated_and_unannotated_consumers() {
         let t = 0;
-        let func_decl = &FuncDecl {
+        let func_decl = FuncDecl {
             params: vec![
                 func(vec![param(t)], Ty::Bool),
                 func(vec![param(t)], Ty::Bool),
             ],
             ret: Ty::Bool,
-            type_params: 1,
+            type_params: vec![ParamId(t)],
         };
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[
-            annotated_lambda(i32_(), predicate_body),
-            unannotated_lambda(predicate_body),
+        let args = vec![
+            annotated_lambda(i32_(), Ty::Bool),
+            unannotated_lambda(Ty::Bool),
         ];
         let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         // T is bivariant/absent in the Bool return — result is Bool regardless.
@@ -796,18 +768,15 @@ mod test {
     #[test]
     fn test_case8_simplified_both_annotated() {
         let t = 0;
-        let func_decl = &FuncDecl {
+        let func_decl = FuncDecl {
             params: vec![
                 func(vec![param(t)], Ty::Bool),
                 func(vec![param(t)], Ty::Bool),
             ],
             ret: func(vec![param(t)], Ty::Bool),
-            type_params: 1,
+            type_params: vec![ParamId(t)],
         };
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[
-            unannotated_lambda(predicate_body),
-            unannotated_lambda(predicate_body),
-        ];
+        let args = vec![unannotated_lambda(Ty::Bool), unannotated_lambda(Ty::Bool)];
         let expected = func(vec![i32_()], Ty::Bool);
         let result = check_func_call_outer(func_decl, args, &expected).unwrap();
         let result = reconcile(&expected, &result).unwrap();
@@ -824,23 +793,17 @@ mod test {
     #[test]
     fn test_case8_simplified_both_unannotated_ambiguous() {
         let t = 0;
-        let func_decl = &FuncDecl {
+        let func_decl = FuncDecl {
             params: vec![
                 func(vec![param(t)], Ty::Bool),
                 func(vec![param(t)], Ty::Bool),
             ],
             ret: func(vec![param(t)], Ty::Bool),
-            type_params: 1,
+            type_params: vec![ParamId(t)],
         };
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[
-            unannotated_lambda(predicate_body),
-            unannotated_lambda(predicate_body),
-        ];
-        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
-        assert!(
-            contains_sink(&result),
-            "expected ambiguity (sink at root), got {result:?}"
-        );
+        let args = vec![unannotated_lambda(Ty::Bool), unannotated_lambda(Ty::Bool)];
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap_err();
+        assert!(result.contains("annotation required"));
     }
 
     // ============================================================
@@ -855,50 +818,20 @@ mod test {
     #[test]
     fn test_case9_dependency_chain() {
         let (t, u, v) = (0, 1, 2);
-        let func_decl = &FuncDecl {
+        let func_decl = FuncDecl {
             params: vec![
                 Ty::Tuple(vec![param(t), func(vec![param(u)], param(v))]),
                 func(vec![param(t)], param(u)),
             ],
             ret: param(v),
-            type_params: 3,
+            type_params: vec![ParamId(t), ParamId(u), ParamId(v)],
         };
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[
+        let args: Vec<Box<dyn Expr>> = vec![
             // a : (i32, (U -> V))  where the inner lambda maps its param type
             // through unchanged (U -> U), so V = U.
-            Box::new(|ty| {
-                // expected type is a tuple (T_bound, (U_bound -> V_bound));
-                // we produce (i32, (<param> -> <param>)) reflecting the inner
-                // lambda's body U -> U.
-                let Ty::Tuple(elems) = ty else {
-                    return Err(format!("{ty:?} is not a tuple!"));
-                };
-                let [_t_slot, f_slot] = &elems[..] else {
-                    return Err(format!("expected 2-tuple, got {}", elems.len()));
-                };
-                let Ty::Func(FuncTy { params, .. }) = f_slot else {
-                    return Err(format!("{f_slot:?} is not a function!"));
-                };
-                let [u_in] = &params[..] else {
-                    return Err("expected 1 param".into());
-                };
-                // inner lambda is U -> U: its return mirrors its (unannotated)
-                // parameter, so it reports sink in the param and the body type
-                // (= whatever U currently is) in the return.
-                let ret = match u_in {
-                    Ty::Never => Ty::Never,
-                    other => other.clone(),
-                };
-                Ok(Ty::Tuple(vec![i32_(), func(vec![Ty::Infer], ret)]))
-            }),
+            Box::new(Mock(Ty::Tuple(vec![i32_(), func(vec![Ty::Infer], i32_())]))),
             // b : T -> U, body maps T -> T (U = T)
-            unannotated_lambda(|pty| {
-                Ok(match pty {
-                    Ty::Never => Ty::Never,
-                    Ty::Infer => Ty::Infer,
-                    other => other.clone(),
-                })
-            }),
+            unannotated_lambda(i32_()),
         ];
         let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         // T = i32 (from a.0); U = T = i32 (from b); V = U = i32 (from a.1).
@@ -913,25 +846,17 @@ mod test {
     #[test]
     fn test_case10_cycle_ambiguous() {
         let t = 0;
-        let func_decl = &FuncDecl {
+        let func_decl = FuncDecl {
             params: vec![
                 func(vec![param(t)], param(t)),
                 func(vec![param(t)], param(t)),
             ],
             ret: param(t),
-            type_params: 1,
+            type_params: vec![ParamId(t)],
         };
         // identity lambdas: body returns its parameter type unchanged.
-        let ident = || {
-            unannotated_lambda(|pty| {
-                Ok(match pty {
-                    Ty::Never => Ty::Never,
-                    Ty::Infer => Ty::Infer,
-                    other => other.clone(),
-                })
-            })
-        };
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[ident(), ident()];
+        let ident = || unannotated_lambda(Ty::Never);
+        let args = vec![ident(), ident()];
         let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         assert_eq!(result, Ty::Never);
     }
@@ -949,28 +874,25 @@ mod test {
         let map_decl = FuncDecl {
             params: vec![arr(param(t)), func(vec![param(t)], param(u))],
             ret: arr(param(u)),
-            type_params: 2,
+            type_params: vec![ParamId(t), ParamId(u)],
         };
 
-        // Outer map. First arg = result of inner map(i32[], a => a>0) = bool[].
-        let inner_decl = map_decl.clone(); // assumes FuncDecl: Clone — SEE Q
-        let outer_args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[
-            Box::new(move |_| {
-                let inner_args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[
-                    Box::new(|_| Ok(arr(i32_()))),
-                    unannotated_lambda(predicate_body),
-                ];
-                check_func_call_outer(&inner_decl, inner_args, &Ty::Infer)
+        let (t, u) = (2, 3);
+        let inner_decl = FuncDecl {
+            params: vec![arr(param(t)), func(vec![param(t)], param(u))],
+            ret: arr(param(u)),
+            type_params: vec![ParamId(t), ParamId(u)],
+        };
+
+        let outer_args = vec![
+            Box::new(FuncCall {
+                func: inner_decl,
+                args: vec![Box::new(Mock(arr(i32_()))), unannotated_lambda(Ty::Bool)],
             }),
             // b => if b then 1 else 0 : produces i32 regardless of (bool) input
-            unannotated_lambda(|pty| match pty {
-                Ty::Never => Ok(Ty::Never),
-                Ty::Bool => Ok(i32_()),
-                Ty::Infer => Ok(Ty::Infer),
-                other => Err(format!("{other:?} is not bool!")),
-            }),
+            unannotated_lambda(i32_()),
         ];
-        let result = check_func_call_outer(&map_decl, outer_args, &Ty::Infer).unwrap();
+        let result = check_func_call_outer(map_decl, outer_args, &Ty::Infer).unwrap();
         assert_eq!(result, arr(i32_()));
         assert!(!contains_sink(&result));
     }
@@ -985,29 +907,24 @@ mod test {
     #[test]
     fn test_case12_buried_lambda() {
         let (t, u) = (0, 1);
-        let map_decl = &FuncDecl {
+        let map_decl = FuncDecl {
             params: vec![arr(param(t)), func(vec![param(t)], param(u))],
             ret: arr(param(u)),
-            type_params: 2,
+            type_params: vec![ParamId(t), ParamId(u)],
         };
 
-        let a = 0u32;
+        let a = 2;
         let identity_decl = FuncDecl {
             params: vec![param(a)],
             ret: param(a),
-            type_params: 1,
+            type_params: vec![ParamId(a)],
         };
 
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[
-            Box::new(|_| Ok(arr(i32_()))),
-            // second arg = identity(y => y + 1): run identity's own call,
-            // passing the lambda as identity's argument. The expected type
-            // flowing into this position (map's f-slot, substituted) is passed
-            // through to identity, and onward to the lambda.
-            Box::new(move |expected| {
-                let inner_args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] =
-                    &[unannotated_lambda(numeric_body)];
-                check_func_call_outer(&identity_decl, inner_args, expected)
+        let args: Vec<Box<dyn Expr>> = vec![
+            Box::new(Mock(arr(i32_()))),
+            Box::new(FuncCall {
+                func: identity_decl,
+                args: vec![unannotated_lambda(i32_())],
             }),
         ];
         let result = check_func_call_outer(map_decl, args, &Ty::Infer).unwrap();
@@ -1021,19 +938,15 @@ mod test {
     #[test]
     fn test_case13_nullable() {
         let (t, u) = (0, 1);
-        let func_decl = &FuncDecl {
+        let func_decl = FuncDecl {
             params: vec![arr(param(t)), func(vec![param(t)], param(u))],
             ret: arr(param(u)),
-            type_params: 2,
+            type_params: vec![ParamId(t), ParamId(u)],
         };
         let nullable_i32 = Ty::Nullable(i32_().into());
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[
-            {
-                let n = nullable_i32.clone();
-                Box::new(move |_| Ok(arr(n.clone())))
-            },
-            // identity body: returns its parameter type unchanged
-            unannotated_lambda(|pty| Ok(pty.clone())),
+        let args = vec![
+            Box::new(Mock(arr(nullable_i32.clone()))),
+            unannotated_lambda(nullable_i32.clone()),
         ];
         let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         assert_eq!(result, arr(nullable_i32));
@@ -1047,13 +960,12 @@ mod test {
     #[test]
     fn test_case14_producer_widening() {
         let t = 0;
-        let func_decl = &FuncDecl {
+        let func_decl = FuncDecl {
             params: vec![param(t), param(t)],
             ret: param(t),
-            type_params: 1,
+            type_params: vec![ParamId(t)],
         };
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] =
-            &[Box::new(|_| Ok(i8_())), Box::new(|_| Ok(i32_()))];
+        let args: Vec<Box<dyn Expr>> = vec![Box::new(Mock(i8_())), Box::new(Mock(i32_()))];
         let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         assert_eq!(result, i32_()); // join(i8, i32)
         assert!(!contains_sink(&result));
@@ -1061,24 +973,24 @@ mod test {
 
     #[test]
     fn test_subtype() {
-        let func_decl = &FuncDecl {
+        let func_decl = FuncDecl {
             params: vec![i64_()],
             ret: Ty::Bool,
-            type_params: 0,
+            type_params: vec![],
         };
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[Box::new(|_| Ok(i32_()))];
+        let args: Vec<Box<dyn Expr>> = vec![Box::new(Mock(i32_()))];
         let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         assert_eq!(result, Ty::Bool);
     }
 
     #[test]
     fn test_not_subtype() {
-        let func_decl = &FuncDecl {
+        let func_decl = FuncDecl {
             params: vec![i32_()],
             ret: Ty::Bool,
-            type_params: 0,
+            type_params: vec![],
         };
-        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[Box::new(|_| Ok(i64_()))];
+        let args: Vec<Box<dyn Expr>> = vec![Box::new(Mock(i64_()))];
         let result = check_func_call_outer(func_decl, args, &Ty::Infer);
         assert!(result.is_err());
     }
