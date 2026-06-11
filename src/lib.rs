@@ -347,6 +347,54 @@ fn update_bounds_infer(bounds: &mut [(Ty, Ty)], param: &Ty, is_upper: bool) -> b
     }
 }
 
+fn reconcile(annotation: &Ty, actual: &Ty) -> Result<Ty, String> {
+    match (annotation, actual) {
+        (Ty::Infer, t) => {
+            if contains_sink(t) {
+                Err("ambiguous type; annotation required".into())
+            } else {
+                Ok(t.clone())
+            }
+        }
+        (a, _) if !contains_sink(a) => Ok(a.clone()), // annotation fully concrete here, take it
+        // annotation has `_` somewhere inside: descend structurally, annotation as skeleton
+        (Ty::Array(a), Ty::Array(t)) => Ok(Ty::Array(reconcile(a, t)?.into())),
+        (Ty::Nullable(a), Ty::Nullable(t)) => Ok(Ty::Nullable(reconcile(a, t)?.into())),
+        (Ty::Nullable(a), t) => Ok(Ty::Nullable(reconcile(a, t)?.into())),
+        (Ty::Tuple(a), Ty::Tuple(t)) if a.len() == t.len() => a
+            .iter()
+            .zip(t)
+            .map(|(a, t)| reconcile(a, t))
+            .collect::<Result<_, _>>()
+            .map(Ty::Tuple),
+        (Ty::Func(a), Ty::Func(t)) if a.params.len() == t.params.len() => {
+            let params = a
+                .params
+                .iter()
+                .zip(&t.params)
+                .map(|(a, t)| reconcile(a, t))
+                .collect::<Result<_, _>>()?;
+            let ret = reconcile(&a.ret, &t.ret)?.into();
+            Ok(Ty::Func(FuncTy { params, ret }))
+        }
+        _ => unreachable!(),
+    }
+}
+
+/// Recursively checks whether a type contains `sink` (`Ty::Infer`) anywhere
+/// in its structure. A `sink` reaching the root of an expression is the
+/// signal for an ambiguity error — inference couldn't determine the type
+/// from either producers or consumers, and an annotation is required.
+fn contains_sink(ty: &Ty) -> bool {
+    match ty {
+        Ty::Infer => true,
+        Ty::Nullable(inner) | Ty::Array(inner) => contains_sink(inner),
+        Ty::Tuple(tys) => tys.iter().any(contains_sink),
+        Ty::Func(func) => func.params.iter().any(contains_sink) || contains_sink(&func.ret),
+        _ => false,
+    }
+}
+
 // Display
 
 impl Display for Ty {
@@ -398,20 +446,6 @@ impl Debug for Ty {
 #[cfg(test)]
 mod test {
     use super::*;
-
-    /// Recursively checks whether a type contains `sink` (`Ty::Infer`) anywhere
-    /// in its structure. A `sink` reaching the root of an expression is the
-    /// signal for an ambiguity error — inference couldn't determine the type
-    /// from either producers or consumers, and an annotation is required.
-    fn contains_sink(ty: &Ty) -> bool {
-        match ty {
-            Ty::Infer => true,
-            Ty::Nullable(inner) | Ty::Array(inner) => contains_sink(inner),
-            Ty::Tuple(tys) => tys.iter().any(contains_sink),
-            Ty::Func(func) => func.params.iter().any(contains_sink) || contains_sink(&func.ret),
-            _ => false,
-        }
-    }
 
     // ---- helpers to cut down on noise ----
 
@@ -712,6 +746,7 @@ mod test {
         ];
         let expected = func(vec![i32_()], Ty::Bool);
         let result = check_func_call(func_decl, args, &expected).unwrap();
+        let result = reconcile(&expected, &result).unwrap();
         assert_eq!(result, func(vec![i32_()], Ty::Bool));
         assert!(!contains_sink(&result));
     }
