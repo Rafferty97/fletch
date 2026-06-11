@@ -994,4 +994,75 @@ mod test {
         let result = check_func_call_outer(func_decl, args, &Ty::Infer);
         assert!(result.is_err());
     }
+
+    fn map_decl(t: ParamId, u: ParamId) -> FuncDecl {
+        FuncDecl {
+            params: vec![
+                Ty::Array(Ty::Param(t).into()),
+                Ty::Func(FuncTy {
+                    params: vec![Ty::Param(t)],
+                    ret: Ty::Param(u).into(),
+                }),
+            ],
+            ret: Ty::Array(Ty::Param(u).into()),
+            type_params: vec![t, u],
+        }
+    }
+
+    // (A) Nested generic calls share one InferCtx; inner result propagates to outer lower bound.
+    // Distinct params (inner 0,1 / outer 2,3) — correct under global-uniqueness. Green.
+    #[test]
+    fn test_nested_maps_distinct_params() {
+        let inner = FuncCall {
+            func: map_decl(ParamId(0), ParamId(1)),
+            args: vec![
+                Box::new(Mock(Ty::Array(Ty::Int(IntTy::Int32).into()))),
+                Box::new(Mock(Ty::Func(FuncTy {
+                    params: vec![Ty::Infer],
+                    ret: Ty::Bool.into(),
+                }))), // a => a > 0, mocked as _ -> bool
+            ],
+        };
+        let outer_func = map_decl(ParamId(2), ParamId(3));
+        let outer_args: Vec<Box<dyn Expr>> = vec![
+            Box::new(inner), // outer's producer is the inner map call
+            Box::new(Mock(Ty::Func(FuncTy {
+                params: vec![Ty::Infer],
+                ret: Ty::Int(IntTy::Int32).into(),
+            }))), // b => ..., mocked as _ -> i32
+        ];
+
+        let result = check_func_call_outer(outer_func, outer_args, &Ty::Infer).unwrap();
+        assert_eq!(result, Ty::Array(Ty::Int(IntTy::Int32).into()));
+    }
+
+    // (B) Aliasing tripwire: inner and outer both use params (0,1), shared ctx.
+    // EXPECTED TO FAIL until generic params are freshly instantiated per call site.
+    // Carries the global-uniqueness assumption across the upcoming rewrite as an
+    // executable note. Asserts only that the CORRECT answer is produced; under a
+    // flat ParamId->bounds map the shared slot corrupts and this won't hold.
+    #[test]
+    fn test_aliasing_tripwire() {
+        let inner = FuncCall {
+            func: map_decl(ParamId(0), ParamId(1)),
+            args: vec![
+                Box::new(Mock(Ty::Array(Ty::Int(IntTy::Int32).into()))),
+                Box::new(Mock(Ty::Func(FuncTy {
+                    params: vec![Ty::Infer],
+                    ret: Ty::Bool.into(),
+                }))),
+            ],
+        };
+        let outer_func = map_decl(ParamId(2), ParamId(3)); // SAME ids as inner — the bug
+        let outer_args: Vec<Box<dyn Expr>> = vec![
+            Box::new(inner),
+            Box::new(Mock(Ty::Func(FuncTy {
+                params: vec![Ty::Infer],
+                ret: Ty::Int(IntTy::Int32).into(),
+            }))),
+        ];
+
+        let result = check_func_call_outer(outer_func, outer_args, &Ty::Infer);
+        assert_eq!(result.unwrap(), Ty::Array(Ty::Int(IntTy::Int32).into()));
+    }
 }
