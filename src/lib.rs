@@ -1,6 +1,9 @@
 // Type
 
-use std::fmt::{Debug, Display};
+use std::{
+    collections::HashMap,
+    fmt::{Debug, Display},
+};
 
 use tap::Pipe;
 
@@ -160,6 +163,11 @@ pub fn check_subtype(a: &Ty, b: &Ty) -> bool {
 
 // Check generic parameter call
 
+#[derive(Default)]
+struct InferCtx {
+    bounds: HashMap<ParamId, (Ty, Ty)>,
+}
+
 #[derive(Clone, Debug)]
 struct FuncDecl {
     params: Vec<Ty>,
@@ -167,7 +175,16 @@ struct FuncDecl {
     type_params: usize,
 }
 
+fn check_func_call_outer(
+    func: &FuncDecl,
+    args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>],
+    expected: &Ty,
+) -> Result<Ty, String> {
+    check_func_call(&mut InferCtx::default(), func, args, expected)
+}
+
 fn check_func_call(
+    ctx: &mut InferCtx,
     func: &FuncDecl,
     args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>],
     expected: &Ty,
@@ -184,6 +201,12 @@ fn check_func_call(
         println!();
     }
 
+    for i in 0..func.type_params {
+        ctx.bounds
+            .entry(ParamId(i as u32))
+            .or_insert((Ty::Never, Ty::Unknown));
+    }
+
     if args.len() != func.params.len() {
         Err(format!(
             "expected {} arguments, got {}",
@@ -192,28 +215,26 @@ fn check_func_call(
         ))?;
     };
 
-    let mut bounds = vec![(Ty::Never, Ty::Unknown); func.type_params];
-
-    update_bounds(&mut bounds, &func.ret, expected, true)?;
-    print_bounds(&bounds);
+    update_bounds(ctx, &func.ret, expected, true)?;
+    // print_bounds(&bounds);
 
     loop {
         let mut changed = false;
 
         for (arg, param) in args.iter().zip(&func.params) {
-            let expected = substitute_bounded(param, &bounds, true);
+            let expected = substitute_bounded(ctx, param, true);
             let actual = arg(&expected)?;
             println!("    {param} => exp: {expected}\tact: {actual}");
-            changed |= update_bounds(&mut bounds, param, &actual, false)?;
+            changed |= update_bounds(ctx, param, &actual, false)?;
         }
-        print_bounds(&bounds);
+        // print_bounds(&bounds);
 
         if !changed {
             break;
         }
     }
 
-    Ok(substitute_bounded(&func.ret, &bounds, false))
+    Ok(substitute_bounded(ctx, &func.ret, false))
 
     // // Resolve type parameters
     // print_bounds(&bounds);
@@ -257,26 +278,26 @@ fn substitute(ty: &Ty, vars: &[Ty]) -> Ty {
     }
 }
 
-fn substitute_bounded(ty: &Ty, bounds: &[(Ty, Ty)], is_upper: bool) -> Ty {
+fn substitute_bounded(ctx: &InferCtx, ty: &Ty, is_upper: bool) -> Ty {
     match ty {
-        Ty::Nullable(inner) => Ty::Nullable(substitute_bounded(inner, bounds, is_upper).into()),
-        Ty::Array(inner) => Ty::Array(substitute_bounded(inner, bounds, is_upper).into()),
+        Ty::Nullable(inner) => Ty::Nullable(substitute_bounded(ctx, inner, is_upper).into()),
+        Ty::Array(inner) => Ty::Array(substitute_bounded(ctx, inner, is_upper).into()),
         Ty::Tuple(tys) => tys
             .iter()
-            .map(|param| substitute_bounded(param, bounds, is_upper))
+            .map(|param| substitute_bounded(ctx, param, is_upper))
             .collect::<Vec<_>>()
             .pipe(Ty::Tuple),
         Ty::Func(func) => {
             let params = func
                 .params
                 .iter()
-                .map(|param| substitute_bounded(param, bounds, !is_upper))
+                .map(|param| substitute_bounded(ctx, param, !is_upper))
                 .collect();
-            let ret = substitute_bounded(&func.ret, bounds, is_upper).into();
+            let ret = substitute_bounded(ctx, &func.ret, is_upper).into();
             Ty::Func(FuncTy { params, ret })
         }
         Ty::Param(id) => {
-            let bounds = &bounds[id.0 as usize];
+            let bounds = &ctx.bounds[id];
             if is_upper {
                 bounds.1.clone()
             } else {
@@ -287,18 +308,13 @@ fn substitute_bounded(ty: &Ty, bounds: &[(Ty, Ty)], is_upper: bool) -> Ty {
     }
 }
 
-fn update_bounds(
-    bounds: &mut [(Ty, Ty)],
-    param: &Ty,
-    arg: &Ty,
-    is_upper: bool,
-) -> Result<bool, String> {
+fn update_bounds(ctx: &mut InferCtx, param: &Ty, arg: &Ty, is_upper: bool) -> Result<bool, String> {
     match (param, arg) {
         // Error
         (Ty::Err, _) | (_, Ty::Err) => Ok(false),
         // Hit a type parameter - update the appropriate bound
         (Ty::Param(id), arg) => {
-            let (lower, upper) = &mut bounds[id.0 as usize];
+            let (lower, upper) = ctx.bounds.get_mut(id).unwrap();
             if is_upper {
                 // Contravariant position - arg contributes to upper bound via meet
                 let new_upper = meet(upper, arg);
@@ -317,21 +333,21 @@ fn update_bounds(
             Ok(false)
         }
         // Infer decomposes with everything
-        (_, Ty::Infer) => Ok(update_bounds_infer(bounds, param, is_upper)),
+        (_, Ty::Infer) => Ok(update_bounds_infer(ctx, param, is_upper)),
         // Scalars
         (Ty::Int(p), Ty::Int(a)) if a <= p => Ok(false),
         // Structural decomposition
-        (Ty::Nullable(p), Ty::Nullable(a)) => update_bounds(bounds, p, a, is_upper),
+        (Ty::Nullable(p), Ty::Nullable(a)) => update_bounds(ctx, p, a, is_upper),
         (p, Ty::Nullable(_)) => Err(format!(
             "cannot pass nullable value to non-nullable parameter {:?}",
             p
         )),
-        (Ty::Nullable(p), _) => update_bounds(bounds, p, arg, is_upper),
-        (Ty::Array(p), Ty::Array(a)) => update_bounds(bounds, p, a, is_upper),
+        (Ty::Nullable(p), _) => update_bounds(ctx, p, arg, is_upper),
+        (Ty::Array(p), Ty::Array(a)) => update_bounds(ctx, p, a, is_upper),
         (Ty::Tuple(ps), Ty::Tuple(as_)) if ps.len() == as_.len() => {
             let mut changed = false;
             for (p, a) in ps.iter().zip(as_) {
-                changed |= update_bounds(bounds, p, a, is_upper)?;
+                changed |= update_bounds(ctx, p, a, is_upper)?;
             }
             Ok(changed)
         }
@@ -339,10 +355,10 @@ fn update_bounds(
             let mut changed = false;
             // Contravariant in params - flip rev
             for (pp, ap) in p.params.iter().zip(&a.params) {
-                changed |= update_bounds(bounds, pp, ap, !is_upper)?;
+                changed |= update_bounds(ctx, pp, ap, !is_upper)?;
             }
             // Covariant in return
-            changed |= update_bounds(bounds, &p.ret, &a.ret, is_upper)?;
+            changed |= update_bounds(ctx, &p.ret, &a.ret, is_upper)?;
             Ok(changed)
         }
         (_, Ty::Param(id)) => unreachable!("arg contained param {:?}", id),
@@ -354,10 +370,10 @@ fn update_bounds(
     }
 }
 
-fn update_bounds_infer(bounds: &mut [(Ty, Ty)], param: &Ty, is_upper: bool) -> bool {
+fn update_bounds_infer(ctx: &mut InferCtx, param: &Ty, is_upper: bool) -> bool {
     match param {
         Ty::Param(id) => {
-            let (lower, upper) = &mut bounds[id.0 as usize];
+            let (lower, upper) = ctx.bounds.get_mut(id).unwrap();
             if is_upper {
                 // Contravariant position - arg contributes to upper bound via meet
                 if *upper != Ty::Infer {
@@ -373,21 +389,21 @@ fn update_bounds_infer(bounds: &mut [(Ty, Ty)], param: &Ty, is_upper: bool) -> b
             }
             false
         }
-        Ty::Nullable(inner) => update_bounds_infer(bounds, inner, is_upper),
-        Ty::Array(inner) => update_bounds_infer(bounds, inner, is_upper),
+        Ty::Nullable(inner) => update_bounds_infer(ctx, inner, is_upper),
+        Ty::Array(inner) => update_bounds_infer(ctx, inner, is_upper),
         Ty::Tuple(tys) => {
             let mut changed = false;
             for ty in tys {
-                changed |= update_bounds_infer(bounds, ty, is_upper);
+                changed |= update_bounds_infer(ctx, ty, is_upper);
             }
             changed
         }
         Ty::Func(FuncTy { params, ret }) => {
             let mut changed = false;
             for ty in params {
-                changed |= update_bounds_infer(bounds, ty, !is_upper);
+                changed |= update_bounds_infer(ctx, ty, !is_upper);
             }
-            changed |= update_bounds_infer(bounds, ret, is_upper);
+            changed |= update_bounds_infer(ctx, ret, is_upper);
             changed
         }
         _ => false,
@@ -600,7 +616,7 @@ mod test {
             Box::new(|_| Ok(arr(i32_()))),
             unannotated_lambda(numeric_body),
         ];
-        let result = check_func_call(func_decl, args, &Ty::Infer).unwrap();
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         assert_eq!(result, arr(i32_()));
         assert!(!contains_sink(&result));
     }
@@ -620,7 +636,7 @@ mod test {
             Box::new(|_| Ok(arr(Ty::Never))),
             unannotated_lambda(numeric_body),
         ];
-        let result = check_func_call(func_decl, args, &Ty::Infer).unwrap();
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         // T = never (genuine producer contribution), U = never, result never[]
         assert_eq!(result, arr(Ty::Never));
         assert!(!contains_sink(&result));
@@ -639,7 +655,7 @@ mod test {
         };
         let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] =
             &[Box::new(|_| Ok(arr(i32_()))), Box::new(|_| Ok(arr(i64_())))];
-        let result = check_func_call(func_decl, args, &Ty::Infer).unwrap();
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         // join(i32, i64) = i64
         assert_eq!(result, arr(Ty::Tuple(vec![i64_(), i64_()])));
         assert!(!contains_sink(&result));
@@ -668,7 +684,7 @@ mod test {
             unannotated_lambda(predicate_body),
             Box::new(|_| Ok(i32_())), // x : i32, the producer
         ];
-        let result = check_func_call(func_decl, args, &Ty::Infer).unwrap();
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         // T resolves from the producer; return is Bool regardless.
         assert_eq!(result, Ty::Bool);
         assert!(!contains_sink(&result));
@@ -691,7 +707,7 @@ mod test {
         };
         let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] =
             &[Box::new(|_| Ok(i32_())), unannotated_lambda(predicate_body)];
-        let result = check_func_call(func_decl, args, &Ty::Infer).unwrap();
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         // Ambiguous: no canonical most-specific T. sink must reach the root.
         assert!(
             contains_sink(&result),
@@ -715,7 +731,7 @@ mod test {
         let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] =
             &[Box::new(|_| Ok(i32_())), unannotated_lambda(predicate_body)];
         let expected = func(vec![i32_()], int(IntTy::Int32));
-        let result = check_func_call(func_decl, args, &expected).unwrap();
+        let result = check_func_call_outer(func_decl, args, &expected).unwrap();
         let result = reconcile(&expected, &result).unwrap();
         assert_eq!(result, func(vec![i32_()], int(IntTy::Int32)));
         assert!(!contains_sink(&result));
@@ -734,7 +750,7 @@ mod test {
             type_params: 1,
         };
         let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[unannotated_lambda(predicate_body)];
-        let result = check_func_call(func_decl, args, &Ty::Infer).unwrap();
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         assert!(
             contains_sink(&result),
             "expected ambiguity (sink at root), got {result:?}"
@@ -763,7 +779,7 @@ mod test {
             annotated_lambda(i32_(), predicate_body),
             unannotated_lambda(predicate_body),
         ];
-        let result = check_func_call(func_decl, args, &Ty::Infer).unwrap();
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         // T is bivariant/absent in the Bool return — result is Bool regardless.
         assert_eq!(result, Ty::Bool);
         assert!(!contains_sink(&result));
@@ -793,7 +809,7 @@ mod test {
             unannotated_lambda(predicate_body),
         ];
         let expected = func(vec![i32_()], Ty::Bool);
-        let result = check_func_call(func_decl, args, &expected).unwrap();
+        let result = check_func_call_outer(func_decl, args, &expected).unwrap();
         let result = reconcile(&expected, &result).unwrap();
         assert_eq!(result, func(vec![i32_()], Ty::Bool));
         assert!(!contains_sink(&result));
@@ -820,7 +836,7 @@ mod test {
             unannotated_lambda(predicate_body),
             unannotated_lambda(predicate_body),
         ];
-        let result = check_func_call(func_decl, args, &Ty::Infer).unwrap();
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         assert!(
             contains_sink(&result),
             "expected ambiguity (sink at root), got {result:?}"
@@ -884,7 +900,7 @@ mod test {
                 })
             }),
         ];
-        let result = check_func_call(func_decl, args, &Ty::Infer).unwrap();
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         // T = i32 (from a.0); U = T = i32 (from b); V = U = i32 (from a.1).
         assert_eq!(result, i32_());
         assert!(!contains_sink(&result));
@@ -916,7 +932,7 @@ mod test {
             })
         };
         let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[ident(), ident()];
-        let result = check_func_call(func_decl, args, &Ty::Infer).unwrap();
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         assert_eq!(result, Ty::Never);
     }
 
@@ -944,7 +960,7 @@ mod test {
                     Box::new(|_| Ok(arr(i32_()))),
                     unannotated_lambda(predicate_body),
                 ];
-                check_func_call(&inner_decl, inner_args, &Ty::Infer)
+                check_func_call_outer(&inner_decl, inner_args, &Ty::Infer)
             }),
             // b => if b then 1 else 0 : produces i32 regardless of (bool) input
             unannotated_lambda(|pty| match pty {
@@ -954,7 +970,7 @@ mod test {
                 other => Err(format!("{other:?} is not bool!")),
             }),
         ];
-        let result = check_func_call(&map_decl, outer_args, &Ty::Infer).unwrap();
+        let result = check_func_call_outer(&map_decl, outer_args, &Ty::Infer).unwrap();
         assert_eq!(result, arr(i32_()));
         assert!(!contains_sink(&result));
     }
@@ -991,10 +1007,10 @@ mod test {
             Box::new(move |expected| {
                 let inner_args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] =
                     &[unannotated_lambda(numeric_body)];
-                check_func_call(&identity_decl, inner_args, expected)
+                check_func_call_outer(&identity_decl, inner_args, expected)
             }),
         ];
-        let result = check_func_call(map_decl, args, &Ty::Infer).unwrap();
+        let result = check_func_call_outer(map_decl, args, &Ty::Infer).unwrap();
         assert_eq!(result, arr(i32_()));
         assert!(!contains_sink(&result));
     }
@@ -1019,7 +1035,7 @@ mod test {
             // identity body: returns its parameter type unchanged
             unannotated_lambda(|pty| Ok(pty.clone())),
         ];
-        let result = check_func_call(func_decl, args, &Ty::Infer).unwrap();
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         assert_eq!(result, arr(nullable_i32));
         assert!(!contains_sink(&result));
     }
@@ -1038,7 +1054,7 @@ mod test {
         };
         let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] =
             &[Box::new(|_| Ok(i8_())), Box::new(|_| Ok(i32_()))];
-        let result = check_func_call(func_decl, args, &Ty::Infer).unwrap();
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         assert_eq!(result, i32_()); // join(i8, i32)
         assert!(!contains_sink(&result));
     }
@@ -1051,7 +1067,7 @@ mod test {
             type_params: 0,
         };
         let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[Box::new(|_| Ok(i32_()))];
-        let result = check_func_call(func_decl, args, &Ty::Infer).unwrap();
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer).unwrap();
         assert_eq!(result, Ty::Bool);
     }
 
@@ -1063,7 +1079,7 @@ mod test {
             type_params: 0,
         };
         let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[Box::new(|_| Ok(i64_()))];
-        let result = check_func_call(func_decl, args, &Ty::Infer);
+        let result = check_func_call_outer(func_decl, args, &Ty::Infer);
         assert!(result.is_err());
     }
 }
