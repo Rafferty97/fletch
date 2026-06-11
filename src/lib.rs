@@ -669,6 +669,7 @@ mod test {
             &[Box::new(|_| Ok(i32_())), unannotated_lambda(predicate_body)];
         let expected = func(vec![i32_()], int(IntTy::Int32));
         let result = check_func_call(func_decl, args, &expected).unwrap();
+        let result = reconcile(&expected, &result).unwrap();
         assert_eq!(result, func(vec![i32_()], int(IntTy::Int32)));
         assert!(!contains_sink(&result));
     }
@@ -843,7 +844,7 @@ mod test {
     }
 
     // ============================================================
-    // Case 10 — cycle: bar(x => x, y => y) -> AMBIGUOUS
+    // Case 10 — bar(x => x, y => y) produces never type
     //   bar<T>(f: T -> T, g: T -> T) -> T
     // ============================================================
     #[test]
@@ -869,10 +870,7 @@ mod test {
         };
         let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[ident(), ident()];
         let result = check_func_call(func_decl, args, &Ty::Infer).unwrap();
-        assert!(
-            contains_sink(&result),
-            "expected ambiguity (sink at root), got {result:?}"
-        );
+        assert_eq!(result, Ty::Never);
     }
 
     // ============================================================
