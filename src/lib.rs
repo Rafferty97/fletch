@@ -174,6 +174,10 @@ fn check_func_call(
 ) -> Result<Ty, String> {
     fn print_bounds(bounds: &[(Ty, Ty)]) {
         print!("Bounds: ");
+        if bounds.is_empty() {
+            println!("<empty>");
+            return;
+        }
         for bound in bounds {
             print!("{bound:?}\t");
         }
@@ -197,9 +201,9 @@ fn check_func_call(
         let mut changed = false;
 
         for (arg, param) in args.iter().zip(&func.params) {
-            let expected = substitute(param, &bounds, true);
+            let expected = substitute_bounded(param, &bounds, true);
             let actual = arg(&expected)?;
-            println!("    {param}: {expected} => {actual}");
+            println!("    {param} => exp: {expected}\tact: {actual}");
             changed |= update_bounds(&mut bounds, param, &actual, false)?;
         }
         print_bounds(&bounds);
@@ -209,25 +213,66 @@ fn check_func_call(
         }
     }
 
-    Ok(substitute(&func.ret, &bounds, false))
+    Ok(substitute_bounded(&func.ret, &bounds, false))
+
+    // // Resolve type parameters
+    // print_bounds(&bounds);
+    // let param_tys = bounds
+    //     .iter()
+    //     .map(|(lower, upper)| reconcile(upper, lower))
+    //     .collect::<Result<Vec<_>, _>>()?;
+    // println!("resolved = {param_tys:?}");
+
+    // // Check arguments
+    // for (arg, param) in args.iter().zip(&func.params) {
+    //     let expected = substitute(param, &param_tys);
+    //     let actual = arg(&expected)?;
+    //     reconcile(&expected, &actual)?;
+    // }
+
+    // // Return type
+    // Ok(substitute(&func.ret, &param_tys))
 }
 
-fn substitute(ty: &Ty, bounds: &[(Ty, Ty)], is_upper: bool) -> Ty {
+fn substitute(ty: &Ty, vars: &[Ty]) -> Ty {
     match ty {
-        Ty::Nullable(inner) => Ty::Nullable(substitute(inner, bounds, is_upper).into()),
-        Ty::Array(inner) => Ty::Array(substitute(inner, bounds, is_upper).into()),
+        Ty::Nullable(inner) => Ty::Nullable(substitute(inner, vars).into()),
+        Ty::Array(inner) => Ty::Array(substitute(inner, vars).into()),
         Ty::Tuple(tys) => tys
             .iter()
-            .map(|param| substitute(param, bounds, is_upper))
+            .map(|param| substitute(param, vars))
             .collect::<Vec<_>>()
             .pipe(Ty::Tuple),
         Ty::Func(func) => {
             let params = func
                 .params
                 .iter()
-                .map(|param| substitute(param, bounds, !is_upper))
+                .map(|param| substitute(param, vars))
                 .collect();
-            let ret = substitute(&func.ret, bounds, is_upper).into();
+            let ret = substitute(&func.ret, vars).into();
+            Ty::Func(FuncTy { params, ret })
+        }
+        Ty::Param(id) => vars[id.0 as usize].clone(),
+        _ => ty.clone(),
+    }
+}
+
+fn substitute_bounded(ty: &Ty, bounds: &[(Ty, Ty)], is_upper: bool) -> Ty {
+    match ty {
+        Ty::Nullable(inner) => Ty::Nullable(substitute_bounded(inner, bounds, is_upper).into()),
+        Ty::Array(inner) => Ty::Array(substitute_bounded(inner, bounds, is_upper).into()),
+        Ty::Tuple(tys) => tys
+            .iter()
+            .map(|param| substitute_bounded(param, bounds, is_upper))
+            .collect::<Vec<_>>()
+            .pipe(Ty::Tuple),
+        Ty::Func(func) => {
+            let params = func
+                .params
+                .iter()
+                .map(|param| substitute_bounded(param, bounds, !is_upper))
+                .collect();
+            let ret = substitute_bounded(&func.ret, bounds, is_upper).into();
             Ty::Func(FuncTy { params, ret })
         }
         Ty::Param(id) => {
@@ -273,6 +318,8 @@ fn update_bounds(
         }
         // Infer decomposes with everything
         (_, Ty::Infer) => Ok(update_bounds_infer(bounds, param, is_upper)),
+        // Scalars
+        (Ty::Int(p), Ty::Int(a)) if a <= p => Ok(false),
         // Structural decomposition
         (Ty::Nullable(p), Ty::Nullable(a)) => update_bounds(bounds, p, a, is_upper),
         (p, Ty::Nullable(_)) => Err(format!(
@@ -347,8 +394,8 @@ fn update_bounds_infer(bounds: &mut [(Ty, Ty)], param: &Ty, is_upper: bool) -> b
     }
 }
 
-fn reconcile(annotation: &Ty, actual: &Ty) -> Result<Ty, String> {
-    match (annotation, actual) {
+fn reconcile(expected: &Ty, actual: &Ty) -> Result<Ty, String> {
+    match (expected, actual) {
         (Ty::Infer, t) => {
             if contains_sink(t) {
                 Err("ambiguous type; annotation required".into())
@@ -994,5 +1041,29 @@ mod test {
         let result = check_func_call(func_decl, args, &Ty::Infer).unwrap();
         assert_eq!(result, i32_()); // join(i8, i32)
         assert!(!contains_sink(&result));
+    }
+
+    #[test]
+    fn test_subtype() {
+        let func_decl = &FuncDecl {
+            params: vec![i64_()],
+            ret: Ty::Bool,
+            type_params: 0,
+        };
+        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[Box::new(|_| Ok(i32_()))];
+        let result = check_func_call(func_decl, args, &Ty::Infer).unwrap();
+        assert_eq!(result, Ty::Bool);
+    }
+
+    #[test]
+    fn test_not_subtype() {
+        let func_decl = &FuncDecl {
+            params: vec![i32_()],
+            ret: Ty::Bool,
+            type_params: 0,
+        };
+        let args: &[Box<dyn Fn(&Ty) -> Result<Ty, String>>] = &[Box::new(|_| Ok(i64_()))];
+        let result = check_func_call(func_decl, args, &Ty::Infer);
+        assert!(result.is_err());
     }
 }
