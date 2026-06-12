@@ -73,27 +73,6 @@ pub fn join(a: &Ty, b: &Ty) -> Ty {
     }
 }
 
-pub fn check_subtype(a: &Ty, b: &Ty) -> bool {
-    match (a, b) {
-        _ if a == b => true,
-        (Ty::Never, _) | (_, Ty::Unknown) => true,
-        (_, Ty::Err) | (Ty::Err, _) => true,
-        (Ty::Int(a), Ty::Int(b)) => a <= b,
-        (Ty::Nullable(a), Ty::Nullable(b)) => check_subtype(a, b),
-        (_, Ty::Nullable(b)) => check_subtype(a, b),
-        (Ty::Array(a), Ty::Array(b)) => check_subtype(a, b),
-        (Ty::Tuple(a), Ty::Tuple(b)) if a.len() == b.len() => {
-            a.iter().zip(b.iter()).all(|(a, b)| check_subtype(a, b))
-        }
-        (Ty::Func(a), Ty::Func(b)) => {
-            a.params.len() == b.params.len()
-                && a.params.iter().zip(b.params.iter()).all(|(a, b)| check_subtype(b, a)) // contravariant
-                && check_subtype(&a.ret, &b.ret) // covariant
-        }
-        _ => false,
-    }
-}
-
 // Check generic parameter call
 
 #[derive(Default)]
