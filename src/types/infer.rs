@@ -1,5 +1,54 @@
+use std::collections::HashMap;
+use std::hash::Hash;
+
+use crate::diagnostics::{Diagnostic, DiagnosticReporter};
+use crate::types::ty_ctx::Variance;
+
 use super::ty::{Ty, TyKind};
 use super::ty_ctx::TyCtx;
+
+pub struct InferCtx<'a, 'ty> {
+    ty_ctx: TyCtx<'a, 'ty>,
+    nodes: HashMap<u32, Ty<'ty>>,
+    diagnostics: &'a dyn DiagnosticReporter,
+}
+
+impl<'a: 'ty, 'ty> InferCtx<'a, 'ty> {
+    pub fn infer<N: ExprNode>(&mut self, node: &N, expected: Ty<'ty>) -> Ty<'ty> {
+        if let Some(ty) = self.nodes.get(&node.id()) {
+            return *ty;
+        }
+
+        let ty = match node.infer(self, expected) {
+            Ok(ty) => ty,
+            Err(err) => {
+                let err = self.diagnostics.report(err.into());
+                self.ty_ctx.mk_err(err)
+            }
+        };
+
+        if self.ty_ctx.is_final(ty) {
+            self.nodes.insert(node.id(), ty);
+        }
+
+        ty
+    }
+}
+
+pub trait ExprNode {
+    type Error: Into<Diagnostic>;
+
+    fn id(&self) -> u32;
+
+    fn infer<'ty>(&self, ctx: &mut InferCtx<'_, 'ty>, expected: Ty<'ty>) -> Result<Ty<'ty>, Self::Error>;
+}
+
+/// Represents the infered bounds of a type parameter
+#[derive(Clone, Copy, Debug)]
+pub struct TyBounds<'ty> {
+    lower: Ty<'ty>,
+    upper: Ty<'ty>,
+}
 
 impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
     /// Finds the greatest lower bound of two types
@@ -11,7 +60,7 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
             _ if lhs == rhs => lhs,
 
             // Sentinal values
-            (_, Err) | (Err, _) => self.common().err,
+            (_, Err(err)) | (Err(err), _) => self.mk_err(err),
             (_, Infer) | (Infer, _) => self.common().infer,
             (_, Pending) | (Pending, _) => self.common().pending,
 
@@ -52,7 +101,7 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
             _ if lhs == rhs => lhs,
 
             // Sentinal values
-            (_, Err) | (Err, _) => self.common().err,
+            (_, Err(err)) | (Err(err), _) => self.mk_err(err),
             (_, Infer) | (Infer, _) => self.common().infer,
             (_, Pending) | (Pending, _) => self.common().pending,
 
@@ -84,8 +133,29 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
         }
     }
 
-    // Substitutes type parameters with concrete types
+    /// Substitutes type parameters with concrete types
     pub fn substitute(self, ty: Ty<'ty>, params: &[Ty<'ty>]) -> Ty<'ty> {
-        todo!()
+        self.transform(ty, |ty| match ty.kind() {
+            TyKind::Param(id) => params[id.0 as usize],
+            _ => ty,
+        })
+    }
+
+    /// Substitutes type parameters with concrete types,
+    /// using the upper bound in covariant positions and
+    /// the lower bound in contravariant positions
+    pub fn substitute_bounds(self, ty: Ty<'ty>, params: &[TyBounds<'ty>]) -> Ty<'ty> {
+        self.transform_with_variance(ty, |ty, var| match ty.kind() {
+            TyKind::Param(id) => match var {
+                Variance::Co => params[id.0 as usize].upper,
+                Variance::Contra => params[id.0 as usize].lower,
+            },
+            _ => ty,
+        })
+    }
+
+    /// Returns `true` if no constituents of the type are pending
+    pub fn is_final(self, ty: Ty<'ty>) -> bool {
+        ty.fold(true, |fin, ty| fin && ty.kind() != TyKind::Pending)
     }
 }

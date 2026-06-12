@@ -65,18 +65,12 @@ pub struct CommonTypes<'ty> {
     // Sentinal types
     pub infer: Ty<'ty>,
     pub pending: Ty<'ty>,
-    pub err: Ty<'ty>,
     pub opt_infer: Ty<'ty>,
     pub opt_pending: Ty<'ty>,
-    pub opt_err: Ty<'ty>,
 }
 
 impl<'ty> CommonTypes<'ty> {
-    pub fn new(
-        arena: &'ty Bump,
-        ty_kind: &Interner<'ty, TyKind<'ty>>,
-        ty_slice: &Interner<'ty, [Ty<'ty>]>,
-    ) -> Self {
+    pub fn new(arena: &'ty Bump, ty_kind: &Interner<'ty, TyKind<'ty>>, ty_slice: &Interner<'ty, [Ty<'ty>]>) -> Self {
         use paste::paste;
 
         macro_rules! make_tys {
@@ -115,7 +109,6 @@ impl<'ty> CommonTypes<'ty> {
             empty_tuple: TyKind::Tuple(empty_tys),
             infer: TyKind::Infer,
             pending: TyKind::Pending,
-            err: TyKind::Err,
         }
     }
 }

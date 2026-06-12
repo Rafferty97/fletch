@@ -1,4 +1,4 @@
-use crate::interner::Interned;
+use crate::{diagnostics::ErrGuaranteed, interner::Interned};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Ty<'ty>(pub(super) Interned<'ty, TyKind<'ty>>);
@@ -15,9 +15,10 @@ pub enum TyKind<'ty> {
     Array(Ty<'ty>),
     Tuple(Interned<'ty, [Ty<'ty>]>),
     Any,
+    Param(ParamId),
     Infer,
     Pending,
-    Err,
+    Err(ErrGuaranteed),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -42,8 +43,21 @@ pub enum FloatTy {
     Float64,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct ParamId(pub u32);
+
 impl<'ty> Ty<'ty> {
     pub fn kind(self) -> TyKind<'ty> {
         *self.0
+    }
+
+    pub fn fold<T>(self, init: T, mut visit: impl FnMut(T, Self) -> T) -> T {
+        let accum = visit(init, self);
+        match self.kind() {
+            TyKind::Nullable(ty) => ty.fold(accum, visit),
+            TyKind::Array(ty) => ty.fold(accum, visit),
+            TyKind::Tuple(tys) => tys.iter().copied().fold(accum, visit),
+            _ => accum,
+        }
     }
 }
