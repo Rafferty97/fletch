@@ -178,6 +178,11 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
 
     /// Returns `true` if no constituents of the type are pending
     pub fn is_final(self, ty: Ty<'ty>) -> bool {
-        ty.fold(true, |fin, ty| fin && ty.kind() != TyKind::Pending)
+        ty.fold(true, |acc, ty| acc && ty.kind() != TyKind::Pending)
+    }
+
+    /// Returns `true` if any constituents of the type are `Infer`
+    pub fn has_infer(self, ty: Ty<'ty>) -> bool {
+        ty.fold(false, |acc, ty| acc || ty.kind() == TyKind::Infer)
     }
 }
