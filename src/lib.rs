@@ -39,9 +39,6 @@ pub struct FuncTy {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct ParamId(pub u32);
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
-pub struct VarId(pub u32);
-
 // Variance
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
@@ -279,7 +276,7 @@ fn check_func_call_outer(
     let mut ctx = InferCtx::default();
     func_call.solve(&mut ctx, expected)?;
     ctx.subst_params()?;
-    func_call.check(&ctx)
+    Ok(func_call.check(&ctx).unwrap())
 }
 
 fn substitute(ctx: &InferCtx, ty: &Ty) -> Ty {
