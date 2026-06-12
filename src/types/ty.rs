@@ -14,6 +14,7 @@ pub enum TyKind<'ty> {
     Nullable(Ty<'ty>),
     Array(Ty<'ty>),
     Tuple(Interned<'ty, [Ty<'ty>]>),
+    Any,
     Infer,
     Pending,
     Err,

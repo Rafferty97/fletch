@@ -44,10 +44,10 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
     }
 
     /// Finds the least upper bound of two types, if one exists
-    pub fn join(self, lhs: Ty<'ty>, rhs: Ty<'ty>) -> Result<Ty<'ty>, ()> {
+    pub fn join(self, lhs: Ty<'ty>, rhs: Ty<'ty>) -> Ty<'ty> {
         use TyKind::*;
 
-        Ok(match (lhs.kind(), rhs.kind()) {
+        match (lhs.kind(), rhs.kind()) {
             // Equality
             _ if lhs == rhs => lhs,
 
@@ -62,12 +62,12 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
             (Float(lhs), Float(rhs)) => self.mk_float(lhs.max(rhs)),
 
             // Nullable types
-            (Nullable(lhs), Nullable(rhs)) => self.mk_nullable(self.join(lhs, rhs)?),
-            (Nullable(lhs), _) => self.mk_nullable(self.join(lhs, rhs)?),
-            (_, Nullable(rhs)) => self.mk_nullable(self.join(lhs, rhs)?),
+            (Nullable(lhs), Nullable(rhs)) => self.mk_nullable(self.join(lhs, rhs)),
+            (Nullable(lhs), _) => self.mk_nullable(self.join(lhs, rhs)),
+            (_, Nullable(rhs)) => self.mk_nullable(self.join(lhs, rhs)),
 
             // Arrays
-            (Array(lhs), Array(rhs)) => self.mk_array(self.join(lhs, rhs)?),
+            (Array(lhs), Array(rhs)) => self.mk_array(self.join(lhs, rhs)),
 
             // Tuples
             (Tuple(lhs), Tuple(rhs)) if lhs.len() == rhs.len() => {
@@ -75,12 +75,17 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
                     .iter()
                     .zip(rhs.iter())
                     .map(|(&lhs, &rhs)| self.join(lhs, rhs))
-                    .collect::<Result<_, _>>()?;
+                    .collect();
                 self.mk_tuple(&tys)
             }
 
             // No common type
-            _ => Result::Err(())?,
-        })
+            _ => self.common().any,
+        }
+    }
+
+    // Substitutes type parameters with concrete types
+    pub fn substitute(self, ty: Ty<'ty>, params: &[Ty<'ty>]) -> Ty<'ty> {
+        todo!()
     }
 }

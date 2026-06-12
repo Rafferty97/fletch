@@ -24,9 +24,11 @@ impl<'ty> TyInterners<'ty> {
 }
 
 pub struct CommonTypes<'ty> {
-    // Never
+    // Top and bottom types
     pub never: Ty<'ty>,
+    pub any: Ty<'ty>,
     pub opt_never: Ty<'ty>,
+    pub opt_any: Ty<'ty>,
     // Bool
     pub bool: Ty<'ty>,
     pub opt_bool: Ty<'ty>,
@@ -96,6 +98,7 @@ impl<'ty> CommonTypes<'ty> {
 
         make_tys! {
             never: TyKind::Never,
+            any: TyKind::Any,
             bool: TyKind::Bool,
             int8: TyKind::Int(IntTy::Int8),
             int16: TyKind::Int(IntTy::Int16),
