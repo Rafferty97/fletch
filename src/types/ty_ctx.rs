@@ -2,19 +2,13 @@ use bumpalo::Bump;
 
 use crate::diagnostics::ErrGuaranteed;
 
-use super::ty::{FloatTy, IntTy, Ty, TyKind, UIntTy};
+use super::ty::{FloatTy, FuncTy, IntTy, Ty, TyKind, UIntTy};
 use super::ty_interners::{CommonTypes, TyInterners};
 
 #[derive(Clone, Copy)]
 pub struct TyCtx<'a, 'ty> {
     arena: &'a Bump,
     interners: &'a TyInterners<'ty>,
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum Variance {
-    Co,
-    Contra,
 }
 
 impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
@@ -68,6 +62,11 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
         self.mk_ty_from_kind(TyKind::Tuple(tys))
     }
 
+    pub fn mk_func(&self, params: &[Ty<'ty>], ret: Ty<'ty>) -> Ty<'ty> {
+        let params = self.interners.ty_slice.intern_slice(self.arena, params);
+        self.mk_ty_from_kind(TyKind::Func(FuncTy { params, ret }))
+    }
+
     pub fn mk_err(&self, err: ErrGuaranteed) -> Ty<'ty> {
         self.mk_ty_from_kind(TyKind::Err(err))
     }
@@ -83,7 +82,22 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
     where
         F: Fn(Ty<'ty>, Variance) -> Ty<'ty>,
     {
-        self.transform_with_state(ty, Variance::Co, |ty, var, recurse| recurse(visit(ty, var), var))
+        self.transform_with_state(ty, Variance::Co, |ty, var, recurse| {
+            let ty = visit(ty, var);
+            match ty.kind() {
+                TyKind::Func(FuncTy { params, ret }) => {
+                    let new_params: Vec<_> = params.iter().map(|ty| visit(recurse(*ty, var), !var)).collect();
+                    let new_ret = visit(recurse(ty, var), var);
+                    let changed = *new_params != *params || new_ret != ret;
+                    if changed {
+                        self.mk_func(&new_params, new_ret)
+                    } else {
+                        ty
+                    }
+                }
+                _ => recurse(ty, var),
+            }
+        })
     }
 
     fn transform_with_state<S, F>(&self, ty: Ty<'ty>, init: S, visit: F) -> Ty<'ty>
@@ -108,11 +122,37 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
                         .collect();
                     (*new_inner != *inner).then(|| self.mk_tuple(&new_inner))
                 }
+                TyKind::Func(FuncTy { params, ret }) => {
+                    let new_params: Vec<_> = params
+                        .iter()
+                        .map(|ty| self.transform_with_state(*ty, init, visit))
+                        .collect();
+                    let new_ret = self.transform_with_state(ret, init, visit);
+                    let changed = *new_params != *params || new_ret != ret;
+                    changed.then(|| self.mk_func(&new_params, new_ret))
+                }
                 _ => None,
             };
             new_ty.unwrap_or(ty)
         };
 
         visit(ty, init, &recurse)
+    }
+}
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Variance {
+    Co,
+    Contra,
+}
+
+impl std::ops::Not for Variance {
+    type Output = Self;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Self::Co => Self::Contra,
+            Self::Contra => Self::Co,
+        }
     }
 }

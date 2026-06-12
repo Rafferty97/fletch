@@ -87,6 +87,17 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
                 self.mk_tuple(&tys)
             }
 
+            // Functions
+            (Func(lhs), Func(rhs)) if lhs.params.len() == rhs.params.len() => {
+                let params: Vec<_> = lhs
+                    .params
+                    .iter()
+                    .zip(rhs.params.iter())
+                    .map(|(&lhs, &rhs)| self.meet(lhs, rhs))
+                    .collect();
+                self.mk_func(&params, self.meet(lhs.ret, rhs.ret))
+            }
+
             // No common type
             _ => self.common().never,
         }
@@ -126,6 +137,17 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
                     .map(|(&lhs, &rhs)| self.join(lhs, rhs))
                     .collect();
                 self.mk_tuple(&tys)
+            }
+
+            // Functions
+            (Func(lhs), Func(rhs)) if lhs.params.len() == rhs.params.len() => {
+                let params: Vec<_> = lhs
+                    .params
+                    .iter()
+                    .zip(rhs.params.iter())
+                    .map(|(&lhs, &rhs)| self.join(lhs, rhs))
+                    .collect();
+                self.mk_func(&params, self.join(lhs.ret, rhs.ret))
             }
 
             // No common type

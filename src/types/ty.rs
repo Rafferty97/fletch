@@ -3,6 +3,8 @@ use crate::{diagnostics::ErrGuaranteed, interner::Interned};
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Ty<'ty>(pub(super) Interned<'ty, TyKind<'ty>>);
 
+pub type Tys<'ty> = Interned<'ty, [Ty<'ty>]>;
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum TyKind<'ty> {
     Never,
@@ -13,7 +15,8 @@ pub enum TyKind<'ty> {
     Str,
     Nullable(Ty<'ty>),
     Array(Ty<'ty>),
-    Tuple(Interned<'ty, [Ty<'ty>]>),
+    Tuple(Tys<'ty>),
+    Func(FuncTy<'ty>),
     Any,
     Param(ParamId),
     Infer,
@@ -43,6 +46,12 @@ pub enum FloatTy {
     Float64,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct FuncTy<'ty> {
+    pub params: Tys<'ty>,
+    pub ret: Ty<'ty>,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct ParamId(pub u32);
 
@@ -57,6 +66,10 @@ impl<'ty> Ty<'ty> {
             TyKind::Nullable(ty) => ty.fold(accum, visit),
             TyKind::Array(ty) => ty.fold(accum, visit),
             TyKind::Tuple(tys) => tys.iter().copied().fold(accum, visit),
+            TyKind::Func(FuncTy { params, ret }) => {
+                let accum = params.iter().copied().fold(accum, &mut visit);
+                ret.fold(accum, visit)
+            }
             _ => accum,
         }
     }
