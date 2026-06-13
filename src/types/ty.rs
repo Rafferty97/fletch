@@ -20,7 +20,7 @@ pub enum TyKind<'ty> {
     Tuple(Tys<'ty>),
     Func(FuncTy<'ty>),
     Any,
-    Param(ParamId),
+    Param(u32),
     Infer,
     Pending,
     Error(ErrGuaranteed),
@@ -54,12 +54,13 @@ pub struct FuncTy<'ty> {
     pub ret: Ty<'ty>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub struct ParamId(pub u32);
-
 impl<'ty> Ty<'ty> {
     pub fn kind(self) -> TyKind<'ty> {
         *self.0
+    }
+
+    pub fn visit(self, mut visit: impl FnMut(Self)) {
+        self.fold((), |_, ty| visit(ty))
     }
 
     pub fn fold<T>(self, init: T, mut visit: impl FnMut(T, Self) -> T) -> T {
@@ -80,13 +81,39 @@ impl<'ty> Ty<'ty> {
 impl<'ty> Display for Ty<'ty> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.kind() {
+            TyKind::Never => write!(f, "!"),
             TyKind::Bool => write!(f, "bool"),
             TyKind::Int(IntTy::Int8) => write!(f, "int8"),
             TyKind::Int(IntTy::Int16) => write!(f, "int16"),
             TyKind::Int(IntTy::Int32) => write!(f, "int32"),
             TyKind::Int(IntTy::Int64) => write!(f, "int64"),
-            TyKind::Array(inner) => write!(f, "[{inner}]"),
-            TyKind::Param(id) => write!(f, "${}", id.0),
+            TyKind::Nullable(inner) => write!(f, "{inner}?"),
+            TyKind::Array(inner) => write!(f, "{inner}[]"),
+            TyKind::Tuple(tys) => match &tys[..] {
+                [] => write!(f, "()"),
+                [first, rest @ ..] => {
+                    write!(f, "({first}")?;
+                    for ty in rest {
+                        write!(f, ", {ty}")?;
+                    }
+                    write!(f, ")")
+                }
+            },
+            TyKind::Func(FuncTy { params, ret }) => match &params[..] {
+                [] => write!(f, "() -> {ret}"),
+                [arg] => write!(f, "{arg} -> {ret}"),
+                [first, rest @ ..] => {
+                    write!(f, "({first}")?;
+                    for ty in rest {
+                        write!(f, ", {ty}")?;
+                    }
+                    write!(f, ") -> {ret}")
+                }
+            },
+            TyKind::Param(id) => write!(f, "${}", id),
+            TyKind::Infer => write!(f, "_"),
+            TyKind::Pending => write!(f, "?"),
+            TyKind::Error(_) => write!(f, "{{err}}"),
             k => write!(f, "{k:?}"),
         }
     }

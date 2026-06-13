@@ -1,9 +1,9 @@
 use bumpalo::Bump;
+use itertools::Itertools;
 
 use crate::diagnostics::ErrGuaranteed;
-use crate::types::ParamId;
 
-use super::ty::{FloatTy, FuncTy, IntTy, Ty, TyKind, UIntTy};
+use super::ty::{FloatTy, FuncTy, IntTy, Ty, TyKind, Tys, UIntTy};
 use super::ty_interners::{CommonTypes, TyInterners};
 
 #[derive(Clone, Copy)]
@@ -58,6 +58,15 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
         self.mk_ty_from_kind(TyKind::Array(elem))
     }
 
+    pub fn mk_tys(&self, tys: &[Ty<'ty>]) -> Tys<'ty> {
+        self.interners.ty_slice.intern_slice(self.arena, tys)
+    }
+
+    // pub fn mk_tys_iter(&self, tys: impl IntoIterator<Item = Ty<'ty>>) -> Tys<'ty> {
+    //     let tys = tys.into_iter().collect_vec();
+    //     self.interners.ty_slice.intern_slice(self.arena, &tys)
+    // }
+
     pub fn mk_tuple(&self, tys: &[Ty<'ty>]) -> Ty<'ty> {
         let tys = self.interners.ty_slice.intern_slice(self.arena, tys);
         self.mk_ty_from_kind(TyKind::Tuple(tys))
@@ -68,11 +77,11 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
         self.mk_ty_from_kind(TyKind::Func(FuncTy { params, ret }))
     }
 
-    pub fn mk_param(&self, id: ParamId) -> Ty<'ty> {
+    pub fn mk_param(&self, id: u32) -> Ty<'ty> {
         self.mk_ty_from_kind(TyKind::Param(id))
     }
 
-    pub fn mk_err(&self, err: ErrGuaranteed) -> Ty<'ty> {
+    pub fn mk_error(&self, err: ErrGuaranteed) -> Ty<'ty> {
         self.mk_ty_from_kind(TyKind::Error(err))
     }
 
