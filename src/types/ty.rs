@@ -1,6 +1,8 @@
+use std::fmt::{Debug, Display};
+
 use crate::{diagnostics::ErrGuaranteed, interner::Interned};
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Ty<'ty>(pub(super) Interned<'ty, TyKind<'ty>>);
 
 pub type Tys<'ty> = Interned<'ty, [Ty<'ty>]>;
@@ -21,7 +23,7 @@ pub enum TyKind<'ty> {
     Param(ParamId),
     Infer,
     Pending,
-    Err(ErrGuaranteed),
+    Error(ErrGuaranteed),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
@@ -72,5 +74,26 @@ impl<'ty> Ty<'ty> {
             }
             _ => accum,
         }
+    }
+}
+
+impl<'ty> Display for Ty<'ty> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.kind() {
+            TyKind::Bool => write!(f, "bool"),
+            TyKind::Int(IntTy::Int8) => write!(f, "int8"),
+            TyKind::Int(IntTy::Int16) => write!(f, "int16"),
+            TyKind::Int(IntTy::Int32) => write!(f, "int32"),
+            TyKind::Int(IntTy::Int64) => write!(f, "int64"),
+            TyKind::Array(inner) => write!(f, "[{inner}]"),
+            TyKind::Param(id) => write!(f, "${}", id.0),
+            k => write!(f, "{k:?}"),
+        }
+    }
+}
+
+impl<'ty> Debug for Ty<'ty> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Ty({self})")
     }
 }

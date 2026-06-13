@@ -10,7 +10,7 @@ pub struct Diagnostic {
 pub struct ErrGuaranteed(());
 
 // useful for tests maybe
-pub fn dummy_reporter() -> impl DiagnosticReporter {
+pub fn dummy_reporter() -> &'static impl DiagnosticReporter {
     struct Reporter;
 
     impl DiagnosticReporter for Reporter {
@@ -19,5 +19,5 @@ pub fn dummy_reporter() -> impl DiagnosticReporter {
         }
     }
 
-    Reporter
+    &Reporter
 }

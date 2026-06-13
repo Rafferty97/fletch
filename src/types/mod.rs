@@ -1,4 +1,4 @@
-pub use ty::{Ty, TyKind};
+pub use ty::{ParamId, Ty, TyKind};
 
 mod infer;
 mod ty;

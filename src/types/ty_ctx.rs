@@ -1,18 +1,19 @@
 use bumpalo::Bump;
 
 use crate::diagnostics::ErrGuaranteed;
+use crate::types::ParamId;
 
 use super::ty::{FloatTy, FuncTy, IntTy, Ty, TyKind, UIntTy};
 use super::ty_interners::{CommonTypes, TyInterners};
 
 #[derive(Clone, Copy)]
 pub struct TyCtx<'a, 'ty> {
-    arena: &'a Bump,
+    arena: &'ty Bump,
     interners: &'a TyInterners<'ty>,
 }
 
-impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
-    pub fn new(arena: &'a Bump, interners: &'a TyInterners<'ty>) -> Self {
+impl<'a, 'ty> TyCtx<'a, 'ty> {
+    pub fn new(arena: &'ty Bump, interners: &'a TyInterners<'ty>) -> Self {
         Self { arena, interners }
     }
 
@@ -67,8 +68,12 @@ impl<'a: 'ty, 'ty> TyCtx<'a, 'ty> {
         self.mk_ty_from_kind(TyKind::Func(FuncTy { params, ret }))
     }
 
+    pub fn mk_param(&self, id: ParamId) -> Ty<'ty> {
+        self.mk_ty_from_kind(TyKind::Param(id))
+    }
+
     pub fn mk_err(&self, err: ErrGuaranteed) -> Ty<'ty> {
-        self.mk_ty_from_kind(TyKind::Err(err))
+        self.mk_ty_from_kind(TyKind::Error(err))
     }
 
     pub fn transform<F>(&self, ty: Ty<'ty>, visit: F) -> Ty<'ty>
