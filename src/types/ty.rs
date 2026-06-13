@@ -59,6 +59,10 @@ impl<'ty> Ty<'ty> {
         *self.0
     }
 
+    pub fn is_never(self) -> bool {
+        self.kind() == TyKind::Never
+    }
+
     pub fn visit(self, mut visit: impl FnMut(Self)) {
         self.fold((), |_, ty| visit(ty))
     }

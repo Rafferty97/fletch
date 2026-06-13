@@ -471,6 +471,9 @@ mod test {
                 ExprKind::NumBinOp(lhs, rhs) => {
                     let lhs = ctx.infer(&**lhs, expect);
                     let rhs = ctx.infer(&**rhs, expect);
+                    if lhs.is_never() || rhs.is_never() {
+                        return Ok(ctx.ty_ctx.common().never);
+                    }
                     if lhs != rhs {
                         println!("binop 1: {lhs} vs {rhs}");
                         Err(TypeError::BinOp)?;
@@ -569,6 +572,21 @@ mod test {
 
             let result = infer.infer(&expr, ctx.common().infer);
             assert_eq!(result, i32_array);
+        });
+    }
+
+    /// Tests the expression `map([], x => x + 1)`
+    #[test]
+    fn test_empty_array_map() {
+        inference_test(|ctx, infer| {
+            let i32 = ctx.common().int32;
+            let empty_array = ctx.mk_array(ctx.common().never);
+            let [x] = mint_vars();
+
+            let expr = call(map_fn(ctx), [lit(empty_array), bare_closure(ctx, [x], num_binop(var(x), lit(i32)))]);
+
+            let result = infer.infer(&expr, ctx.common().infer);
+            assert_eq!(result, empty_array);
         });
     }
 }
