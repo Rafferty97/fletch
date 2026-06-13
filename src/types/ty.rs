@@ -91,6 +91,13 @@ impl<'ty> Display for Ty<'ty> {
             TyKind::Int(IntTy::Int16) => write!(f, "int16"),
             TyKind::Int(IntTy::Int32) => write!(f, "int32"),
             TyKind::Int(IntTy::Int64) => write!(f, "int64"),
+            TyKind::UInt(UIntTy::UInt8) => write!(f, "uint8"),
+            TyKind::UInt(UIntTy::UInt16) => write!(f, "uint16"),
+            TyKind::UInt(UIntTy::UInt32) => write!(f, "uint32"),
+            TyKind::UInt(UIntTy::UInt64) => write!(f, "uint64"),
+            TyKind::Float(FloatTy::Float32) => write!(f, "float32"),
+            TyKind::Float(FloatTy::Float64) => write!(f, "float64"),
+            TyKind::Str => write!(f, "str"),
             TyKind::Nullable(inner) => write!(f, "{inner}?"),
             TyKind::Array(inner) => write!(f, "{inner}[]"),
             TyKind::Tuple(tys) => match &tys[..] {
@@ -114,11 +121,11 @@ impl<'ty> Display for Ty<'ty> {
                     write!(f, ") -> {ret}")
                 }
             },
+            TyKind::Any => write!(f, "any"),
             TyKind::Param(id) => write!(f, "${}", id),
             TyKind::Infer => write!(f, "_"),
             TyKind::Pending => write!(f, "?"),
             TyKind::Error(_) => write!(f, "{{err}}"),
-            k => write!(f, "{k:?}"),
         }
     }
 }

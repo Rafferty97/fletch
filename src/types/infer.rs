@@ -274,6 +274,8 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
         use TyKind::*;
 
         match (lower.kind(), upper.kind()) {
+            (Error(_), _) => upper.params(|id| bounds[id as usize].lower = lower),
+            (_, Error(_)) => lower.params(|id| bounds[id as usize].upper = upper),
             (Param(id), _) => {
                 let bound = &mut bounds[id as usize].upper;
                 *bound = self.meet(*bound, upper);
@@ -587,6 +589,26 @@ mod test {
 
             let result = infer.infer(&expr, ctx.common().infer);
             assert_eq!(result, empty_array);
+        });
+    }
+
+    /// Tests the expression `concat(i32[], i64[]) -> i64[]`
+    #[test]
+    fn test_array_concat() {
+        inference_test(|ctx, infer| {
+            let i32_array = ctx.mk_array(ctx.common().int32);
+            let i64_array = ctx.mk_array(ctx.common().int64);
+            let [x, y] = mint_vars();
+
+            let t = ctx.mk_param(0);
+            let t_array = ctx.mk_array(t);
+            let params = ctx.mk_tys(&[t_array, t_array]);
+            let zip = FuncDecl { generic_tys: 1, def: FuncTy { params, ret: t_array } };
+
+            let expr = call(zip, [lit(i32_array), lit(i64_array)]);
+
+            let result = infer.infer(&expr, ctx.common().infer);
+            assert_eq!(result, i64_array);
         });
     }
 }
