@@ -39,6 +39,7 @@ impl<'a, T> AsRef<T> for Interned<'a, T> {
 }
 
 /// An interner that interns values and returns references to them
+#[derive(Debug)]
 pub struct Interner<'a, T: ?Sized> {
     values: Mutex<HashTable<(&'a T, u64)>>,
     state: RandomState,
@@ -46,10 +47,7 @@ pub struct Interner<'a, T: ?Sized> {
 
 impl<'a, T: ?Sized> Interner<'a, T> {
     pub fn new() -> Self {
-        Self {
-            values: Mutex::new(HashTable::new()),
-            state: RandomState::new(),
-        }
+        Self { values: Mutex::new(HashTable::new()), state: RandomState::new() }
     }
 }
 
@@ -95,11 +93,7 @@ pub struct IndexedInterner<'a, S, T: ?Sized> {
 
 impl<'a, S, T: ?Sized> IndexedInterner<'a, S, T> {
     pub fn new() -> Self {
-        Self {
-            values: vec![],
-            indices: HashTable::new(),
-            state: RandomState::new(),
-        }
+        Self { values: vec![], indices: HashTable::new(), state: RandomState::new() }
     }
 
     pub fn size(&self) -> usize {
@@ -111,17 +105,13 @@ impl<'a, S: Index> IndexedInterner<'a, S, str> {
     pub fn intern_str(&mut self, arena: &'a Bump, str: &str) -> S {
         let hash = self.state.hash_one(str);
 
-        match self
-            .indices
-            .find(hash, |&(sym, _)| self.get_str(sym) == str)
-        {
+        match self.indices.find(hash, |&(sym, _)| self.get_str(sym) == str) {
             Some(&(sym, _)) => sym,
             None => {
                 let idx = self.values.len();
                 let sym = S::from_usize(idx);
                 self.values.push(arena.alloc_str(str));
-                self.indices
-                    .insert_unique(hash, (sym, hash), |&(_, hash)| hash);
+                self.indices.insert_unique(hash, (sym, hash), |&(_, hash)| hash);
                 sym
             }
         }

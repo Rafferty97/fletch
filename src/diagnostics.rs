@@ -1,4 +1,4 @@
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 pub trait DiagnosticReporter {
     fn report(&self, diagnostic: Diagnostic) -> ErrGuaranteed;
@@ -7,6 +7,12 @@ pub trait DiagnosticReporter {
 #[derive(Debug)]
 pub struct Diagnostic {
     pub message: String,
+}
+
+impl Diagnostic {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self { message: message.into() }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -25,15 +31,16 @@ pub fn dummy_reporter() -> &'static impl DiagnosticReporter {
     &Reporter
 }
 
-pub struct VecReporter(Mutex<Vec<Diagnostic>>);
+#[derive(Default, Clone, Debug)]
+pub struct VecReporter(Arc<Mutex<Vec<Diagnostic>>>);
 
 impl VecReporter {
     pub fn new() -> Self {
-        Self(Mutex::new(vec![]))
+        Self(Arc::default())
     }
 
     pub fn into_errors(self) -> Vec<Diagnostic> {
-        self.0.into_inner().unwrap()
+        std::mem::take(&mut self.0.lock().unwrap())
     }
 
     pub fn assert_ok(self) {

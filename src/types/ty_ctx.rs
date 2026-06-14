@@ -6,7 +6,7 @@ use crate::diagnostics::ErrGuaranteed;
 use super::ty::{FloatTy, FuncTy, IntTy, Ty, TyKind, Tys, UIntTy};
 use super::ty_interners::{CommonTypes, TyInterners};
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub struct TyCtx<'a, 'ty> {
     arena: &'ty Bump,
     interners: &'a TyInterners<'ty>,
@@ -103,11 +103,7 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
                     let new_params: Vec<_> = params.iter().map(|ty| visit(recurse(*ty, var), !var)).collect();
                     let new_ret = visit(recurse(ty, var), var);
                     let changed = *new_params != *params || new_ret != ret;
-                    if changed {
-                        self.mk_func(&new_params, new_ret)
-                    } else {
-                        ty
-                    }
+                    if changed { self.mk_func(&new_params, new_ret) } else { ty }
                 }
                 _ => recurse(ty, var),
             }
@@ -130,17 +126,13 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
                     (new_inner != inner).then(|| self.mk_array(new_inner))
                 }
                 TyKind::Tuple(inner) => {
-                    let new_inner: Vec<_> = inner
-                        .iter()
-                        .map(|ty| self.transform_with_state(*ty, init, visit))
-                        .collect();
+                    let new_inner: Vec<_> =
+                        inner.iter().map(|ty| self.transform_with_state(*ty, init, visit)).collect();
                     (*new_inner != *inner).then(|| self.mk_tuple(&new_inner))
                 }
                 TyKind::Func(FuncTy { params, ret }) => {
-                    let new_params: Vec<_> = params
-                        .iter()
-                        .map(|ty| self.transform_with_state(*ty, init, visit))
-                        .collect();
+                    let new_params: Vec<_> =
+                        params.iter().map(|ty| self.transform_with_state(*ty, init, visit)).collect();
                     let new_ret = self.transform_with_state(ret, init, visit);
                     let changed = *new_params != *params || new_ret != ret;
                     changed.then(|| self.mk_func(&new_params, new_ret))
