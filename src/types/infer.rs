@@ -12,22 +12,23 @@ use super::ty::{Ty, TyKind};
 use super::ty_ctx::TyCtx;
 
 pub struct FuncDecl<'a, 'ty> {
-    pub generic_tys: &'a [Ty<'ty>],
-    pub params: &'a [Ty<'ty>],
-    pub ret: Ty<'ty>,
+    type_params: u32,
+    params: &'a [Ty<'ty>],
+    ret: Ty<'ty>,
 }
 
 pub struct InferCallResult<'ty> {
-    pub params: Option<Vec<Result<Ty<'ty>>>>,
+    pub params: Vec<Result<Ty<'ty>>>,
     pub ret: Ty<'ty>,
 }
 
 pub fn infer_call<'ty, A>(
     ctx: TyCtx<'_, 'ty>,
     func: FuncDecl<'_, 'ty>,
+    type_args: &[Ty<'ty>],
     args: &[A],
-    mut infer: impl FnMut(&A, Ty<'ty>) -> Ty<'ty>,
     expected: Ty<'ty>,
+    mut infer: impl FnMut(&A, Ty<'ty>) -> Ty<'ty>,
 ) -> Result<InferCallResult<'ty>> {
     check_arity(func.params.len(), args.len())?;
 
@@ -44,7 +45,7 @@ pub fn infer_call<'ty, A>(
 
     loop {
         // Compute type parameter bounds from argument and return types
-        bounds = func.generic_tys.iter().map(|ty| ctx.make_bounds(*ty)).collect();
+        bounds = type_args.iter().map(|ty| ctx.make_bounds(*ty)).collect();
         ctx.update_bounds(&mut bounds, func.ret, expected);
         for &(_, param, ty, _) in &args {
             ctx.update_bounds(&mut bounds, ty, param);
@@ -67,12 +68,15 @@ pub fn infer_call<'ty, A>(
 
     let ret = ctx.substitute_lower(func.ret, &bounds);
 
-    let params = expected.is_final().then(|| {
-        bounds
-            .into_iter()
-            .map(|bounds| ctx.reconcile(bounds.lower, bounds.upper))
-            .collect()
-    });
+    let params = expected
+        .is_final()
+        .then(|| {
+            bounds
+                .into_iter()
+                .map(|bounds| ctx.reconcile(bounds.lower, bounds.upper))
+                .collect()
+        })
+        .unwrap_or_default();
 
     Ok(InferCallResult { params, ret })
 }
@@ -297,7 +301,7 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
     }
 
     /// Substitutes type parameters with concrete types, using the upper bound
-    pub fn substitute_upper(self, ty: Ty<'ty>, bounds: &[TyBounds<'ty>]) -> Ty<'ty> {
+    fn substitute_upper(self, ty: Ty<'ty>, bounds: &[TyBounds<'ty>]) -> Ty<'ty> {
         self.transform_with_variance(ty, |ty, var| match ty.kind() {
             TyKind::Param(idx) => match var {
                 Variance::Co => bounds[idx.0 as usize].upper,
@@ -308,7 +312,7 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
     }
 
     /// Substitutes type parameters with concrete types, using the lower bound
-    pub fn substitute_lower(self, ty: Ty<'ty>, bounds: &[TyBounds<'ty>]) -> Ty<'ty> {
+    fn substitute_lower(self, ty: Ty<'ty>, bounds: &[TyBounds<'ty>]) -> Ty<'ty> {
         self.transform_with_variance(ty, |ty, var| match ty.kind() {
             TyKind::Param(idx) => match var {
                 Variance::Co => bounds[idx.0 as usize].lower,
@@ -585,36 +589,58 @@ mod test {
 
             let [t, u] = mint_param_ids(ctx);
             let func = FuncDecl {
-                generic_tys: &[infer, infer],
+                type_params: 2,
                 params: &[ctx.mk_array(t), ctx.mk_func(&[t], u)],
                 ret: ctx.mk_array(u),
             };
 
-            let args = &[MockExpr::Lit(i32_array), MockExpr::BareClosure { args: 1, ret: i32 }];
+            let type_args = &[infer, infer];
 
-            let result = infer_call(ctx, func, args, |arg, expected| mock_infer(ctx, arg, expected), infer).unwrap();
+            let xs = MockExpr::Lit(i32_array);
+            let map = MockExpr::BareClosure { args: 1, ret: i32 };
+            let args = &[xs, map];
+
+            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
+                mock_infer(ctx, arg, expected)
+            });
+
+            let result = result.unwrap();
             assert_eq!(result.ret, i32_array);
-            assert_eq!(result.params, Some(vec![Ok(i32), Ok(i32)]));
+            assert_eq!(result.params, vec![Ok(i32), Ok(i32)]);
         });
     }
 
-    // /// Tests the expression `map([], x => x + 1)`
-    // #[test]
-    // fn test_empty_array_map() {
-    //     with_ctx(|env| {
-    //         let ctx = env.ty_ctx;
-    //         let i32 = ctx.common().int32;
-    //         let empty_array = ctx.mk_array(ctx.common().never);
-    //         let [x] = mint_vars();
+    /// Tests the expression `map([], x => x + 1)`
+    #[test]
+    fn test_empty_array_map() {
+        with_ctx(|ctx| {
+            let infer = ctx.common().infer;
+            let never = ctx.common().never;
+            let i32 = ctx.common().int32;
+            let empty_array = ctx.mk_array(ctx.common().never);
 
-    //         let expr = call_map_fn(ctx, lit(empty_array), bare_closure(ctx, [x], num_binop(var(x), lit(i32))));
+            let [t, u] = mint_param_ids(ctx);
+            let func = FuncDecl {
+                type_params: 2,
+                params: &[ctx.mk_array(t), ctx.mk_func(&[t], u)],
+                ret: ctx.mk_array(u),
+            };
 
-    //         let result = infer(env, &expr, ctx.common().infer);
-    //         assert_eq!(result, empty_array);
+            let type_args = &[infer, infer];
 
-    //         env.diagnostics.assert_ok();
-    //     });
-    // }
+            let xs = MockExpr::Lit(empty_array);
+            let map = MockExpr::BareClosure { args: 1, ret: never };
+            let args = &[xs, map];
+
+            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
+                mock_infer(ctx, arg, expected)
+            });
+
+            let result = result.unwrap();
+            assert_eq!(result.ret, empty_array);
+            assert_eq!(result.params, vec![Ok(never), Ok(never)]);
+        });
+    }
 
     // /// Tests the expression `concat(i32[], i64[]) -> i64[]`
     // #[test]
