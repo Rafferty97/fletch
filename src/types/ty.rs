@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display};
 
-use crate::{diagnostics::ErrGuaranteed, interner::Interned};
+use crate::{diagnostics::ErrGuaranteed, interner::Interned, types::ty_ctx::Variance};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Ty<'ty>(pub(super) Interned<'ty, TyKind<'ty>>);
