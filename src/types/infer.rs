@@ -238,24 +238,28 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
     }
 
     /// Produces an empty `TyBounds` with the identity elements
-    fn empty_bounds(&self) -> TyBounds<'ty> {
-        TyBounds { lower: self.common().never, upper: self.common().any }
+    fn make_bounds(&self, ty: Ty<'ty>) -> TyBounds<'ty> {
+        TyBounds { lower: self.make_bound(ty, false), upper: self.make_bound(ty, true) }
     }
 
-    /// Produces an empty `TyBounds` with the identity elements
-    fn make_bounds(&self, ty: Ty<'ty>) -> TyBounds<'ty> {
+    fn make_bound(&self, ty: Ty<'ty>, upper: bool) -> Ty<'ty> {
         match ty.kind() {
-            TyKind::Infer => self.empty_bounds(),
-            // Compound types
-            TyKind::Nullable(_) => todo!(),
-            TyKind::Array(inner) => {
-                let TyBounds { lower, upper } = self.make_bounds(inner);
-                TyBounds { lower: self.mk_array(lower), upper: self.mk_array(upper) }
+            TyKind::Infer => {
+                if upper {
+                    self.common().any
+                } else {
+                    self.common().never
+                }
             }
+            TyKind::Nullable(ty) => self.mk_array(self.make_bound(ty, upper)),
+            TyKind::Array(ty) => self.mk_array(self.make_bound(ty, upper)),
             TyKind::Tuple(_) => todo!(),
-            TyKind::Func(_) => todo!(),
-            // Remaining scalar types
-            _ => TyBounds { lower: ty, upper: ty },
+            TyKind::Func(FuncTy { params, ret }) => {
+                let params = &params.iter().map(|ty| self.make_bound(*ty, !upper)).collect_vec();
+                let ret = self.make_bound(ret, upper);
+                self.mk_func(&params, ret)
+            }
+            _ => ty,
         }
     }
 
@@ -263,6 +267,10 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
     /// extracts the resulting type parameter bounds, and applies them to `bounds`
     fn update_bounds(&self, bounds: &mut [TyBounds<'ty>], lower: Ty<'ty>, upper: Ty<'ty>) {
         use TyKind::*;
+
+        if lower.is_scalar() && upper.is_scalar() {
+            return;
+        }
 
         match (lower.kind(), upper.kind()) {
             (Error(_), _) => Self::replace_bounds(bounds, upper, lower, false),
@@ -288,8 +296,7 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
                 }
                 self.update_bounds(bounds, lower.ret, upper.ret);
             }
-            (Bool, Bool) => {}
-            (l, u) => panic!("todo: {l:?}, {u:?}"),
+            _ => {}
         }
     }
 
@@ -582,7 +589,7 @@ mod test {
         });
     }
 
-    /// Tests the expression `foo(42, y => y > 0)`, where `foo: (T, T -> bool) -> (T -> int)`
+    /// Tests the expression `foo(42, y => y > 0)`, where `foo: (T, T -> bool) -> (T -> i32)`
     #[test]
     fn test_infer_both_directions() {
         with_ctx(|ctx| {
@@ -607,6 +614,37 @@ mod test {
             let result = result.unwrap();
             assert_eq!(result.ret, ctx.mk_func(&[infer], i32));
             assert_eq!(result.params, vec![Err(TypeError::Ambiguous)]);
+        });
+    }
+
+    /// Tests the expression `foo(42, y => y > 0)`, where `foo: (T, T -> bool) -> (T -> i32)`
+    /// Same as above, except the expression has an expected type of `i32 -> i32`
+    #[test]
+    fn test_infer_both_directions_annotated() {
+        with_ctx(|ctx| {
+            let infer = ctx.common().infer;
+            let bool = ctx.common().bool;
+            let i32 = ctx.common().int32;
+
+            let [t] = mint_param_ids(ctx);
+            let func = FuncDecl {
+                type_params: 1,
+                params: &[t, ctx.mk_func(&[t], bool)],
+                ret: ctx.mk_func(&[t], i32),
+            };
+
+            let type_args = &[infer];
+            let args = &[MockExpr::Lit(i32), MockExpr::BareClosure { args: 1, ret: bool }];
+
+            let expect = ctx.mk_func(&[i32], i32);
+
+            let result = infer_call(ctx, func, type_args, args, expect, |arg, expected| {
+                mock_infer(ctx, arg, expected)
+            });
+
+            let result = result.unwrap();
+            assert_eq!(result.ret, ctx.mk_func(&[infer], i32));
+            assert_eq!(result.params, vec![Ok(i32)]);
         });
     }
 }

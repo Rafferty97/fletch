@@ -66,6 +66,13 @@ impl<'ty> Ty<'ty> {
         self.kind() == TyKind::Never
     }
 
+    pub fn is_scalar(self) -> bool {
+        matches!(
+            self.kind(),
+            TyKind::Never | TyKind::Bool | TyKind::Int(_) | TyKind::UInt(_) | TyKind::Float(_) | TyKind::Str
+        )
+    }
+
     pub fn visit(self, mut visit: impl FnMut(Self)) {
         self.fold((), |_, ty| visit(ty))
     }
