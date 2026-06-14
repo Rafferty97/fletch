@@ -49,12 +49,7 @@ pub struct FuncDecl<'a, 'ty> {
     ret: Ty<'ty>,
 }
 
-pub fn infer_call<'ty, E>(
-    env: &mut E,
-    func: FuncDecl<'_, 'ty>,
-    args: &[E::Expr],
-    expected: Ty<'ty>,
-) -> Result<impl Iterator<Item = Result<Ty<'ty>>>>
+pub fn infer_call<'ty, E>(env: &mut E, func: FuncDecl<'_, 'ty>, args: &[E::Expr], expected: Ty<'ty>) -> Result<Ty<'ty>>
 where
     E: InferEnv<'ty>,
 {
@@ -107,7 +102,25 @@ where
         }
     }
 
-    Ok(bounds.into_iter().map(|b| env.ty_ctx().reconcile(b.lower, b.upper)))
+    let ret = env.ty_ctx().substitute_lower(func.ret, &bounds);
+
+    if func.ret.is_final() {
+        let mut errs = vec![];
+
+        for (idx, bounds) in bounds.into_iter().enumerate() {
+            let id = ParamId(idx as u32);
+            match env.ty_ctx().reconcile(bounds.lower, bounds.upper) {
+                Ok(ty) => env.set_param_ty(id, ty),
+                Err(err) => errs.push((id, err)),
+            }
+        }
+
+        if !errs.is_empty() {
+            Err(TypeError::Params(errs))?;
+        }
+    }
+
+    Ok(ret)
 }
 
 pub fn infer_closure<'ty, E, F>(env: &mut E, def: &FuncTy<'ty>, body: F, expected: Ty<'ty>) -> Result<Ty<'ty>>
@@ -371,11 +384,10 @@ impl<'ty> Ty<'ty> {
 
 #[derive(Debug)]
 pub enum TypeError {
-    Undefined,
     Ambiguous,
     Mismatch,
-    BinOp,
     Arity { expected: u32, actual: u32 },
+    Params(Vec<(ParamId, TypeError)>),
 }
 
 pub type Result<T, E = TypeError> = std::result::Result<T, E>;
@@ -464,9 +476,8 @@ mod test {
                 }
                 ExprKind::Call { generic_tys, def, args } => {
                     let func = FuncDecl { generic_tys: *generic_tys, params: &def.params, ret: def.ret };
-                    let Ok(params) = infer_call(self, func, &args, expected) else { todo!() };
-                    let Ok(params) = params.collect::<Result<Vec<_>, _>>() else { todo!() };
-                    self.ty_ctx.substitute(def.ret, &params)
+                    let Ok(ret) = infer_call(self, func, &args, expected) else { todo!() };
+                    ret
                 }
                 ExprKind::Closure { def, params, body } => {
                     let body = |env: &mut TestEnv<'_, 'ty>, args: &[Ty<'ty>]| {
