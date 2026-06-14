@@ -1,11 +1,8 @@
-use std::collections::HashMap;
 use std::fmt::Debug;
-use std::hash::Hash;
 
 use itertools::Itertools;
 
-use crate::diagnostics::ErrGuaranteed;
-use crate::types::ty::{FuncTy, ParamId};
+use crate::types::ty::ParamId;
 use crate::types::ty_ctx::Variance;
 
 use super::ty::{Ty, TyKind};
@@ -30,6 +27,7 @@ pub fn infer_call<'ty, A>(
     expected: Ty<'ty>,
     mut infer: impl FnMut(&A, Ty<'ty>) -> Ty<'ty>,
 ) -> Result<InferCallResult<'ty>> {
+    check_arity(func.type_params as usize, type_args.len())?;
     check_arity(func.params.len(), args.len())?;
 
     let mut args = args
@@ -408,149 +406,6 @@ mod test {
 
     use super::*;
 
-    // #[derive(Debug)]
-    // struct TestEnv<'a, 'ty> {
-    //     ty_ctx: TyCtx<'a, 'ty>,
-    //     vars: HashMap<VarId, Ty<'ty>>,
-    //     exprs: HashMap<u32, Ty<'ty>>,
-    //     params: HashMap<ParamId, Ty<'ty>>,
-    //     diagnostics: VecReporter,
-    // }
-
-    // /// A minimal AST for exercising the type inference algorithms
-    // #[derive(Clone, Debug)]
-    // struct Expr<'ty> {
-    //     id: u32,
-    //     kind: ExprKind<'ty>,
-    // }
-
-    // #[derive(Clone, Debug)]
-    // enum ExprKind<'ty> {
-    //     /// A literal with an exact type
-    //     Lit(Ty<'ty>),
-    //     /// A variable reference
-    //     Var(VarId),
-    //     /// A numeric binary op of the form `(T, T) -> T`
-    //     NumBinOp(Box<Expr<'ty>>, Box<Expr<'ty>>),
-    //     /// A closure
-    //     Closure { def: FuncTy<'ty>, params: Vec<VarId>, body: Box<Expr<'ty>> },
-    //     /// A function call
-    //     Call { generic_tys: u32, def: FuncTy<'ty>, args: Vec<Expr<'ty>> },
-    // }
-
-    // /// Unique variable ID (post name resolution)
-    // #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-    // struct VarId(u32);
-
-    // impl<'a, 'ty> InferEnv<'ty> for TestEnv<'a, 'ty> {
-    //     type Expr = Expr<'ty>;
-
-    //     fn ty_ctx(&self) -> TyCtx<'_, 'ty> {
-    //         self.ty_ctx
-    //     }
-
-    //     fn set_expr_ty(&mut self, expr: &Self::Expr, ty: Ty<'ty>) {
-    //         self.exprs.insert(expr.id, ty);
-    //     }
-
-    //     fn infer_expr(&mut self, expr: &Expr<'ty>, expected: Ty<'ty>) -> Ty<'ty> {
-    //         match &expr.kind {
-    //             &ExprKind::Lit(ty) => ty,
-    //             &ExprKind::Var(id) => match self.vars.get(&id) {
-    //                 Some(ty) => *ty,
-    //                 None => todo!(),
-    //             },
-    //             ExprKind::NumBinOp(lhs, rhs) => {
-    //                 let lhs = infer(self, &**lhs, expected);
-    //                 let rhs = infer(self, &**rhs, expected);
-    //                 if lhs.is_never() || rhs.is_never() {
-    //                     return self.ty_ctx.common().never;
-    //                 }
-    //                 if lhs != rhs {
-    //                     todo!()
-    //                 }
-    //                 if !matches!(lhs.kind(), TyKind::Int(_) | TyKind::UInt(_) | TyKind::Float(_)) {
-    //                     todo!()
-    //                 }
-    //                 lhs
-    //             }
-    //             ExprKind::Call { generic_tys, def, args } => {
-    //                 let func = FuncDecl { generic_tys: *generic_tys, params: &def.params, ret: def.ret };
-    //                 let Ok(ret) = infer_call(self, func, &args, expected) else { todo!() };
-    //                 ret
-    //             }
-    //             ExprKind::Closure { def, params, body } => {
-    //                 let body = |env: &mut TestEnv<'_, 'ty>, args: &[Ty<'ty>]| {
-    //                     let vars = params.iter().copied().zip(args.iter().copied()).collect();
-    //                     let mut env = TestEnv {
-    //                         ty_ctx: env.ty_ctx,
-    //                         vars,
-    //                         exprs: HashMap::new(),
-    //                         params: HashMap::new(),
-    //                         diagnostics: env.diagnostics.clone(),
-    //                     };
-    //                     Ok(infer(&mut env, &*body, expected))
-    //                 };
-    //                 let Ok(ret) = infer_closure(self, def, body, expected) else { todo!() };
-    //                 ret
-    //             }
-    //             _ => panic!("implement {:?}", expr.kind),
-    //         }
-    //     }
-
-    //     fn set_param_ty(&mut self, id: ParamId, ty: Ty<'ty>) {
-    //         self.params.insert(id, ty);
-    //     }
-    // }
-
-    // static NEXT_ID: AtomicU32 = AtomicU32::new(0);
-
-    // fn expr<'ty>(kind: ExprKind<'ty>) -> Expr<'ty> {
-    //     use std::sync::atomic::Ordering;
-    //     Expr { id: NEXT_ID.fetch_add(1, Ordering::Relaxed), kind }
-    // }
-
-    // fn lit<'ty>(ty: Ty<'ty>) -> Expr<'ty> {
-    //     expr(ExprKind::Lit(ty))
-    // }
-
-    // fn var<'ty>(id: VarId) -> Expr<'ty> {
-    //     expr(ExprKind::Var(id))
-    // }
-
-    // fn num_binop<'ty>(lhs: Expr<'ty>, rhs: Expr<'ty>) -> Expr<'ty> {
-    //     expr(ExprKind::NumBinOp(lhs.into(), rhs.into()))
-    // }
-
-    // fn bare_closure<'ty>(ctx: TyCtx<'_, 'ty>, params: impl IntoIterator<Item = VarId>, body: Expr<'ty>) -> Expr<'ty> {
-    //     let infer = ctx.common().infer;
-    //     let params = params.into_iter().collect_vec();
-    //     expr(ExprKind::Closure {
-    //         def: FuncTy { params: ctx.mk_tys(&vec![infer; params.len()]), ret: infer },
-    //         params,
-    //         body: body.into(),
-    //     })
-    // }
-
-    // fn mint_vars<const N: usize>() -> [VarId; N] {
-    //     std::array::from_fn(|i| VarId(i as _))
-    // }
-
-    // fn call_map_fn<'ty>(ctx: TyCtx<'_, 'ty>, xs: Expr<'ty>, map: Expr<'ty>) -> Expr<'ty> {
-    //     let (t, u) = (ctx.mk_param(ParamId(0)), ctx.mk_param(ParamId(1)));
-    //     let def = FuncTy {
-    //         params: ctx.mk_tys(&[ctx.mk_array(t), ctx.mk_func(&[t], u)]),
-    //         ret: ctx.mk_array(u),
-    //     };
-    //     expr(ExprKind::Call { generic_tys: 2, def, args: vec![xs, map] })
-    // }
-
-    // fn call_zip<'ty>(ctx: TyCtx<'_, 'ty>, xs: Expr<'ty>, ys: Expr<'ty>) -> Expr<'ty> {
-    //     let t = ctx.mk_param(ParamId(0));
-    //     let def = FuncTy { params: ctx.mk_tys(&[ctx.mk_array(t), ctx.mk_array(t)]), ret: ctx.mk_array(t) };
-    //     expr(ExprKind::Call { generic_tys: 1, def, args: vec![xs, ys] })
-    // }
-
     fn with_ctx(f: impl for<'ty> FnOnce(TyCtx<'_, 'ty>)) {
         let arena = Bump::new();
         let interners = TyInterners::new(&arena);
@@ -642,20 +497,34 @@ mod test {
         });
     }
 
-    // /// Tests the expression `concat(i32[], i64[]) -> i64[]`
-    // #[test]
-    // fn test_array_concat() {
-    //     with_ctx(|env| {
-    //         let ctx = env.ty_ctx;
-    //         let i32_array = ctx.mk_array(ctx.common().int32);
-    //         let i64_array = ctx.mk_array(ctx.common().int64);
+    /// Tests the expression `concat(i32[], i64[]) -> i64[]`
+    #[test]
+    fn test_array_concat() {
+        with_ctx(|ctx| {
+            let infer = ctx.common().infer;
+            let i32_array = ctx.mk_array(ctx.common().int32);
+            let i64_array = ctx.mk_array(ctx.common().int64);
 
-    //         let expr = call_zip(ctx, lit(i32_array), lit(i64_array));
+            let [t] = mint_param_ids(ctx);
+            let func = FuncDecl {
+                type_params: 1,
+                params: &[ctx.mk_array(t), ctx.mk_array(t)],
+                ret: ctx.mk_array(t),
+            };
 
-    //         let result = infer(env, &expr, ctx.common().infer);
-    //         assert_eq!(result, i64_array);
+            let type_args = &[infer];
 
-    //         env.diagnostics.assert_ok();
-    //     });
-    // }
+            let xs = MockExpr::Lit(i32_array);
+            let ys = MockExpr::Lit(i64_array);
+            let args = &[xs, ys];
+
+            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
+                mock_infer(ctx, arg, expected)
+            });
+
+            let result = result.unwrap();
+            assert_eq!(result.ret, i64_array);
+            assert_eq!(result.params, vec![Ok(ctx.common().int64)]);
+        });
+    }
 }
