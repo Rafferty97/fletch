@@ -425,12 +425,8 @@ pub type Result<T, E = TypeError> = std::result::Result<T, E>;
 
 #[cfg(test)]
 mod test {
-    use std::sync::atomic::AtomicU32;
-    use std::sync::{LazyLock, Mutex};
-
     use bumpalo::Bump;
 
-    use crate::diagnostics::{VecReporter, dummy_reporter};
     use crate::types::ty_interners::TyInterners;
 
     use super::*;
@@ -500,7 +496,6 @@ mod test {
         with_ctx(|ctx| {
             let infer = ctx.common().infer;
             let never = ctx.common().never;
-            let i32 = ctx.common().int32;
             let empty_array = ctx.mk_array(ctx.common().never);
 
             let [t, u] = mint_param_ids(ctx);
