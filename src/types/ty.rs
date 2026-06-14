@@ -20,7 +20,7 @@ pub enum TyKind<'ty> {
     Tuple(Tys<'ty>),
     Func(FuncTy<'ty>),
     Any,
-    Param(u32),
+    Param(ParamId),
     Infer,
     Pending,
     Error(ErrGuaranteed),
@@ -47,6 +47,9 @@ pub enum FloatTy {
     Float32,
     Float64,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct ParamId(pub u32);
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct FuncTy<'ty> {
@@ -122,7 +125,7 @@ impl<'ty> Display for Ty<'ty> {
                 }
             },
             TyKind::Any => write!(f, "any"),
-            TyKind::Param(id) => write!(f, "${}", id),
+            TyKind::Param(id) => write!(f, "${}", id.0),
             TyKind::Infer => write!(f, "_"),
             TyKind::Pending => write!(f, "?"),
             TyKind::Error(_) => write!(f, "{{err}}"),

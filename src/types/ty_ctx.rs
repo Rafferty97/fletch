@@ -2,6 +2,7 @@ use bumpalo::Bump;
 use itertools::Itertools;
 
 use crate::diagnostics::ErrGuaranteed;
+use crate::types::ty::ParamId;
 
 use super::ty::{FloatTy, FuncTy, IntTy, Ty, TyKind, Tys, UIntTy};
 use super::ty_interners::{CommonTypes, TyInterners};
@@ -77,7 +78,7 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
         self.mk_ty_from_kind(TyKind::Func(FuncTy { params, ret }))
     }
 
-    pub fn mk_param(&self, id: u32) -> Ty<'ty> {
+    pub fn mk_param(&self, id: ParamId) -> Ty<'ty> {
         self.mk_ty_from_kind(TyKind::Param(id))
     }
 

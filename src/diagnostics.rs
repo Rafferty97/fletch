@@ -39,11 +39,11 @@ impl VecReporter {
         Self(Arc::default())
     }
 
-    pub fn into_errors(self) -> Vec<Diagnostic> {
+    pub fn into_errors(&self) -> Vec<Diagnostic> {
         std::mem::take(&mut self.0.lock().unwrap())
     }
 
-    pub fn assert_ok(self) {
+    pub fn assert_ok(&self) {
         let errors = self.into_errors();
         if !errors.is_empty() {
             panic!("unexpected errors: {errors:?}");

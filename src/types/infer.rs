@@ -4,27 +4,43 @@ use std::hash::Hash;
 
 use itertools::Itertools;
 
-use crate::types::ty::FuncTy;
+use crate::types::ty::{FuncTy, ParamId};
 use crate::types::ty_ctx::Variance;
 
 use super::ty::{Ty, TyKind};
 use super::ty_ctx::TyCtx;
 
-pub trait Env<'ty> {
+pub trait InferEnv<'ty> {
     type Expr;
 
     fn ty_ctx(&self) -> TyCtx<'_, 'ty>;
 
-    fn get_ty(&self, expr: &Self::Expr) -> Option<Ty<'ty>>;
+    fn get_expr_ty(&self, expr: &Self::Expr) -> Option<Ty<'ty>>;
 
-    fn infer(&mut self, expr: &Self::Expr, expected: Ty<'ty>) -> Ty<'ty>;
+    fn set_expr_ty(&mut self, expr: &Self::Expr, ty: Ty<'ty>);
+
+    fn infer_expr(&mut self, expr: &Self::Expr, expected: Ty<'ty>) -> Ty<'ty>;
+
+    fn get_param_ty(&self, param: ParamId) -> Option<Ty<'ty>>;
+
+    fn set_param_ty(&mut self, param: ParamId, ty: Ty<'ty>);
 }
 
 pub fn infer<'ty, E>(env: &mut E, expr: &E::Expr, expected: Ty<'ty>) -> Ty<'ty>
 where
-    E: Env<'ty>,
+    E: InferEnv<'ty>,
 {
-    env.infer(expr, expected)
+    if let Some(ty) = env.get_expr_ty(expr) {
+        return ty;
+    }
+
+    let ty = env.infer_expr(expr, expected);
+
+    if ty.is_final() {
+        env.set_expr_ty(expr, ty);
+    }
+
+    ty
 }
 
 pub struct FuncDecl<'a, 'ty> {
@@ -40,7 +56,7 @@ pub fn infer_call<'ty, E>(
     expected: Ty<'ty>,
 ) -> Result<impl Iterator<Item = Result<Ty<'ty>>>>
 where
-    E: Env<'ty>,
+    E: InferEnv<'ty>,
 {
     check_arity(func.params.len(), args.len())?;
 
@@ -48,7 +64,7 @@ where
     let mut arg_tys = args
         .iter()
         .zip(func.params.iter())
-        .map(|(arg, param)| match env.get_ty(arg) {
+        .map(|(arg, param)| match env.get_expr_ty(arg) {
             Some(ty) => (arg, *param, ty, true),
             None => (arg, *param, pending, false),
         })
@@ -60,7 +76,7 @@ where
     for i in 1.. {
         println!("Iteration {i}");
 
-        // Compute type bounds
+        // Compute type parameter bounds from argument and return types
         bounds.fill(empty_bounds);
         env.ty_ctx().update_bounds(&mut bounds, func.ret, expected);
         for &(_, param, ty, _) in &arg_tys {
@@ -71,11 +87,11 @@ where
             println!("    ${i}  \t{lower}  \t{upper}");
         }
 
-        // compute arguments from T, U, etc.
+        // compute argument types from type parameters
         let mut changed = false;
         for (arg, param, ty, done) in arg_tys.iter_mut().filter(|(_, _, _, done)| !done) {
             let expect = env.ty_ctx().substitute_upper(*param, &bounds);
-            let new_ty = env.infer(*arg, expect);
+            let new_ty = infer(env, *arg, expect);
             changed |= new_ty != *ty;
             *ty = new_ty;
             *done = new_ty.is_final();
@@ -96,7 +112,7 @@ where
 
 pub fn infer_closure<'ty, E, F>(env: &mut E, def: &FuncTy<'ty>, body: F, expected: Ty<'ty>) -> Result<Ty<'ty>>
 where
-    E: Env<'ty>,
+    E: InferEnv<'ty>,
     F: FnOnce(&mut E, &[Ty<'ty>]) -> Result<Ty<'ty>>,
 {
     // Ensure expected type is a function of the correct arity
@@ -234,20 +250,20 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
         use TyKind::*;
 
         match (lower.kind(), upper.kind()) {
-            (Error(_), _) => upper.params(|id| bounds[id as usize].lower = lower),
-            (_, Error(_)) => lower.params(|id| bounds[id as usize].upper = upper),
+            (Error(_), _) => upper.params(|id| bounds[id.0 as usize].lower = lower),
+            (_, Error(_)) => lower.params(|id| bounds[id.0 as usize].upper = upper),
             (Param(id), _) => {
-                let bound = &mut bounds[id as usize].upper;
+                let bound = &mut bounds[id.0 as usize].upper;
                 *bound = self.meet(*bound, upper);
             }
             (_, Param(id)) => {
-                let bound = &mut bounds[id as usize].lower;
+                let bound = &mut bounds[id.0 as usize].lower;
                 *bound = self.join(*bound, lower);
             }
-            (Infer, _) => upper.params(|id| bounds[id as usize].lower = lower),
-            (_, Infer) => lower.params(|id| bounds[id as usize].upper = upper),
-            (Pending, _) => upper.params(|id| bounds[id as usize].lower = lower),
-            (_, Pending) => lower.params(|id| bounds[id as usize].upper = upper),
+            (Infer, _) => upper.params(|id| bounds[id.0 as usize].lower = lower),
+            (_, Infer) => lower.params(|id| bounds[id.0 as usize].upper = upper),
+            (Pending, _) => upper.params(|id| bounds[id.0 as usize].lower = lower),
+            (_, Pending) => lower.params(|id| bounds[id.0 as usize].upper = upper),
             (Array(lower), Array(upper)) => self.update_bounds(bounds, lower, upper),
             (Func(lower), Func(upper)) => {
                 // FIXME: arity check
@@ -264,7 +280,7 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
     /// Substitutes type parameters with concrete types
     pub fn substitute(self, ty: Ty<'ty>, params: &[Ty<'ty>]) -> Ty<'ty> {
         self.transform(ty, |ty| match ty.kind() {
-            TyKind::Param(idx) => params[idx as usize],
+            TyKind::Param(idx) => params[idx.0 as usize],
             _ => ty,
         })
     }
@@ -273,8 +289,8 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
     pub fn substitute_upper(self, ty: Ty<'ty>, bounds: &[TyBounds<'ty>]) -> Ty<'ty> {
         self.transform_with_variance(ty, |ty, var| match ty.kind() {
             TyKind::Param(idx) => match var {
-                Variance::Co => bounds[idx as usize].upper,
-                Variance::Contra => bounds[idx as usize].lower,
+                Variance::Co => bounds[idx.0 as usize].upper,
+                Variance::Contra => bounds[idx.0 as usize].lower,
             },
             _ => ty,
         })
@@ -284,8 +300,8 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
     pub fn substitute_lower(self, ty: Ty<'ty>, bounds: &[TyBounds<'ty>]) -> Ty<'ty> {
         self.transform_with_variance(ty, |ty, var| match ty.kind() {
             TyKind::Param(idx) => match var {
-                Variance::Co => bounds[idx as usize].lower,
-                Variance::Contra => bounds[idx as usize].upper,
+                Variance::Co => bounds[idx.0 as usize].lower,
+                Variance::Contra => bounds[idx.0 as usize].upper,
             },
             _ => ty,
         })
@@ -345,7 +361,7 @@ impl<'ty> Ty<'ty> {
     }
 
     /// Iterates over the type parameters contains in this type
-    pub fn params(self, mut visit: impl FnMut(u32)) {
+    pub fn params(self, mut visit: impl FnMut(ParamId)) {
         self.visit(|ty| match ty.kind() {
             TyKind::Param(id) => visit(id),
             _ => {}
@@ -381,6 +397,7 @@ mod test {
         ty_ctx: TyCtx<'a, 'ty>,
         vars: HashMap<VarId, Ty<'ty>>,
         exprs: HashMap<u32, Ty<'ty>>,
+        params: HashMap<ParamId, Ty<'ty>>,
         diagnostics: VecReporter,
     }
 
@@ -409,18 +426,22 @@ mod test {
     #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
     struct VarId(u32);
 
-    impl<'a, 'ty> Env<'ty> for TestEnv<'a, 'ty> {
+    impl<'a, 'ty> InferEnv<'ty> for TestEnv<'a, 'ty> {
         type Expr = Expr<'ty>;
 
         fn ty_ctx(&self) -> TyCtx<'_, 'ty> {
             self.ty_ctx
         }
 
-        fn get_ty(&self, expr: &Self::Expr) -> Option<Ty<'ty>> {
+        fn get_expr_ty(&self, expr: &Self::Expr) -> Option<Ty<'ty>> {
             self.exprs.get(&expr.id).copied()
         }
 
-        fn infer(&mut self, expr: &Expr<'ty>, expected: Ty<'ty>) -> Ty<'ty> {
+        fn set_expr_ty(&mut self, expr: &Self::Expr, ty: Ty<'ty>) {
+            self.exprs.insert(expr.id, ty);
+        }
+
+        fn infer_expr(&mut self, expr: &Expr<'ty>, expected: Ty<'ty>) -> Ty<'ty> {
             match &expr.kind {
                 &ExprKind::Lit(ty) => ty,
                 &ExprKind::Var(id) => match self.vars.get(&id) {
@@ -454,6 +475,7 @@ mod test {
                             ty_ctx: env.ty_ctx,
                             vars,
                             exprs: HashMap::new(),
+                            params: HashMap::new(),
                             diagnostics: env.diagnostics.clone(),
                         };
                         Ok(infer(&mut env, &*body, expected))
@@ -463,6 +485,14 @@ mod test {
                 }
                 _ => panic!("implement {:?}", expr.kind),
             }
+        }
+
+        fn get_param_ty(&self, id: ParamId) -> Option<Ty<'ty>> {
+            self.params.get(&id).copied()
+        }
+
+        fn set_param_ty(&mut self, id: ParamId, ty: Ty<'ty>) {
+            self.params.insert(id, ty);
         }
     }
 
@@ -500,7 +530,7 @@ mod test {
     }
 
     fn call_map_fn<'ty>(ctx: TyCtx<'_, 'ty>, xs: Expr<'ty>, map: Expr<'ty>) -> Expr<'ty> {
-        let (t, u) = (ctx.mk_param(0), ctx.mk_param(1));
+        let (t, u) = (ctx.mk_param(ParamId(0)), ctx.mk_param(ParamId(1)));
         let def = FuncTy {
             params: ctx.mk_tys(&[ctx.mk_array(t), ctx.mk_func(&[t], u)]),
             ret: ctx.mk_array(u),
@@ -509,7 +539,7 @@ mod test {
     }
 
     fn call_zip<'ty>(ctx: TyCtx<'_, 'ty>, xs: Expr<'ty>, ys: Expr<'ty>) -> Expr<'ty> {
-        let t = ctx.mk_param(0);
+        let t = ctx.mk_param(ParamId(0));
         let def = FuncTy { params: ctx.mk_tys(&[ctx.mk_array(t), ctx.mk_array(t)]), ret: ctx.mk_array(t) };
         expr(ExprKind::Call { generic_tys: 1, def, args: vec![xs, ys] })
     }
@@ -523,12 +553,11 @@ mod test {
             ty_ctx,
             vars: HashMap::new(),
             exprs: HashMap::new(),
+            params: HashMap::new(),
             diagnostics: VecReporter::new(),
         };
 
         f(&mut env);
-
-        env.diagnostics.assert_ok();
     }
 
     /// Tests the expression `map(xs, x => x + 1)`
@@ -544,6 +573,8 @@ mod test {
 
             let result = infer(env, &expr, ctx.common().infer);
             assert_eq!(result, i32_array);
+
+            env.diagnostics.assert_ok();
         });
     }
 
@@ -560,6 +591,8 @@ mod test {
 
             let result = infer(env, &expr, ctx.common().infer);
             assert_eq!(result, empty_array);
+
+            env.diagnostics.assert_ok();
         });
     }
 
@@ -575,6 +608,8 @@ mod test {
 
             let result = infer(env, &expr, ctx.common().infer);
             assert_eq!(result, i64_array);
+
+            env.diagnostics.assert_ok();
         });
     }
 }
