@@ -334,7 +334,7 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
 
     /// Substitutes type parameters with concrete types
     pub fn substitute(self, ty: Ty<'ty>, params: &[Ty<'ty>]) -> Ty<'ty> {
-        self.transform(ty, |ty| match ty.kind() {
+        self.transform(ty, &mut |ty| match ty.kind() {
             TyKind::Param(idx) => params[idx.0 as usize],
             _ => ty,
         })

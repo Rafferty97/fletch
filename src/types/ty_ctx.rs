@@ -86,11 +86,33 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
         self.mk_ty_from_kind(TyKind::Error(err))
     }
 
-    pub fn transform<F>(&self, ty: Ty<'ty>, visit: F) -> Ty<'ty>
+    pub fn transform<F>(&self, ty: Ty<'ty>, visit: &mut F) -> Ty<'ty>
     where
-        F: Fn(Ty<'ty>) -> Ty<'ty>,
+        F: FnMut(Ty<'ty>) -> Ty<'ty>,
     {
-        self.transform_with_state(ty, (), |ty, _, recurse| recurse(visit(ty), ()))
+        let ty = visit(ty);
+        let new_ty = match ty.kind() {
+            TyKind::Nullable(inner) => {
+                let new_inner = self.transform(inner, visit);
+                (new_inner != inner).then(|| self.mk_nullable(new_inner))
+            }
+            TyKind::Array(inner) => {
+                let new_inner = self.transform(inner, visit);
+                (new_inner != inner).then(|| self.mk_array(new_inner))
+            }
+            TyKind::Tuple(inner) => {
+                let new_inner: Vec<_> = inner.iter().map(|ty| self.transform(*ty, visit)).collect();
+                (*new_inner != *inner).then(|| self.mk_tuple(&new_inner))
+            }
+            TyKind::Func(FuncTy { params, ret }) => {
+                let new_params: Vec<_> = params.iter().map(|ty| self.transform(*ty, visit)).collect();
+                let new_ret = self.transform(ret, visit);
+                let changed = *new_params != *params || new_ret != ret;
+                changed.then(|| self.mk_func(&new_params, new_ret))
+            }
+            _ => None,
+        };
+        new_ty.unwrap_or(ty)
     }
 
     pub fn transform_with_variance<F>(&self, ty: Ty<'ty>, visit: F) -> Ty<'ty>
