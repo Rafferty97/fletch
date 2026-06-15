@@ -374,7 +374,7 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
 
             // Sentinal values
             (Error(e), _) | (_, Error(e)) => Ok(self.mk_error(e)),
-            (Pending, _) | (_, Pending) => unreachable!(),
+            (Pending, _) | (_, Pending) => Err(TypeError::Cycle),
 
             // Type inference
             (Infer, _) => {
@@ -415,7 +415,7 @@ pub enum TypeError {
     Ambiguous,
     Mismatch,
     Arity { expected: u32, actual: u32 },
-    Unimplemented,
+    Cycle,
 }
 
 pub type Result<T, E = TypeError> = std::result::Result<T, E>;
@@ -725,7 +725,6 @@ mod test {
     fn test_two_lambas_with_expected_ty() {
         with_ctx(|ctx| {
             let infer = ctx.common().infer;
-            let never = ctx.common().never;
             let bool = ctx.common().bool;
             let i32 = ctx.common().int32;
 
@@ -760,9 +759,7 @@ mod test {
     fn test_two_lambas_without_expected_ty() {
         with_ctx(|ctx| {
             let infer = ctx.common().infer;
-            let never = ctx.common().never;
             let bool = ctx.common().bool;
-            let i32 = ctx.common().int32;
 
             let [t] = mint_param_ids(ctx);
             let func = FuncDecl {
@@ -792,7 +789,6 @@ mod test {
     fn test_dependency_chain() {
         with_ctx(|ctx| {
             let infer = ctx.common().infer;
-            let never = ctx.common().never;
             let bool = ctx.common().bool;
             let i32 = ctx.common().int32;
             let str = ctx.common().str;
@@ -806,8 +802,6 @@ mod test {
 
             let type_args = &[infer, infer, infer];
 
-            let func_a = MockExpr::BareClosure { params: 1, ret: bool };
-            let func_b = MockExpr::BareClosure { params: 1, ret: bool };
             let args = &[
                 MockExpr::Tuple(vec![MockExpr::Lit(i32), MockExpr::BareClosure { params: 1, ret: bool }]),
                 MockExpr::BareClosure { params: 1, ret: str },
@@ -820,6 +814,65 @@ mod test {
             let result = result.unwrap();
             assert_eq!(result.ret, bool);
             assert_eq!(result.params, vec![Ok(i32), Ok(str), Ok(bool)]);
+        });
+    }
+
+    /// Tests the expression `bar(T -> T, T -> T) -> T`
+    #[test]
+    fn test_cyclic_deps() {
+        with_ctx(|ctx| {
+            let infer = ctx.common().infer;
+            let pending = ctx.common().pending;
+            let i32 = ctx.common().int32;
+            let str = ctx.common().str;
+
+            let [t] = mint_param_ids(ctx);
+            let func = FuncDecl { type_params: 1, params: &[ctx.mk_func(&[t], t), ctx.mk_func(&[t], t)], ret: t };
+
+            let type_args = &[infer];
+
+            let args = &[
+                MockExpr::BareClosure { params: 1, ret: i32 },
+                MockExpr::BareClosure { params: 1, ret: str },
+            ];
+
+            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
+                mock_infer(ctx, arg, expected)
+            });
+
+            let result = result.unwrap();
+            assert_eq!(result.ret, pending);
+            assert_eq!(result.params, vec![Err(TypeError::Cycle)]);
+        });
+    }
+
+    /// Tests the expression `bar(T -> T, T -> T) -> T`,
+    /// with an annotated type parameter of `T: str`
+    #[test]
+    fn test_cyclic_deps_annotated() {
+        // FIXME: there's a hole in my algorithm!
+        //
+        with_ctx(|ctx| {
+            let infer = ctx.common().infer;
+            let str = ctx.common().str;
+
+            let [t] = mint_param_ids(ctx);
+            let func = FuncDecl { type_params: 1, params: &[ctx.mk_func(&[t], t), ctx.mk_func(&[t], t)], ret: t };
+
+            let type_args = &[str];
+
+            let args = &[
+                MockExpr::BareClosure { params: 1, ret: str },
+                MockExpr::BareClosure { params: 1, ret: str },
+            ];
+
+            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
+                mock_infer(ctx, arg, expected)
+            });
+
+            let result = result.unwrap();
+            assert_eq!(result.ret, str);
+            assert_eq!(result.params, vec![Ok(str)]);
         });
     }
 }
