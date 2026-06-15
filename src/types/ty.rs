@@ -69,22 +69,38 @@ impl<'ty> Ty<'ty> {
     pub fn is_scalar(self) -> bool {
         matches!(
             self.kind(),
-            TyKind::Never | TyKind::Bool | TyKind::Int(_) | TyKind::UInt(_) | TyKind::Float(_) | TyKind::Str
+            TyKind::Never
+                | TyKind::Bool
+                | TyKind::Int(_)
+                | TyKind::UInt(_)
+                | TyKind::Float(_)
+                | TyKind::Str
+                | TyKind::Any
         )
     }
 
-    pub fn visit(self, mut visit: impl FnMut(Self)) {
-        self.fold((), |_, ty| visit(ty))
+    /// Returns `true` if no constituents of the type are `Pending`
+    pub fn is_final(self) -> bool {
+        self.fold(true, &mut |acc, ty| acc && ty.kind() != TyKind::Pending)
     }
 
-    pub fn fold<T>(self, init: T, mut visit: impl FnMut(T, Self) -> T) -> T {
+    /// Returns `true` if any constituents of the type are `Infer`
+    pub fn has_infer(self) -> bool {
+        self.fold(false, &mut |acc, ty| acc || ty.kind() == TyKind::Infer)
+    }
+
+    pub fn visit(self, mut visit: impl FnMut(Self)) {
+        self.fold((), &mut |_, ty| visit(ty))
+    }
+
+    pub fn fold<T>(self, init: T, visit: &mut impl FnMut(T, Self) -> T) -> T {
         let accum = visit(init, self);
         match self.kind() {
             TyKind::Nullable(ty) => ty.fold(accum, visit),
             TyKind::Array(ty) => ty.fold(accum, visit),
-            TyKind::Tuple(tys) => tys.iter().copied().fold(accum, visit),
+            TyKind::Tuple(tys) => tys.iter().fold(accum, |accum, ty| ty.fold(accum, visit)),
             TyKind::Func(FuncTy { params, ret }) => {
-                let accum = params.iter().copied().fold(accum, &mut visit);
+                let accum = params.iter().fold(accum, |accum, ty| ty.fold(accum, visit));
                 ret.fold(accum, visit)
             }
             _ => accum,
@@ -143,5 +159,33 @@ impl<'ty> Display for Ty<'ty> {
 impl<'ty> Debug for Ty<'ty> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Ty({self})")
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use bumpalo::Bump;
+
+    use crate::types::{ty_ctx::TyCtx, ty_interners::TyInterners};
+
+    use super::*;
+
+    fn with_ctx(f: impl for<'ty> FnOnce(TyCtx<'_, 'ty>)) {
+        let arena = Bump::new();
+        let interners = TyInterners::new(&arena);
+        let ctx = TyCtx::new(&arena, &interners);
+        f(ctx);
+    }
+
+    #[test]
+    fn test_is_final() {
+        with_ctx(|ctx| {
+            let infer = ctx.common().infer;
+            let pending = ctx.common().pending;
+            let i32 = ctx.common().int32;
+
+            assert_eq!(ctx.mk_tuple(&[i32, ctx.mk_func(&[infer], pending)]).is_final(), false);
+            assert_eq!(ctx.mk_tuple(&[i32, ctx.mk_func(&[infer], i32)]).is_final(), true);
+        });
     }
 }

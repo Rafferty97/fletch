@@ -21,7 +21,7 @@ pub struct InferCallResult<'ty> {
     pub ret: Ty<'ty>,
 }
 
-pub fn infer_call<'ty, A>(
+pub fn infer_call<'ty, A: Debug>(
     ctx: TyCtx<'_, 'ty>,
     func: FuncDecl<'_, 'ty>,
     type_args: &[Ty<'ty>],
@@ -288,11 +288,17 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
             (Pending, _) => Self::replace_bounds(bounds, upper, lower, false),
             (_, Pending) => Self::replace_bounds(bounds, lower, upper, true),
             (Array(lower), Array(upper)) => self.update_bounds(bounds, lower, upper),
+            (Tuple(lower), Tuple(upper)) => {
+                // FIXME: arity check
+                for (&lower, &upper) in lower.iter().zip(upper.iter()) {
+                    self.update_bounds(bounds, lower, upper);
+                }
+            }
             (Func(lower), Func(upper)) => {
                 // FIXME: arity check
-                for (lower, upper) in lower.params.iter().zip(upper.params.iter()) {
+                for (&lower, &upper) in lower.params.iter().zip(upper.params.iter()) {
                     // Variance reverses in function arguments
-                    self.update_bounds(bounds, *upper, *lower);
+                    self.update_bounds(bounds, upper, lower);
                 }
                 self.update_bounds(bounds, lower.ret, upper.ret);
             }
@@ -386,6 +392,9 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
                 }
             }
 
+            // Scalar types
+            _ if lower.is_scalar() && upper.is_scalar() => Err(TypeError::Ambiguous),
+
             // Numeric types
             // (Int(lhs), Int(rhs)) => self.mk_int(lhs.max(rhs)),
             // (UInt(lhs), UInt(rhs)) => self.mk_uint(lhs.max(rhs)),
@@ -398,18 +407,6 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
             // Type mismatch
             _ => Err(TypeError::Mismatch),
         }
-    }
-}
-
-impl<'ty> Ty<'ty> {
-    /// Returns `true` if no constituents of the type are `Pending`
-    pub fn is_final(self) -> bool {
-        self.fold(true, |acc, ty| acc && ty.kind() != TyKind::Pending)
-    }
-
-    /// Returns `true` if any constituents of the type are `Infer`
-    pub fn has_infer(self) -> bool {
-        self.fold(false, |acc, ty| acc || ty.kind() == TyKind::Infer)
     }
 }
 
@@ -442,18 +439,41 @@ mod test {
         std::array::from_fn(|i| ctx.mk_param(ParamId(i as u32)))
     }
 
+    #[derive(Debug)]
     enum MockExpr<'ty> {
         Lit(Ty<'ty>),
-        BareClosure { args: usize, ret: Ty<'ty> },
+        Tuple(Vec<MockExpr<'ty>>),
+        BareClosure { params: usize, ret: Ty<'ty> },
+        AnnotatedClosure { params: Vec<Ty<'ty>>, ret: Ty<'ty> },
     }
 
     fn mock_infer<'ty>(ctx: TyCtx<'_, 'ty>, expr: &MockExpr<'ty>, expected: Ty<'ty>) -> Ty<'ty> {
         match expr {
             MockExpr::Lit(ty) => *ty,
-            MockExpr::BareClosure { args, ret } => {
+            MockExpr::Tuple(exprs) => {
+                let expected = match expected.kind() {
+                    TyKind::Any => vec![expected; exprs.len()],
+                    TyKind::Pending => vec![expected; exprs.len()],
+                    TyKind::Error(_) => vec![expected; exprs.len()],
+                    TyKind::Tuple(tys) if tys.len() == exprs.len() => tys.to_vec(),
+                    _ => todo!(),
+                };
+                let actual = exprs
+                    .iter()
+                    .zip(expected.iter())
+                    .map(|(expr, &expected)| mock_infer(ctx, expr, expected))
+                    .collect_vec();
+                ctx.mk_tuple(&actual)
+            }
+            MockExpr::BareClosure { params: args, ret } => {
                 let infer = ctx.common().infer;
                 let params = vec![infer; *args];
                 let def = ClosureDef { params: &params, ret: infer };
+                infer_closure(ctx, def, |_| *ret, expected).unwrap()
+            }
+            MockExpr::AnnotatedClosure { params: args, ret } => {
+                let infer = ctx.common().infer;
+                let def = ClosureDef { params: &args, ret: infer };
                 infer_closure(ctx, def, |_| *ret, expected).unwrap()
             }
         }
@@ -477,7 +497,7 @@ mod test {
             let type_args = &[infer, infer];
 
             let xs = MockExpr::Lit(i32_array);
-            let map = MockExpr::BareClosure { args: 1, ret: i32 };
+            let map = MockExpr::BareClosure { params: 1, ret: i32 };
             let args = &[xs, map];
 
             let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
@@ -508,7 +528,7 @@ mod test {
             let type_args = &[infer, infer];
 
             let xs = MockExpr::Lit(empty_array);
-            let map = MockExpr::BareClosure { args: 1, ret: never };
+            let map = MockExpr::BareClosure { params: 1, ret: never };
             let args = &[xs, map];
 
             let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
@@ -569,8 +589,8 @@ mod test {
 
             let type_args = &[infer];
 
-            let func_a = MockExpr::BareClosure { args: 1, ret: bool };
-            let func_b = MockExpr::BareClosure { args: 1, ret: bool };
+            let func_a = MockExpr::BareClosure { params: 1, ret: bool };
+            let func_b = MockExpr::BareClosure { params: 1, ret: bool };
             let var = MockExpr::Lit(i32);
             let args = &[func_a, func_b, var];
 
@@ -600,7 +620,7 @@ mod test {
             };
 
             let type_args = &[infer];
-            let args = &[MockExpr::Lit(i32), MockExpr::BareClosure { args: 1, ret: bool }];
+            let args = &[MockExpr::Lit(i32), MockExpr::BareClosure { params: 1, ret: bool }];
 
             let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
                 mock_infer(ctx, arg, expected)
@@ -629,7 +649,7 @@ mod test {
             };
 
             let type_args = &[infer];
-            let args = &[MockExpr::Lit(i32), MockExpr::BareClosure { args: 1, ret: bool }];
+            let args = &[MockExpr::Lit(i32), MockExpr::BareClosure { params: 1, ret: bool }];
 
             let expect = ctx.mk_func(&[i32], i32);
 
@@ -640,6 +660,166 @@ mod test {
             let result = result.unwrap();
             assert_eq!(result.ret, ctx.mk_func(&[infer], i32));
             assert_eq!(result.params, vec![Ok(i32)]);
+        });
+    }
+
+    /// Tests the expression `foo(y => y > 0)`, where `foo: (T -> bool) -> (T -> int)`
+    #[test]
+    fn test_ambiguous_contravariant() {
+        with_ctx(|ctx| {
+            let infer = ctx.common().infer;
+            let bool = ctx.common().bool;
+            let i32 = ctx.common().int32;
+
+            let [t] = mint_param_ids(ctx);
+            let func = FuncDecl { type_params: 1, params: &[ctx.mk_func(&[t], bool)], ret: ctx.mk_func(&[t], i32) };
+
+            let type_args = &[infer];
+            let args = &[MockExpr::BareClosure { params: 1, ret: bool }];
+
+            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
+                mock_infer(ctx, arg, expected)
+            });
+
+            let result = result.unwrap();
+            assert_eq!(result.ret, ctx.mk_func(&[infer], i32));
+            assert_eq!(result.params, vec![Err(TypeError::Ambiguous)]);
+        });
+    }
+
+    /// Tests the expression `both((a: i32) => a > 0, b => b > 0) -> bool`
+    #[test]
+    fn test_two_lambas_one_annotated() {
+        with_ctx(|ctx| {
+            let infer = ctx.common().infer;
+            let never = ctx.common().never;
+            let bool = ctx.common().bool;
+            let i32 = ctx.common().int32;
+
+            let [t] = mint_param_ids(ctx);
+            let func = FuncDecl {
+                type_params: 1,
+                params: &[ctx.mk_func(&[t], bool), ctx.mk_func(&[t], bool)],
+                ret: bool,
+            };
+
+            let type_args = &[infer];
+
+            let func_a = MockExpr::AnnotatedClosure { params: vec![i32], ret: bool };
+            let func_b = MockExpr::BareClosure { params: 1, ret: bool };
+            let args = &[func_a, func_b];
+
+            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
+                mock_infer(ctx, arg, expected)
+            });
+
+            let result = result.unwrap();
+            assert_eq!(result.ret, bool);
+            assert_eq!(result.params, vec![Ok(never)]);
+        });
+    }
+
+    /// Tests the expression `both(a => a > 0, b => b > 0) -> (T -> bool)`,
+    /// with the expected type `i32 -> bool`
+    #[test]
+    fn test_two_lambas_with_expected_ty() {
+        with_ctx(|ctx| {
+            let infer = ctx.common().infer;
+            let never = ctx.common().never;
+            let bool = ctx.common().bool;
+            let i32 = ctx.common().int32;
+
+            let [t] = mint_param_ids(ctx);
+            let func = FuncDecl {
+                type_params: 1,
+                params: &[ctx.mk_func(&[t], bool), ctx.mk_func(&[t], bool)],
+                ret: ctx.mk_func(&[t], bool),
+            };
+
+            let type_args = &[infer];
+
+            let func_a = MockExpr::BareClosure { params: 1, ret: bool };
+            let func_b = MockExpr::BareClosure { params: 1, ret: bool };
+            let args = &[func_a, func_b];
+
+            let expect = ctx.mk_func(&[i32], bool);
+
+            let result = infer_call(ctx, func, type_args, args, expect, |arg, expected| {
+                mock_infer(ctx, arg, expected)
+            });
+
+            let result = result.unwrap();
+            assert_eq!(result.ret, ctx.mk_func(&[infer], bool));
+            assert_eq!(result.params, vec![Ok(i32)]);
+        });
+    }
+
+    /// Tests the expression `both(a => a > 0, b => b > 0) -> (T -> bool)`,
+    /// with the expected type `i32 -> bool`
+    #[test]
+    fn test_two_lambas_without_expected_ty() {
+        with_ctx(|ctx| {
+            let infer = ctx.common().infer;
+            let never = ctx.common().never;
+            let bool = ctx.common().bool;
+            let i32 = ctx.common().int32;
+
+            let [t] = mint_param_ids(ctx);
+            let func = FuncDecl {
+                type_params: 1,
+                params: &[ctx.mk_func(&[t], bool), ctx.mk_func(&[t], bool)],
+                ret: ctx.mk_func(&[t], bool),
+            };
+
+            let type_args = &[infer];
+
+            let func_a = MockExpr::BareClosure { params: 1, ret: bool };
+            let func_b = MockExpr::BareClosure { params: 1, ret: bool };
+            let args = &[func_a, func_b];
+
+            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
+                mock_infer(ctx, arg, expected)
+            });
+
+            let result = result.unwrap();
+            assert_eq!(result.ret, ctx.mk_func(&[infer], bool));
+            assert_eq!(result.params, vec![Err(TypeError::Ambiguous)]);
+        });
+    }
+
+    /// Tests the expression `foo((T, U -> V), T -> U) -> V`
+    #[test]
+    fn test_dependency_chain() {
+        with_ctx(|ctx| {
+            let infer = ctx.common().infer;
+            let never = ctx.common().never;
+            let bool = ctx.common().bool;
+            let i32 = ctx.common().int32;
+            let str = ctx.common().str;
+
+            let [t, u, v] = mint_param_ids(ctx);
+            let func = FuncDecl {
+                type_params: 3,
+                params: &[ctx.mk_tuple(&[t, ctx.mk_func(&[u], v)]), ctx.mk_func(&[t], u)],
+                ret: v,
+            };
+
+            let type_args = &[infer, infer, infer];
+
+            let func_a = MockExpr::BareClosure { params: 1, ret: bool };
+            let func_b = MockExpr::BareClosure { params: 1, ret: bool };
+            let args = &[
+                MockExpr::Tuple(vec![MockExpr::Lit(i32), MockExpr::BareClosure { params: 1, ret: bool }]),
+                MockExpr::BareClosure { params: 1, ret: str },
+            ];
+
+            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
+                mock_infer(ctx, arg, expected)
+            });
+
+            let result = result.unwrap();
+            assert_eq!(result.ret, bool);
+            assert_eq!(result.params, vec![Ok(i32), Ok(str), Ok(bool)]);
         });
     }
 }
