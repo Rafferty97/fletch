@@ -284,26 +284,41 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
 
             // Type inference
             (Infer, _) => match exp.kind() {
-                Nullable(exp) => self
-                    .reconcile(act, exp)
-                    .map_err(|err| TypeError::ambiguous().with_cause(err)),
-                Array(exp) => self
-                    .reconcile(act, exp)
-                    .map_err(|err| TypeError::ambiguous().with_cause(err)),
-                // Tuple(exp) => {
-                //     for &exp in exp.iter() {
-                //         self.update_bounds(act, exp, bounds);
-                //     }
-                // }
-                // Func(exp) => {
-                //     for &exp in exp.params.iter() {
-                //         self.update_bounds(exp, act, bounds); // Flip variance
-                //     }
-                //     self.update_bounds(act, exp.ret, bounds);
-                // }
+                Nullable(exp) => self.reconcile(act, exp),
+                Array(exp) => self.reconcile(act, exp),
+                Tuple(exp_in) => {
+                    for &exp in exp_in.iter() {
+                        self.reconcile(act, exp)?;
+                    }
+                    Ok(exp)
+                }
+                Func(exp_in) => {
+                    for &exp in exp_in.params.iter() {
+                        self.reconcile(act, exp)?;
+                    }
+                    self.reconcile(act, exp_in.ret)?;
+                    Ok(exp)
+                }
                 _ => Ok(exp),
             },
-            (_, Infer) => todo!(),
+            (_, Infer) => match act.kind() {
+                Nullable(act) => self.reconcile(act, exp),
+                Array(act) => self.reconcile(act, exp),
+                Tuple(act_in) => {
+                    for &act in act_in.iter() {
+                        self.reconcile(act, exp)?;
+                    }
+                    Ok(act)
+                }
+                Func(act_in) => {
+                    for &act in act_in.params.iter() {
+                        self.reconcile(act, exp)?;
+                    }
+                    self.reconcile(act, act_in.ret)?;
+                    Ok(act)
+                }
+                _ => Ok(act),
+            },
 
             // Structural decomposition
             (Nullable(act_in), Nullable(exp_in)) => {
