@@ -21,6 +21,7 @@ pub enum TyKind<'ty> {
     Func(FuncTy<'ty>),
     Any,
     Param(ParamId),
+    Var(VarId),
     Infer,
     Pending,
     Error(ErrGuaranteed),
@@ -51,6 +52,9 @@ pub enum FloatTy {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct ParamId(pub u32);
 
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct VarId(pub u32);
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct FuncTy<'ty> {
     pub params: Tys<'ty>,
@@ -64,19 +68,6 @@ impl<'ty> Ty<'ty> {
 
     pub fn is_never(self) -> bool {
         self.kind() == TyKind::Never
-    }
-
-    pub fn is_scalar(self) -> bool {
-        matches!(
-            self.kind(),
-            TyKind::Never
-                | TyKind::Bool
-                | TyKind::Int(_)
-                | TyKind::UInt(_)
-                | TyKind::Float(_)
-                | TyKind::Str
-                | TyKind::Any
-        )
     }
 
     /// Returns `true` if no constituents of the type are `Pending`
@@ -149,6 +140,7 @@ impl<'ty> Display for Ty<'ty> {
             },
             TyKind::Any => write!(f, "any"),
             TyKind::Param(id) => write!(f, "${}", id.0),
+            TyKind::Var(id) => write!(f, "?{}", id.0),
             TyKind::Infer => write!(f, "_"),
             TyKind::Pending => write!(f, "?"),
             TyKind::Error(_) => write!(f, "{{err}}"),

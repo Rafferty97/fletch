@@ -1,127 +1,47 @@
 use std::fmt::Debug;
 
 use itertools::Itertools;
+use thiserror::Error;
 
-use crate::types::ty::{FuncTy, ParamId};
+use crate::types::ty::{FuncTy, ParamId, VarId};
 use crate::types::ty_ctx::Variance;
+use crate::util::{Args, Elements};
 
 use super::ty::{Ty, TyKind};
 use super::ty_ctx::TyCtx;
 
-#[derive(Debug)]
-pub struct FuncDecl<'a, 'ty> {
-    type_params: u32,
-    params: &'a [Ty<'ty>],
-    ret: Ty<'ty>,
-}
-
-#[derive(Debug)]
-pub struct InferCallResult<'ty> {
-    pub params: Vec<Result<Ty<'ty>>>,
-    pub ret: Ty<'ty>,
-}
-
-pub fn infer_call<'ty, A: Debug>(
-    ctx: TyCtx<'_, 'ty>,
-    func: FuncDecl<'_, 'ty>,
-    type_args: &[Ty<'ty>],
-    args: &[A],
-    expected: Ty<'ty>,
-    mut infer: impl FnMut(&A, Ty<'ty>) -> Ty<'ty>,
-) -> Result<InferCallResult<'ty>> {
-    check_arity(func.type_params as usize, type_args.len())?;
-    check_arity(func.params.len(), args.len())?;
-
-    let mut args = args
-        .iter()
-        .zip(func.params.iter())
-        .map(|(arg, param)| {
-            let ty = infer(arg, ctx.common().pending);
-            (arg, *param, ty, ty.is_final())
-        })
-        .collect_vec();
-
-    let mut bounds = vec![];
-
-    loop {
-        // Compute type parameter bounds from argument and return types
-        bounds = type_args.iter().map(|ty| ctx.make_bounds(*ty)).collect();
-        ctx.update_bounds(&mut bounds, func.ret, expected);
-        for &(_, param, ty, _) in &args {
-            ctx.update_bounds(&mut bounds, ty, param);
-        }
-
-        // compute argument types from type parameters
-        let mut changed = false;
-        for (arg, param, ty, done) in args.iter_mut().filter(|(_, _, _, done)| !done) {
-            let expected = ctx.substitute_upper(*param, &bounds);
-            let new_ty = infer(arg, expected);
-            changed |= new_ty != *ty;
-            *ty = new_ty;
-            *done = new_ty.is_final();
-        }
-
-        if !changed {
-            break;
-        }
-    }
-
-    let ret = ctx.substitute_lower(func.ret, &bounds);
-
-    let params = expected
-        .is_final()
-        .then(|| {
-            bounds
-                .into_iter()
-                .map(|bounds| ctx.reconcile(bounds.lower, bounds.upper))
-                .collect()
-        })
-        .unwrap_or_default();
-
-    Ok(InferCallResult { params, ret })
-}
-
-pub struct ClosureDef<'a, 'ty> {
-    params: &'a [Ty<'ty>],
-    ret: Ty<'ty>,
-}
-
-pub fn infer_closure<'ty>(
-    ctx: TyCtx<'_, 'ty>,
-    def: ClosureDef<'_, 'ty>,
-    body: impl FnOnce(&[Ty<'ty>]) -> Ty<'ty>,
-    expected: Ty<'ty>,
-) -> Result<Ty<'ty>> {
-    let ret = match expected.kind() {
-        TyKind::Pending => ctx.common().pending,
-        TyKind::Func(func) => {
-            check_arity(func.params.len(), def.params.len())?;
-            if func.params.iter().all(|t| t.is_final()) {
-                body(&func.params)
-            } else {
-                ctx.common().pending
-            }
-        }
-        _ => Err(TypeError::Mismatch)?,
-    };
-
-    Ok(ctx.mk_func(&def.params, ret))
-}
-
-fn check_arity(expected: usize, actual: usize) -> Result<()> {
-    if expected == actual {
-        Ok(())
-    } else {
-        let (expected, actual) = (expected as u32, actual as u32);
-        Err(TypeError::Arity { expected, actual })
-    }
-}
-
 /// Represents the infered bounds of a type parameter
 #[derive(Clone, Copy, Debug)]
-struct TyBounds<'ty> {
-    lower: Ty<'ty>,
-    upper: Ty<'ty>,
+pub struct TyBounds<'ty> {
+    pub lower: Ty<'ty>,
+    pub upper: Ty<'ty>,
+}
+
+/// The polarity of a type bound
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Bound {
+    Lower,
+    Upper,
+}
+
+#[derive(Error, Clone, PartialEq, Eq, Debug)]
+pub struct TypeError<'ty> {
+    kind: TypeErrorKind<'ty>,
+    causes: Vec<TypeError<'ty>>,
+}
+
+pub type TyResult<'ty> = std::result::Result<Ty<'ty>, TypeError<'ty>>;
+
+#[derive(Error, Clone, PartialEq, Eq, Debug)]
+pub enum TypeErrorKind<'ty> {
+    #[error("Cannot infer a type here")]
+    Ambiguous,
+    #[error("'{act}' is not assignable to '{exp}'")]
+    Unassignable { act: Ty<'ty>, exp: Ty<'ty> },
+    #[error("expected {exp}, but got {act}")]
+    Arity { exp: Args, act: Args },
+    #[error("expected {exp}, but got {act}")]
+    TupleLength { exp: Elements, act: Elements },
 }
 
 impl<'a, 'ty> TyCtx<'a, 'ty> {
@@ -237,188 +157,289 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
         }
     }
 
-    /// Produces an empty `TyBounds` with the identity elements
-    fn make_bounds(&self, ty: Ty<'ty>) -> TyBounds<'ty> {
-        TyBounds { lower: self.make_bound(ty, false), upper: self.make_bound(ty, true) }
+    /// Instantiates type arguments with inference variables,
+    /// and returns the number of inference variables produced
+    pub fn instantiate(self, params: &mut [Ty<'ty>]) -> usize {
+        let mut var_cnt = 0;
+        for param in params {
+            *param = self.transform(*param, |ty| match ty.kind() {
+                TyKind::Infer => {
+                    let ty_var = self.mk_var(VarId(var_cnt));
+                    var_cnt += 1;
+                    ty_var
+                }
+                _ => ty,
+            });
+        }
+        var_cnt as usize
     }
 
-    fn make_bound(&self, ty: Ty<'ty>, upper: bool) -> Ty<'ty> {
-        match ty.kind() {
-            TyKind::Infer => {
-                if upper {
-                    self.common().any
-                } else {
-                    self.common().never
-                }
-            }
-            TyKind::Nullable(ty) => self.mk_array(self.make_bound(ty, upper)),
-            TyKind::Array(ty) => self.mk_array(self.make_bound(ty, upper)),
-            TyKind::Tuple(_) => todo!(),
-            TyKind::Func(FuncTy { params, ret }) => {
-                let params = &params.iter().map(|ty| self.make_bound(*ty, !upper)).collect_vec();
-                let ret = self.make_bound(ret, upper);
-                self.mk_func(&params, ret)
-            }
-            _ => ty,
-        }
-    }
-
-    /// Compares the expected type `upper` against the provided type `lower`,
-    /// extracts the resulting type parameter bounds, and applies them to `bounds`
-    fn update_bounds(&self, bounds: &mut [TyBounds<'ty>], lower: Ty<'ty>, upper: Ty<'ty>) {
-        use TyKind::*;
-
-        if lower.is_scalar() && upper.is_scalar() {
-            return;
-        }
-
-        match (lower.kind(), upper.kind()) {
-            (Error(_), _) => Self::replace_bounds(bounds, upper, lower, false),
-            (_, Error(_)) => Self::replace_bounds(bounds, lower, upper, true),
-            (Param(id), _) => {
-                let bound = &mut bounds[id.0 as usize].upper;
-                *bound = self.meet(*bound, upper);
-            }
-            (_, Param(id)) => {
-                let bound = &mut bounds[id.0 as usize].lower;
-                *bound = self.join(*bound, lower);
-            }
-            (Infer, _) => Self::replace_bounds(bounds, upper, lower, false),
-            (_, Infer) => Self::replace_bounds(bounds, lower, upper, true),
-            (Pending, _) => Self::replace_bounds(bounds, upper, lower, false),
-            (_, Pending) => Self::replace_bounds(bounds, lower, upper, true),
-            (Array(lower), Array(upper)) => self.update_bounds(bounds, lower, upper),
-            (Tuple(lower), Tuple(upper)) => {
-                // FIXME: arity check
-                for (&lower, &upper) in lower.iter().zip(upper.iter()) {
-                    self.update_bounds(bounds, lower, upper);
-                }
-            }
-            (Func(lower), Func(upper)) => {
-                // FIXME: arity check
-                for (&lower, &upper) in lower.params.iter().zip(upper.params.iter()) {
-                    // Variance reverses in function arguments
-                    self.update_bounds(bounds, upper, lower);
-                }
-                self.update_bounds(bounds, lower.ret, upper.ret);
-            }
-            _ => {}
-        }
-    }
-
-    fn replace_bounds(bounds: &mut [TyBounds<'ty>], target: Ty<'ty>, value: Ty<'ty>, upper: bool) {
-        match target.kind() {
-            TyKind::Nullable(ty) => Self::replace_bounds(bounds, ty, value, upper),
-            TyKind::Array(ty) => Self::replace_bounds(bounds, ty, value, upper),
-            TyKind::Tuple(tys) => {
-                for ty in tys.iter().copied() {
-                    Self::replace_bounds(bounds, ty, value, upper);
-                }
-            }
-            TyKind::Func(FuncTy { params, ret }) => {
-                for ty in params.iter().copied() {
-                    Self::replace_bounds(bounds, ty, value, !upper);
-                }
-                Self::replace_bounds(bounds, ret, value, upper);
-            }
-            TyKind::Param(id) => {
-                if upper {
-                    bounds[id.0 as usize].upper = value;
-                } else {
-                    bounds[id.0 as usize].lower = value;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    /// Substitutes type parameters with concrete types
-    pub fn substitute(self, ty: Ty<'ty>, params: &[Ty<'ty>]) -> Ty<'ty> {
-        self.transform(ty, &mut |ty| match ty.kind() {
+    /// Substitutes occurances of type parameters in the type with their instantiations
+    pub fn substitute_params(self, ty: Ty<'ty>, params: &[Ty<'ty>]) -> Ty<'ty> {
+        self.transform(ty, |ty| match ty.kind() {
             TyKind::Param(idx) => params[idx.0 as usize],
             _ => ty,
         })
     }
 
-    /// Substitutes type parameters with concrete types, using the upper bound
-    fn substitute_upper(self, ty: Ty<'ty>, bounds: &[TyBounds<'ty>]) -> Ty<'ty> {
-        self.transform_with_variance(ty, |ty, var| match ty.kind() {
-            TyKind::Param(idx) => match var {
-                Variance::Co => bounds[idx.0 as usize].upper,
-                Variance::Contra => bounds[idx.0 as usize].lower,
+    /// Substitutes occurances of type variables with their current upper or lower bound
+    fn substitute_vars(self, ty: Ty<'ty>, bounds: &[TyBounds<'ty>], bound: Bound) -> Ty<'ty> {
+        self.transform_with_variance(ty, |ty, variance| match ty.kind() {
+            TyKind::Param(idx) => match (bound, variance) {
+                (Bound::Upper, Variance::Co) => bounds[idx.0 as usize].upper,
+                (Bound::Lower, Variance::Contra) => bounds[idx.0 as usize].upper,
+                (Bound::Lower, Variance::Co) => bounds[idx.0 as usize].lower,
+                (Bound::Upper, Variance::Contra) => bounds[idx.0 as usize].lower,
             },
             _ => ty,
         })
     }
 
-    /// Substitutes type parameters with concrete types, using the lower bound
-    fn substitute_lower(self, ty: Ty<'ty>, bounds: &[TyBounds<'ty>]) -> Ty<'ty> {
-        self.transform_with_variance(ty, |ty, var| match ty.kind() {
-            TyKind::Param(idx) => match var {
-                Variance::Co => bounds[idx.0 as usize].lower,
-                Variance::Contra => bounds[idx.0 as usize].upper,
-            },
-            _ => ty,
-        })
+    /// Creates an empty pair of type bounds
+    pub fn new_bounds(self) -> TyBounds<'ty> {
+        TyBounds { lower: self.common().never, upper: self.common().any }
     }
 
-    /// Reconciles the expected type `upper` against the provided type `lower`,
-    /// returning a canonical resulting type or an error if the types are incompatible or ambiguous
-    pub fn reconcile(self, lower: Ty<'ty>, upper: Ty<'ty>) -> Result<Ty<'ty>, TypeError> {
+    /// Compares the expected type `exp` against the provided type `act`,
+    /// extracts the resulting type parameter bounds, and applies them to `bounds`.
+    /// This does not check that `act <: exp`; it is only used for accumulating bounds.
+    pub fn update_bounds(&self, act: Ty<'ty>, exp: Ty<'ty>, bounds: &mut [TyBounds<'ty>]) {
         use TyKind::*;
 
-        match (lower.kind(), upper.kind()) {
-            // Equality
-            (Infer, Infer) => Err(TypeError::Ambiguous),
-            _ if lower == upper => Ok(lower),
+        match (act.kind(), exp.kind()) {
+            (Var(id), _) => {
+                let bound = &mut bounds[id.0 as usize].upper;
+                *bound = self.meet(*bound, exp);
+            }
+            (_, Var(id)) => {
+                let bound = &mut bounds[id.0 as usize].lower;
+                *bound = self.join(*bound, act);
+            }
 
-            // Sentinal values
-            (Error(e), _) | (_, Error(e)) => Ok(self.mk_error(e)),
-            (Pending, _) | (_, Pending) => Err(TypeError::Cycle),
+            (Error(_) | Pending | Infer, _) => match exp.kind() {
+                Nullable(exp) => self.update_bounds(act, exp, bounds),
+                Array(exp) => self.update_bounds(act, exp, bounds),
+                Tuple(exp) => {
+                    for &exp in exp.iter() {
+                        self.update_bounds(act, exp, bounds);
+                    }
+                }
+                Func(exp) => {
+                    for &exp in exp.params.iter() {
+                        self.update_bounds(exp, act, bounds); // Flip variance
+                    }
+                    self.update_bounds(act, exp.ret, bounds);
+                }
+                _ => {}
+            },
+            (_, Error(_) | Pending | Infer) => match act.kind() {
+                Nullable(act) => self.update_bounds(act, exp, bounds),
+                Array(act) => self.update_bounds(act, exp, bounds),
+                Tuple(act) => {
+                    for &act in act.iter() {
+                        self.update_bounds(act, exp, bounds);
+                    }
+                }
+                Func(act) => {
+                    for &act in act.params.iter() {
+                        self.update_bounds(exp, act, bounds); // Flip variance
+                    }
+                    self.update_bounds(act.ret, exp, bounds);
+                }
+                _ => {}
+            },
 
-            // Type inference
-            (Infer, _) => {
-                if !upper.has_infer() {
-                    Ok(upper)
-                } else {
-                    Err(TypeError::Ambiguous)
+            (Nullable(act), Nullable(exp)) => self.update_bounds(act, exp, bounds),
+            (Array(act), Array(exp)) => self.update_bounds(act, exp, bounds),
+            (Tuple(act), Tuple(exp)) if act.len() == exp.len() => {
+                for (&act, &exp) in act.iter().zip(exp.iter()) {
+                    self.update_bounds(act, exp, bounds);
                 }
             }
-            (_, Infer) => {
-                if !lower.has_infer() {
-                    Ok(lower)
+            (Func(act), Func(exp)) if act.params.len() == exp.params.len() => {
+                for (&act, &exp) in act.params.iter().zip(exp.params.iter()) {
+                    self.update_bounds(exp, act, bounds); // Flip variance
+                }
+                self.update_bounds(act.ret, exp.ret, bounds);
+            }
+
+            _ => {}
+        }
+    }
+
+    /// Reconciles the expected type `exp` against the provided type `act`,
+    /// returning the resolved actual type, or an error if the types are incompatible or ambiguous
+    pub fn reconcile(self, act: Ty<'ty>, exp: Ty<'ty>) -> TyResult<'ty> {
+        // FIXME: is "actual" type always the best choice?
+        use TyKind::*;
+
+        match (act.kind(), exp.kind()) {
+            // Sentinal values
+            (Error(_) | Pending, _) => Ok(act),
+            (_, Error(_) | Pending) => Ok(exp),
+
+            // Equality
+            (Infer, Infer) => Err(TypeError::ambiguous()),
+            _ if act == exp => Ok(act),
+
+            // Type inference
+            (Infer, _) => match exp.kind() {
+                Nullable(exp) => self
+                    .reconcile(act, exp)
+                    .map_err(|err| TypeError::ambiguous().with_cause(err)),
+                Array(exp) => self
+                    .reconcile(act, exp)
+                    .map_err(|err| TypeError::ambiguous().with_cause(err)),
+                // Tuple(exp) => {
+                //     for &exp in exp.iter() {
+                //         self.update_bounds(act, exp, bounds);
+                //     }
+                // }
+                // Func(exp) => {
+                //     for &exp in exp.params.iter() {
+                //         self.update_bounds(exp, act, bounds); // Flip variance
+                //     }
+                //     self.update_bounds(act, exp.ret, bounds);
+                // }
+                _ => Ok(exp),
+            },
+            (_, Infer) => todo!(),
+
+            // Structural decomposition
+            (Nullable(act_in), Nullable(exp_in)) => {
+                let result = self
+                    .reconcile(act_in, exp_in)
+                    .map_err(|err| TypeError::unassignable(act, exp).with_cause(err))?;
+                Ok(self.mk_nullable(result))
+            }
+            (act_in, Nullable(exp_in)) => {
+                let result = self
+                    .reconcile(act, exp_in)
+                    .map_err(|err| TypeError::unassignable(act, exp).with_cause(err))?;
+                Ok(result)
+            }
+            (Array(act_in), Array(exp_in)) => {
+                let result = self
+                    .reconcile(act_in, exp_in)
+                    .map_err(|err| TypeError::unassignable(act, exp).with_cause(err))?;
+                Ok(self.mk_array(result))
+            }
+            (Tuple(act_in), Tuple(exp_in)) => {
+                check_tuple_len(act_in.len(), exp_in.len())?;
+                let (tys, errors): (Vec<_>, Vec<_>) = act_in
+                    .iter()
+                    .zip(exp_in.iter())
+                    .map(|(&act, &exp)| self.reconcile(act, exp))
+                    .partition_result();
+                if errors.is_empty() {
+                    Ok(self.mk_tuple(&tys))
                 } else {
-                    Err(TypeError::Ambiguous)
+                    Err(TypeError::unassignable(act, exp).with_causes(errors))
+                }
+            }
+            (Func(act_in), Func(exp_in)) => {
+                check_arity(act_in.params.len(), exp_in.params.len())?;
+                let (params, mut errors): (Vec<_>, Vec<_>) = act_in
+                    .params
+                    .iter()
+                    .zip(exp_in.params.iter())
+                    .map(|(&act, &exp)| self.reconcile(exp, act)) // Flip variance
+                    .partition_result();
+                let ret = match self.reconcile(act_in.ret, exp_in.ret) {
+                    Ok(ret) => ret,
+                    Err(err) => {
+                        errors.push(err);
+                        self.common().never
+                    }
+                };
+                if errors.is_empty() {
+                    Ok(self.mk_func(&params, ret))
+                } else {
+                    Err(TypeError::unassignable(act, exp).with_causes(errors))
                 }
             }
 
             // Scalar types
-            _ if lower.is_scalar() && upper.is_scalar() => Err(TypeError::Ambiguous),
+            (Int(act_in), Int(exp_in)) if act_in <= exp_in => Ok(act),
+            (UInt(act_in), UInt(exp_in)) if act_in <= exp_in => Ok(act),
+            (Float(act_in), Float(exp_in)) if act_in <= exp_in => Ok(act),
 
-            // Numeric types
-            // (Int(lhs), Int(rhs)) => self.mk_int(lhs.max(rhs)),
-            // (UInt(lhs), UInt(rhs)) => self.mk_uint(lhs.max(rhs)),
-            // (Float(lhs), Float(rhs)) => self.mk_float(lhs.max(rhs)),
-
-            // Nullable types
-            (Nullable(lower), Nullable(upper)) => Ok(self.mk_nullable(self.reconcile(lower, upper)?)),
-            (_, Nullable(upper)) => Ok(self.mk_nullable(self.reconcile(lower, upper)?)),
+            // Top and bottom types
+            (Never, _) | (_, Any) => Ok(act),
 
             // Type mismatch
-            _ => Err(TypeError::Mismatch),
+            _ => Err(TypeError::unassignable(act, exp)),
         }
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub enum TypeError {
-    Ambiguous,
-    Mismatch,
-    Arity { expected: u32, actual: u32 },
-    Cycle,
+pub fn check_tuple_len(expected: usize, actual: usize) -> Result<(), TypeError<'static>> {
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(TypeError::tuple_length(expected, actual))
+    }
 }
 
-pub type Result<T, E = TypeError> = std::result::Result<T, E>;
+pub fn check_arity(expected: usize, actual: usize) -> Result<(), TypeError<'static>> {
+    if expected == actual {
+        Ok(())
+    } else {
+        Err(TypeError::arity(expected, actual))
+    }
+}
+
+impl<'ty> TypeError<'ty> {
+    fn new(kind: TypeErrorKind<'ty>) -> Self {
+        Self { kind, causes: vec![] }
+    }
+
+    fn ambiguous() -> Self {
+        Self::new(TypeErrorKind::Ambiguous)
+    }
+
+    fn unassignable(act: Ty<'ty>, exp: Ty<'ty>) -> Self {
+        Self::new(TypeErrorKind::Unassignable { act, exp })
+    }
+
+    fn tuple_length(act: usize, exp: usize) -> Self {
+        let exp = Elements(exp.try_into().unwrap());
+        let act = Elements(act.try_into().unwrap());
+        Self::new(TypeErrorKind::TupleLength { act, exp })
+    }
+
+    fn arity(act: usize, exp: usize) -> Self {
+        let exp = Args(exp.try_into().unwrap());
+        let act = Args(act.try_into().unwrap());
+        Self::new(TypeErrorKind::Arity { act, exp })
+    }
+
+    fn with_cause(mut self, cause: Self) -> Self {
+        self.causes.push(cause);
+        self
+    }
+
+    fn with_causes(mut self, mut causes: Vec<Self>) -> Self {
+        self.causes.append(&mut causes);
+        self
+    }
+}
+
+impl<'ty> std::fmt::Display for TypeError<'ty> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.kind)?;
+        if f.alternate() {
+            for cause in &self.causes {
+                let indented = format!("{:#}", cause)
+                    .lines()
+                    .map(|line| format!("    {line}"))
+                    .join("\n");
+                write!(f, "\n{indented}")?;
+            }
+        }
+        Ok(())
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -435,444 +456,63 @@ mod test {
         f(ctx);
     }
 
-    fn mint_param_ids<'ty, const N: usize>(ctx: TyCtx<'_, 'ty>) -> [Ty<'ty>; N] {
-        std::array::from_fn(|i| ctx.mk_param(ParamId(i as u32)))
-    }
-
-    #[derive(Debug)]
-    enum MockExpr<'ty> {
-        Lit(Ty<'ty>),
-        Tuple(Vec<MockExpr<'ty>>),
-        BareClosure { params: usize, ret: Ty<'ty> },
-        AnnotatedClosure { params: Vec<Ty<'ty>>, ret: Ty<'ty> },
-    }
-
-    fn mock_infer<'ty>(ctx: TyCtx<'_, 'ty>, expr: &MockExpr<'ty>, expected: Ty<'ty>) -> Ty<'ty> {
-        match expr {
-            MockExpr::Lit(ty) => *ty,
-            MockExpr::Tuple(exprs) => {
-                let expected = match expected.kind() {
-                    TyKind::Any => vec![expected; exprs.len()],
-                    TyKind::Pending => vec![expected; exprs.len()],
-                    TyKind::Error(_) => vec![expected; exprs.len()],
-                    TyKind::Tuple(tys) if tys.len() == exprs.len() => tys.to_vec(),
-                    _ => todo!(),
-                };
-                let actual = exprs
-                    .iter()
-                    .zip(expected.iter())
-                    .map(|(expr, &expected)| mock_infer(ctx, expr, expected))
-                    .collect_vec();
-                ctx.mk_tuple(&actual)
-            }
-            MockExpr::BareClosure { params: args, ret } => {
-                let infer = ctx.common().infer;
-                let params = vec![infer; *args];
-                let def = ClosureDef { params: &params, ret: infer };
-                infer_closure(ctx, def, |_| *ret, expected).unwrap()
-            }
-            MockExpr::AnnotatedClosure { params: args, ret } => {
-                let infer = ctx.common().infer;
-                let def = ClosureDef { params: &args, ret: infer };
-                infer_closure(ctx, def, |_| *ret, expected).unwrap()
-            }
-        }
-    }
-
-    /// Tests the expression `map(xs, x => x + 1)`
     #[test]
-    fn test_array_map() {
+    fn test_cause_chain() {
         with_ctx(|ctx| {
-            let infer = ctx.common().infer;
-            let i32 = ctx.common().int32;
-            let i32_array = ctx.mk_array(ctx.common().int32);
+            let common = ctx.common();
+            let actual = ctx.mk_nullable(ctx.mk_array(common.int32));
+            let expected = ctx.mk_nullable(ctx.mk_array(common.str));
+            let result = ctx.reconcile(actual, expected);
 
-            let [t, u] = mint_param_ids(ctx);
-            let func = FuncDecl {
-                type_params: 2,
-                params: &[ctx.mk_array(t), ctx.mk_func(&[t], u)],
-                ret: ctx.mk_array(u),
-            };
-
-            let type_args = &[infer, infer];
-
-            let xs = MockExpr::Lit(i32_array);
-            let map = MockExpr::BareClosure { params: 1, ret: i32 };
-            let args = &[xs, map];
-
-            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
-                mock_infer(ctx, arg, expected)
-            });
-
-            let result = result.unwrap();
-            assert_eq!(result.ret, i32_array);
-            assert_eq!(result.params, vec![Ok(i32), Ok(i32)]);
+            // Output should resemble:
+            // 'int32[]?' is not assignable to 'str[]?'
+            //     'int32[]' is not assignable to 'str[]'
+            //         'int32' is not assignable to 'str'
+            let err_message = format!("{:#}", result.unwrap_err());
+            assert_eq!(err_message.lines().count(), 3);
         });
     }
 
-    /// Tests the expression `map([], x => x + 1)`
     #[test]
-    fn test_empty_array_map() {
+    fn test_cause_chain_tuple() {
         with_ctx(|ctx| {
-            let infer = ctx.common().infer;
-            let never = ctx.common().never;
-            let empty_array = ctx.mk_array(ctx.common().never);
+            let common = ctx.common();
+            let actual = ctx.mk_tuple(&[common.int32, common.bool]);
+            let expected = ctx.mk_tuple(&[common.int32, common.str]);
+            let result = ctx.reconcile(actual, expected);
 
-            let [t, u] = mint_param_ids(ctx);
-            let func = FuncDecl {
-                type_params: 2,
-                params: &[ctx.mk_array(t), ctx.mk_func(&[t], u)],
-                ret: ctx.mk_array(u),
-            };
-
-            let type_args = &[infer, infer];
-
-            let xs = MockExpr::Lit(empty_array);
-            let map = MockExpr::BareClosure { params: 1, ret: never };
-            let args = &[xs, map];
-
-            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
-                mock_infer(ctx, arg, expected)
-            });
-
-            let result = result.unwrap();
-            assert_eq!(result.ret, empty_array);
-            assert_eq!(result.params, vec![Ok(never), Ok(never)]);
+            // Output should resemble:
+            // '(int32, bool)' is not assignable to '(int32, str)'
+            //     'bool' is not assignable to 'str'
+            let err_message = format!("{:#}", result.unwrap_err());
+            assert_eq!(err_message.lines().count(), 2);
         });
     }
 
-    /// Tests the expression `concat(i32[], i64[]) -> i64[]`
     #[test]
-    fn test_array_concat() {
+    fn test_cause_chain_func() {
         with_ctx(|ctx| {
-            let infer = ctx.common().infer;
-            let i32_array = ctx.mk_array(ctx.common().int32);
-            let i64_array = ctx.mk_array(ctx.common().int64);
+            let common = ctx.common();
+            let actual = ctx.mk_func(&[common.int32, common.bool], common.str);
+            let expected = ctx.mk_func(&[common.int32, common.str], common.float32);
+            let result = ctx.reconcile(actual, expected);
 
-            let [t] = mint_param_ids(ctx);
-            let func = FuncDecl {
-                type_params: 1,
-                params: &[ctx.mk_array(t), ctx.mk_array(t)],
-                ret: ctx.mk_array(t),
-            };
-
-            let type_args = &[infer];
-
-            let xs = MockExpr::Lit(i32_array);
-            let ys = MockExpr::Lit(i64_array);
-            let args = &[xs, ys];
-
-            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
-                mock_infer(ctx, arg, expected)
-            });
-
-            let result = result.unwrap();
-            assert_eq!(result.ret, i64_array);
-            assert_eq!(result.params, vec![Ok(ctx.common().int64)]);
+            // Output should resemble:
+            // '(int32, bool) -> str' is not assignable to '(int32, str) -> float32'
+            //     'str' is not assignable to 'bool'
+            //     'str' is not assignable to 'float32'
+            let err_message = format!("{:#}", result.unwrap_err());
+            assert_eq!(err_message.lines().count(), 3);
         });
     }
 
-    /// Tests the expression `both(a => a > 0, b => b > 0, 5) -> bool`
     #[test]
-    fn test_two_lambas() {
+    fn test_subtyping() {
         with_ctx(|ctx| {
-            let infer = ctx.common().infer;
-            let bool = ctx.common().bool;
-            let i32 = ctx.common().int32;
-
-            let [t] = mint_param_ids(ctx);
-            let func = FuncDecl {
-                type_params: 1,
-                params: &[ctx.mk_func(&[t], bool), ctx.mk_func(&[t], bool), t],
-                ret: bool,
-            };
-
-            let type_args = &[infer];
-
-            let func_a = MockExpr::BareClosure { params: 1, ret: bool };
-            let func_b = MockExpr::BareClosure { params: 1, ret: bool };
-            let var = MockExpr::Lit(i32);
-            let args = &[func_a, func_b, var];
-
-            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
-                mock_infer(ctx, arg, expected)
-            });
-
-            let result = result.unwrap();
-            assert_eq!(result.ret, bool);
-            assert_eq!(result.params, vec![Ok(i32)]);
-        });
-    }
-
-    /// Tests the expression `foo(42, y => y > 0)`, where `foo: (T, T -> bool) -> (T -> i32)`
-    #[test]
-    fn test_infer_both_directions() {
-        with_ctx(|ctx| {
-            let infer = ctx.common().infer;
-            let bool = ctx.common().bool;
-            let i32 = ctx.common().int32;
-
-            let [t] = mint_param_ids(ctx);
-            let func = FuncDecl {
-                type_params: 1,
-                params: &[t, ctx.mk_func(&[t], bool)],
-                ret: ctx.mk_func(&[t], i32),
-            };
-
-            let type_args = &[infer];
-            let args = &[MockExpr::Lit(i32), MockExpr::BareClosure { params: 1, ret: bool }];
-
-            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
-                mock_infer(ctx, arg, expected)
-            });
-
-            let result = result.unwrap();
-            assert_eq!(result.ret, ctx.mk_func(&[infer], i32));
-            assert_eq!(result.params, vec![Err(TypeError::Ambiguous)]);
-        });
-    }
-
-    /// Tests the expression `foo(42, y => y > 0)`, where `foo: (T, T -> bool) -> (T -> i32)`
-    /// Same as above, except the expression has an expected type of `i32 -> i32`
-    #[test]
-    fn test_infer_both_directions_annotated() {
-        with_ctx(|ctx| {
-            let infer = ctx.common().infer;
-            let bool = ctx.common().bool;
-            let i32 = ctx.common().int32;
-
-            let [t] = mint_param_ids(ctx);
-            let func = FuncDecl {
-                type_params: 1,
-                params: &[t, ctx.mk_func(&[t], bool)],
-                ret: ctx.mk_func(&[t], i32),
-            };
-
-            let type_args = &[infer];
-            let args = &[MockExpr::Lit(i32), MockExpr::BareClosure { params: 1, ret: bool }];
-
-            let expect = ctx.mk_func(&[i32], i32);
-
-            let result = infer_call(ctx, func, type_args, args, expect, |arg, expected| {
-                mock_infer(ctx, arg, expected)
-            });
-
-            let result = result.unwrap();
-            assert_eq!(result.ret, ctx.mk_func(&[infer], i32));
-            assert_eq!(result.params, vec![Ok(i32)]);
-        });
-    }
-
-    /// Tests the expression `foo(y => y > 0)`, where `foo: (T -> bool) -> (T -> int)`
-    #[test]
-    fn test_ambiguous_contravariant() {
-        with_ctx(|ctx| {
-            let infer = ctx.common().infer;
-            let bool = ctx.common().bool;
-            let i32 = ctx.common().int32;
-
-            let [t] = mint_param_ids(ctx);
-            let func = FuncDecl { type_params: 1, params: &[ctx.mk_func(&[t], bool)], ret: ctx.mk_func(&[t], i32) };
-
-            let type_args = &[infer];
-            let args = &[MockExpr::BareClosure { params: 1, ret: bool }];
-
-            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
-                mock_infer(ctx, arg, expected)
-            });
-
-            let result = result.unwrap();
-            assert_eq!(result.ret, ctx.mk_func(&[infer], i32));
-            assert_eq!(result.params, vec![Err(TypeError::Ambiguous)]);
-        });
-    }
-
-    /// Tests the expression `both((a: i32) => a > 0, b => b > 0) -> bool`
-    #[test]
-    fn test_two_lambas_one_annotated() {
-        with_ctx(|ctx| {
-            let infer = ctx.common().infer;
-            let never = ctx.common().never;
-            let bool = ctx.common().bool;
-            let i32 = ctx.common().int32;
-
-            let [t] = mint_param_ids(ctx);
-            let func = FuncDecl {
-                type_params: 1,
-                params: &[ctx.mk_func(&[t], bool), ctx.mk_func(&[t], bool)],
-                ret: bool,
-            };
-
-            let type_args = &[infer];
-
-            let func_a = MockExpr::AnnotatedClosure { params: vec![i32], ret: bool };
-            let func_b = MockExpr::BareClosure { params: 1, ret: bool };
-            let args = &[func_a, func_b];
-
-            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
-                mock_infer(ctx, arg, expected)
-            });
-
-            let result = result.unwrap();
-            assert_eq!(result.ret, bool);
-            assert_eq!(result.params, vec![Ok(never)]);
-        });
-    }
-
-    /// Tests the expression `both(a => a > 0, b => b > 0) -> (T -> bool)`,
-    /// with the expected type `i32 -> bool`
-    #[test]
-    fn test_two_lambas_with_expected_ty() {
-        with_ctx(|ctx| {
-            let infer = ctx.common().infer;
-            let bool = ctx.common().bool;
-            let i32 = ctx.common().int32;
-
-            let [t] = mint_param_ids(ctx);
-            let func = FuncDecl {
-                type_params: 1,
-                params: &[ctx.mk_func(&[t], bool), ctx.mk_func(&[t], bool)],
-                ret: ctx.mk_func(&[t], bool),
-            };
-
-            let type_args = &[infer];
-
-            let func_a = MockExpr::BareClosure { params: 1, ret: bool };
-            let func_b = MockExpr::BareClosure { params: 1, ret: bool };
-            let args = &[func_a, func_b];
-
-            let expect = ctx.mk_func(&[i32], bool);
-
-            let result = infer_call(ctx, func, type_args, args, expect, |arg, expected| {
-                mock_infer(ctx, arg, expected)
-            });
-
-            let result = result.unwrap();
-            assert_eq!(result.ret, ctx.mk_func(&[infer], bool));
-            assert_eq!(result.params, vec![Ok(i32)]);
-        });
-    }
-
-    /// Tests the expression `both(a => a > 0, b => b > 0) -> (T -> bool)`,
-    /// with the expected type `i32 -> bool`
-    #[test]
-    fn test_two_lambas_without_expected_ty() {
-        with_ctx(|ctx| {
-            let infer = ctx.common().infer;
-            let bool = ctx.common().bool;
-
-            let [t] = mint_param_ids(ctx);
-            let func = FuncDecl {
-                type_params: 1,
-                params: &[ctx.mk_func(&[t], bool), ctx.mk_func(&[t], bool)],
-                ret: ctx.mk_func(&[t], bool),
-            };
-
-            let type_args = &[infer];
-
-            let func_a = MockExpr::BareClosure { params: 1, ret: bool };
-            let func_b = MockExpr::BareClosure { params: 1, ret: bool };
-            let args = &[func_a, func_b];
-
-            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
-                mock_infer(ctx, arg, expected)
-            });
-
-            let result = result.unwrap();
-            assert_eq!(result.ret, ctx.mk_func(&[infer], bool));
-            assert_eq!(result.params, vec![Err(TypeError::Ambiguous)]);
-        });
-    }
-
-    /// Tests the expression `foo((T, U -> V), T -> U) -> V`
-    #[test]
-    fn test_dependency_chain() {
-        with_ctx(|ctx| {
-            let infer = ctx.common().infer;
-            let bool = ctx.common().bool;
-            let i32 = ctx.common().int32;
-            let str = ctx.common().str;
-
-            let [t, u, v] = mint_param_ids(ctx);
-            let func = FuncDecl {
-                type_params: 3,
-                params: &[ctx.mk_tuple(&[t, ctx.mk_func(&[u], v)]), ctx.mk_func(&[t], u)],
-                ret: v,
-            };
-
-            let type_args = &[infer, infer, infer];
-
-            let args = &[
-                MockExpr::Tuple(vec![MockExpr::Lit(i32), MockExpr::BareClosure { params: 1, ret: bool }]),
-                MockExpr::BareClosure { params: 1, ret: str },
-            ];
-
-            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
-                mock_infer(ctx, arg, expected)
-            });
-
-            let result = result.unwrap();
-            assert_eq!(result.ret, bool);
-            assert_eq!(result.params, vec![Ok(i32), Ok(str), Ok(bool)]);
-        });
-    }
-
-    /// Tests the expression `bar(T -> T, T -> T) -> T`
-    #[test]
-    fn test_cyclic_deps() {
-        with_ctx(|ctx| {
-            let infer = ctx.common().infer;
-            let pending = ctx.common().pending;
-            let i32 = ctx.common().int32;
-            let str = ctx.common().str;
-
-            let [t] = mint_param_ids(ctx);
-            let func = FuncDecl { type_params: 1, params: &[ctx.mk_func(&[t], t), ctx.mk_func(&[t], t)], ret: t };
-
-            let type_args = &[infer];
-
-            let args = &[
-                MockExpr::BareClosure { params: 1, ret: i32 },
-                MockExpr::BareClosure { params: 1, ret: str },
-            ];
-
-            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
-                mock_infer(ctx, arg, expected)
-            });
-
-            let result = result.unwrap();
-            assert_eq!(result.ret, pending);
-            assert_eq!(result.params, vec![Err(TypeError::Cycle)]);
-        });
-    }
-
-    /// Tests the expression `bar(T -> T, T -> T) -> T`,
-    /// with an annotated type parameter of `T: str`
-    #[test]
-    fn test_cyclic_deps_annotated() {
-        // FIXME: there's a hole in my algorithm!
-        //
-        with_ctx(|ctx| {
-            let infer = ctx.common().infer;
-            let str = ctx.common().str;
-
-            let [t] = mint_param_ids(ctx);
-            let func = FuncDecl { type_params: 1, params: &[ctx.mk_func(&[t], t), ctx.mk_func(&[t], t)], ret: t };
-
-            let type_args = &[str];
-
-            let args = &[
-                MockExpr::BareClosure { params: 1, ret: str },
-                MockExpr::BareClosure { params: 1, ret: str },
-            ];
-
-            let result = infer_call(ctx, func, type_args, args, infer, |arg, expected| {
-                mock_infer(ctx, arg, expected)
-            });
-
-            let result = result.unwrap();
-            assert_eq!(result.ret, str);
-            assert_eq!(result.params, vec![Ok(str)]);
+            let common = ctx.common();
+            let actual = ctx.mk_tuple(&[common.int32, common.bool, common.never]);
+            let expected = ctx.mk_tuple(&[common.int64, ctx.mk_nullable(common.bool), common.str]);
+            ctx.reconcile(actual, expected).unwrap();
         });
     }
 }

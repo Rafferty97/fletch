@@ -2,7 +2,7 @@ use bumpalo::Bump;
 use itertools::Itertools;
 
 use crate::diagnostics::ErrGuaranteed;
-use crate::types::ty::ParamId;
+use crate::types::ty::{ParamId, VarId};
 
 use super::ty::{FloatTy, FuncTy, IntTy, Ty, TyKind, Tys, UIntTy};
 use super::ty_interners::{CommonTypes, TyInterners};
@@ -82,11 +82,15 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
         self.mk_ty_from_kind(TyKind::Param(id))
     }
 
+    pub fn mk_var(&self, id: VarId) -> Ty<'ty> {
+        self.mk_ty_from_kind(TyKind::Var(id))
+    }
+
     pub fn mk_error(&self, err: ErrGuaranteed) -> Ty<'ty> {
         self.mk_ty_from_kind(TyKind::Error(err))
     }
 
-    pub fn transform<F>(&self, ty: Ty<'ty>, visit: &mut F) -> Ty<'ty>
+    pub fn transform<F>(&self, ty: Ty<'ty>, mut visit: F) -> Ty<'ty>
     where
         F: FnMut(Ty<'ty>) -> Ty<'ty>,
     {
@@ -101,11 +105,11 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
                 (new_inner != inner).then(|| self.mk_array(new_inner))
             }
             TyKind::Tuple(inner) => {
-                let new_inner: Vec<_> = inner.iter().map(|ty| self.transform(*ty, visit)).collect();
+                let new_inner: Vec<_> = inner.iter().map(|ty| self.transform(*ty, &mut visit)).collect();
                 (*new_inner != *inner).then(|| self.mk_tuple(&new_inner))
             }
             TyKind::Func(FuncTy { params, ret }) => {
-                let new_params: Vec<_> = params.iter().map(|ty| self.transform(*ty, visit)).collect();
+                let new_params: Vec<_> = params.iter().map(|ty| self.transform(*ty, &mut visit)).collect();
                 let new_ret = self.transform(ret, visit);
                 let changed = *new_params != *params || new_ret != ret;
                 changed.then(|| self.mk_func(&new_params, new_ret))
