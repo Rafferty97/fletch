@@ -55,6 +55,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 self.expect(Token::LeftParen)?;
                 let expr = self.parse_expr()?.into();
                 self.expect(Token::RightParen)?;
+                self.expect(Token::Semi)?;
                 Ok(self.make_spanned(start, StmtKind::Print(expr)))
             }
             _ => Err(self.unexpected_token()),
@@ -111,7 +112,7 @@ mod test {
     fn parse_simple_arithmetic() {
         let src = r#"
             fn main() {
-                print(4)
+                print(4);
             }"#;
 
         let arena = &Bump::new();

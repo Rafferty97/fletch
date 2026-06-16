@@ -44,6 +44,8 @@ impl<'a> std::fmt::Display for Token<'a> {
         let str = match self {
             Self::Ident(_) => "identifer",
             Self::Integer(_) => "integer",
+            Self::Plus => "'+'",
+            Self::RightParen => "')'",
             _ => todo!(),
         };
         write!(f, "{}", str)

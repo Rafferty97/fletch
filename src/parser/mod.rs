@@ -11,7 +11,7 @@ use self::error::ParseErrorKind;
 use self::error::{ParseError, Result};
 use self::lexer::Token;
 
-mod error;
+pub mod error;
 mod lexer;
 mod program;
 
@@ -35,6 +35,12 @@ pub struct Parser<'a, 'sym> {
 struct SpannedToken<'a> {
     token: Token<'a>,
     span: Span,
+}
+
+impl<'a, 'sym> ParseCtx<'a, 'sym> {
+    pub fn new(arena: &'sym Bump, sym_interner: &'a IndexedInterner<'sym, Symbol, str>) -> Self {
+        Self { arena, sym_interner }
+    }
 }
 
 impl<'a, 'sym> Parser<'a, 'sym> {
