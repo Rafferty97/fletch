@@ -86,39 +86,42 @@ pub trait Index: Copy + Eq {
 
 #[derive(Debug)]
 pub struct IndexedInterner<'a, S, T: ?Sized> {
-    values: Vec<&'a T>,
-    indices: HashTable<(S, u64)>,
+    values: Mutex<Vec<&'a T>>,
+    indices: Mutex<HashTable<(S, u64)>>,
     state: RandomState,
 }
 
 impl<'a, S, T: ?Sized> IndexedInterner<'a, S, T> {
     pub fn new() -> Self {
-        Self { values: vec![], indices: HashTable::new(), state: RandomState::new() }
+        Self { values: Mutex::default(), indices: Mutex::default(), state: RandomState::new() }
     }
 
     pub fn size(&self) -> usize {
-        self.values.len()
+        self.values.lock().unwrap().len()
     }
 }
 
 impl<'a, S: Index> IndexedInterner<'a, S, str> {
-    pub fn intern_str(&mut self, arena: &'a Bump, str: &str) -> S {
+    pub fn intern_str(&self, arena: &'a Bump, str: &str) -> S {
         let hash = self.state.hash_one(str);
 
-        match self.indices.find(hash, |&(sym, _)| self.get_str(sym) == str) {
+        let mut indices = self.indices.lock().unwrap();
+        let mut values = self.values.lock().unwrap();
+
+        match indices.find(hash, |&(sym, _)| values[sym.into_usize()] == str) {
             Some(&(sym, _)) => sym,
             None => {
-                let idx = self.values.len();
+                let idx = values.len();
                 let sym = S::from_usize(idx);
-                self.values.push(arena.alloc_str(str));
-                self.indices.insert_unique(hash, (sym, hash), |&(_, hash)| hash);
+                values.push(arena.alloc_str(str));
+                indices.insert_unique(hash, (sym, hash), |&(_, hash)| hash);
                 sym
             }
         }
     }
 
     pub fn get_str(&self, symbol: S) -> &'a str {
-        self.values[symbol.into_usize()]
+        self.values.lock().unwrap()[symbol.into_usize()]
     }
 }
 

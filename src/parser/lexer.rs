@@ -1,14 +1,14 @@
 use logos::Logos;
 
-#[derive(Logos, Debug, PartialEq, Eq)]
+#[derive(Logos, Copy, Clone, PartialEq, Eq, Debug)]
 #[logos(skip r"[ \t\r\n\f]+")]
-enum Token<'a> {
+pub enum Token<'a> {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*")]
     Ident(&'a str),
     #[regex("-?[0-9]+")]
     Integer(&'a str),
     #[token("fn")]
-    Fn,
+    Func,
     #[token("print")]
     Print, // FIXME: remove
     #[token("(")]
@@ -29,11 +29,26 @@ enum Token<'a> {
     Solidus,
     #[token(";")]
     Semi,
+    Eof,
 }
 
-// fn main() {
-//     print(3 + 8)
-// }
+impl<'a> Token<'a> {
+    /// An arbitrary token that won't actually be consumed
+    pub fn dummy() -> Self {
+        Self::Semi
+    }
+}
+
+impl<'a> std::fmt::Display for Token<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let str = match self {
+            Self::Ident(_) => "identifer",
+            Self::Integer(_) => "integer",
+            _ => todo!(),
+        };
+        write!(f, "{}", str)
+    }
+}
 
 #[cfg(test)]
 mod test {
@@ -49,7 +64,7 @@ mod test {
         let mut lexer = Token::lexer(src);
         let mut next = || lexer.next().unwrap().unwrap();
 
-        assert_eq!(next(), Token::Fn);
+        assert_eq!(next(), Token::Func);
         assert_eq!(next(), Token::Ident("main"));
         assert_eq!(next(), Token::LeftParen);
         assert_eq!(next(), Token::RightParen);
