@@ -36,3 +36,9 @@ impl From<logos::Span> for Span {
         }
     }
 }
+
+impl From<Span> for std::ops::Range<usize> {
+    fn from(span: Span) -> Self {
+        (span.lo as usize)..(span.hi as usize)
+    }
+}

@@ -1,24 +1,24 @@
-use std::fs;
+use std::{fs, path::PathBuf};
 
 use clap::Parser;
 use tap::Pipe;
 
 #[derive(Parser, Debug)]
 struct Args {
-    filename: String,
+    filename: PathBuf,
 }
 
 pub fn run() -> Result<(), String> {
     let args = Args::parse();
 
-    let src = fs::read(&args.filename)
-        .map_err(|err| format!("Cannot read '{}': {err:#}", &args.filename))?
-        .pipe(String::from_utf8)
-        .map_err(|_| format!("Cannot read '{}': Invalid UTF-8", &args.filename))?;
+    let filename = args.filename.file_name().unwrap().to_string_lossy();
 
-    if let Err(err) = eld::run(&src) {
-        Err(format!("{err:#}"))?
-    }
+    let src = fs::read(&args.filename)
+        .map_err(|err| format!("Cannot read '{}': {err:#}", &filename))?
+        .pipe(String::from_utf8)
+        .map_err(|_| format!("Cannot read '{}': Invalid UTF-8", &filename))?;
+
+    eld::run(&filename, &src);
 
     Ok(())
 }
