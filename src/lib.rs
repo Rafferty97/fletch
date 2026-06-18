@@ -3,6 +3,7 @@
 pub use driver::run;
 
 mod ast;
+mod bytecode;
 mod diagnostics;
 mod driver;
 mod interner;
@@ -10,3 +11,4 @@ mod parser;
 mod span;
 mod types;
 mod util;
+mod vm;
