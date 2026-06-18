@@ -4,7 +4,7 @@ use std::fmt::Display;
 
 use bumpalo::Bump;
 
-use crate::ast::SExpr;
+use crate::ast::{SExpr, SExprCtx};
 use crate::interner::IndexedInterner;
 use crate::parser::ParseCtx;
 
@@ -19,13 +19,15 @@ fn with_parse_ctx(f: impl FnOnce(ParseCtx)) {
 
 fn test_parse<'a, T, P>(ctx: ParseCtx<'a, '_>, parse: P, src: &'a str, expected: &str)
 where
-    SExpr<T>: Display,
+    T: SExpr,
     P: FnOnce(&mut Parser<'a, '_>) -> Result<'a, T>,
 {
     let mut parser = Parser::new(ctx, src);
     parser.consume().unwrap();
     let result = parse(&mut parser).unwrap();
-    let actual = SExpr::new(&result).to_string();
+    let mut actual = String::new();
+    let mut sexpr_ctx = SExprCtx { str: &mut actual, sym_interner: ctx.sym_interner };
+    result.write(&mut sexpr_ctx);
     assert_eq!(actual, expected);
 }
 
@@ -35,13 +37,15 @@ fn parse_literals() {
         test_parse(ctx, |p| p.parse_expr(), "null", "null");
         test_parse(ctx, |p| p.parse_expr(), "false", "false");
         test_parse(ctx, |p| p.parse_expr(), "true", "true");
+        test_parse(ctx, |p| p.parse_expr(), "42", "(int 42)");
+        test_parse(ctx, |p| p.parse_expr(), "4.2", "(float 4.2)");
     });
 }
 
 #[test]
 fn parse_simple_arithmetic() {
     with_parse_ctx(|ctx| {
-        test_parse(ctx, |p| p.parse_expr(), "2 + 2", "(+ (int $0) (int $0))");
+        test_parse(ctx, |p| p.parse_expr(), "2 + 2", "(+ (int 2) (int 2))");
     });
 }
 
@@ -50,9 +54,9 @@ fn parse_simple_arithmetic_program() {
     with_parse_ctx(|ctx| {
         let src = r#"
             fn main() {
-                print(4);
+                print(2 + 2);
             }"#;
-        let expected = r#"(func $0 (block (print (int $1)) none))"#;
+        let expected = r#"(func main (block (print (+ (int 2) (int 2))) none))"#;
         test_parse(ctx, |p| p.parse_program(), src, expected);
     });
 }

@@ -54,7 +54,8 @@ impl<'a> std::fmt::Display for Token<'a> {
             Self::Number(_) => "number",
             Self::Plus => "'+'",
             Self::RightParen => "')'",
-            _ => todo!(),
+            Self::Func => "'fn'",
+            other => return write!(f, "{other:?}"),
         };
         write!(f, "{}", str)
     }

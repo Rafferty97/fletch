@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use crate::diagnostics::ErrGuaranteed;
-use crate::interner::Index;
+use crate::interner::{Index, IndexedInterner};
 use crate::span::Spanned;
 
 pub type Stmt = Spanned<StmtKind>;
@@ -68,87 +68,108 @@ impl Index for Symbol {
     }
 }
 
-#[repr(transparent)]
-pub struct SExpr<T>(pub T);
+pub trait SExpr {
+    fn write(&self, ctx: &mut SExprCtx);
+}
 
-impl<T> SExpr<T> {
-    pub fn new(val: &T) -> &SExpr<T> {
-        /// SAFETY: `SExpr<T>` is guaranteed to have the same layout as `T`
-        /// due to the `#[repr(transparent)]` attribute
-        unsafe {
-            &*(val as *const T as *const SExpr<T>)
+impl SExpr for Program {
+    fn write(&self, ctx: &mut SExprCtx) {
+        ctx.write_program(self)
+    }
+}
+
+impl SExpr for Expr {
+    fn write(&self, ctx: &mut SExprCtx) {
+        ctx.write_expr(self)
+    }
+}
+
+pub struct SExprCtx<'a, 'sym> {
+    pub str: &'a mut String,
+    pub sym_interner: &'a IndexedInterner<'sym, Symbol, str>,
+}
+
+impl<'a, 'sym> SExprCtx<'a, 'sym> {
+    fn write_program(&mut self, node: &Program) {
+        self.write_func(&node.main);
+    }
+
+    fn write_func(&mut self, node: &Func) {
+        self.str.push_str("(func ");
+        self.str.push_str(self.sym_interner.get_str(node.name.sym));
+        self.str.push(' ');
+        self.write_block(&node.body);
+        self.str.push(')');
+    }
+
+    fn write_block(&mut self, block: &Block) {
+        self.str.push_str("(block");
+        for stmt in &block.stmts {
+            self.str.push(' ');
+            self.write_stmt(stmt);
+        }
+        match &block.tail {
+            Some(tail) => {
+                self.str.push(' ');
+                self.write_expr(tail);
+            }
+            None => self.str.push_str(" none)"),
         }
     }
-}
 
-impl Display for SExpr<Program> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", SExpr::new(&self.0.main))
-    }
-}
-
-impl Display for SExpr<Func> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(func {} {})", SExpr(self.0.name.sym), SExpr::new(&self.0.body))
-    }
-}
-
-impl Display for SExpr<Block> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "(block")?;
-        for stmt in &self.0.stmts {
-            write!(f, " {}", SExpr::new(stmt))?;
-        }
-        match &self.0.tail {
-            Some(tail) => write!(f, " {})", SExpr::new(tail)),
-            None => write!(f, " none)"),
-        }
-    }
-}
-
-impl Display for SExpr<Stmt> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.0.node {
-            StmtKind::Print(expr) => write!(f, "(print {})", SExpr::new(&**expr)),
-        }
-    }
-}
-
-impl Display for SExpr<Expr> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.0.node {
-            ExprKind::Lit(lit) => write!(f, "{}", SExpr::new(lit)),
-            ExprKind::Binary(op, lhs, rhs) => {
-                write!(f, "({} {} {})", SExpr(*op), SExpr::new(&**lhs), SExpr::new(&**rhs))
+    fn write_stmt(&mut self, stmt: &Stmt) {
+        match &stmt.node {
+            StmtKind::Print(expr) => {
+                self.str.push_str("(print ");
+                self.write_expr(expr);
+                self.str.push(')');
             }
         }
     }
-}
 
-impl Display for SExpr<BinOp> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let op = match self.0 {
-            BinOp::Add => "+",
-        };
-        write!(f, "{}", op)
-    }
-}
-
-impl Display for SExpr<Lit> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.0 {
-            Lit::Null => write!(f, "null"),
-            Lit::Bool(value) => write!(f, "{value}"),
-            Lit::Int(sym) => write!(f, "(int {})", SExpr(sym)),
-            Lit::Float(sym) => write!(f, "(float {})", SExpr(sym)),
-            Lit::Str(sym) => write!(f, "(str {})", SExpr(sym)),
-            Lit::Err(_) => write!(f, "err)"),
+    fn write_expr(&mut self, node: &Expr) {
+        match &node.node {
+            ExprKind::Lit(lit) => self.write_lit(lit),
+            ExprKind::Binary(op, lhs, rhs) => {
+                self.str.push('(');
+                self.write_binop(*op);
+                self.str.push(' ');
+                self.write_expr(lhs);
+                self.str.push(' ');
+                self.write_expr(rhs);
+                self.str.push(')');
+            }
         }
     }
-}
 
-impl Display for SExpr<Symbol> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "${}", self.0.0)
+    fn write_binop(&mut self, op: BinOp) {
+        match op {
+            BinOp::Add => self.str.push('+'),
+        }
+    }
+
+    fn write_lit(&mut self, lit: &Lit) {
+        match lit {
+            Lit::Null => self.str.push_str("null"),
+            Lit::Bool(false) => self.str.push_str("false"),
+            Lit::Bool(true) => self.str.push_str("true"),
+            Lit::Int(sym) => {
+                self.str.push_str("(int ");
+                self.str.push_str(self.sym_interner.get_str(*sym));
+                self.str.push(')');
+            }
+            Lit::Float(sym) => {
+                self.str.push_str("(float ");
+                self.str.push_str(self.sym_interner.get_str(*sym));
+                self.str.push(')');
+            }
+            Lit::Str(sym) => {
+                self.str.push_str("(float ");
+                let str = self.sym_interner.get_str(*sym);
+                self.str.push_str(&crate::parser::escape::escape(str));
+                self.str.push(')');
+            }
+            Lit::Err(_) => self.str.push_str("err"),
+        }
     }
 }

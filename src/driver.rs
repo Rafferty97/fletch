@@ -22,8 +22,7 @@ pub fn run(filename: &str, src: &str) {
 
     // Parse
     let ctx = ParseCtx::new(&arena, &sym_interner);
-    let mut parser = Parser::new(ctx, src);
-    let ast = match parser.parse_program() {
+    let ast = match ctx.parse_program(src) {
         Ok(ast) => ast,
         Err(err) => {
             let diagnostic = Diagnostic::error().with_message(err.kind.to_string()).with_labels(vec![
@@ -51,7 +50,9 @@ pub fn run(filename: &str, src: &str) {
                         _ => todo!(),
                     };
                 }
-                _ => todo!(),
+                _ => {
+                    println!("binary op")
+                }
             },
         }
     }

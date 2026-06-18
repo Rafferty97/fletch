@@ -3,7 +3,7 @@ use std::iter::Peekable;
 use bumpalo::Bump;
 use logos::{Lexer, Logos, SpannedIter};
 
-use crate::ast::Symbol;
+use crate::ast::{Expr, Program, Symbol};
 use crate::interner::IndexedInterner;
 use crate::span::{Span, Spanned};
 
@@ -12,7 +12,7 @@ use self::error::{ParseError, Result};
 use self::lexer::Token;
 
 pub mod error;
-mod escape;
+pub mod escape;
 mod expr;
 mod lexer;
 mod program;
@@ -45,10 +45,16 @@ impl<'a, 'sym> ParseCtx<'a, 'sym> {
     pub fn new(arena: &'sym Bump, sym_interner: &'a IndexedInterner<'sym, Symbol, str>) -> Self {
         Self { arena, sym_interner }
     }
+
+    pub fn parse_program(self, src: &'a str) -> Result<'a, Program> {
+        let mut parser = Parser::new(self, src);
+        parser.consume()?;
+        parser.parse_program()
+    }
 }
 
 impl<'a, 'sym> Parser<'a, 'sym> {
-    pub fn new(ctx: ParseCtx<'a, 'sym>, src: &'a str) -> Self {
+    fn new(ctx: ParseCtx<'a, 'sym>, src: &'a str) -> Self {
         Self {
             ctx,
             lexer: Token::lexer(src).spanned(),
