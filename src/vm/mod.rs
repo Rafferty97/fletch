@@ -1,5 +1,21 @@
-use crate::bytecode::Chunk;
+use self::chunk::Chunk;
+use self::instr::Instr;
 
-pub struct Vm {
-    main: Chunk,
+mod chunk;
+mod instr;
+
+pub struct Vm {}
+
+impl Vm {
+    pub fn execute(&mut self, chunk: &Chunk) {
+        let code = chunk.code();
+        let mut pc = 0;
+
+        loop {
+            match Instr::decode(code[pc]) {
+                Instr::Return => return,
+            }
+            pc += 1;
+        }
+    }
 }

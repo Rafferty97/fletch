@@ -11,15 +11,23 @@ pub struct EncodedInstr(u32);
 impl Instr {
     pub fn encode(self) -> EncodedInstr {
         match self {
-            Self::Return => EncodedInstr(0),
+            Self::Return => Self::encode_bare(0),
         }
     }
 
+    fn encode_bare(opcode: u8) -> EncodedInstr {
+        EncodedInstr(opcode as u32)
+    }
+
     pub fn decode(enc: EncodedInstr) -> Self {
-        match enc.0 {
+        match Self::get_opcode(enc) {
             0 => Self::Return,
             _ => panic!("illegal instruction"),
         }
+    }
+
+    fn get_opcode(enc: EncodedInstr) -> u8 {
+        (enc.0 & 0x3f) as u8
     }
 }
 
@@ -28,5 +36,19 @@ impl Display for Instr {
         match self {
             Self::Return => write!(f, "ret"),
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_instr_roundtrip() {
+        let test = |instr: Instr| {
+            assert_eq!(instr, Instr::decode(instr.encode()));
+        };
+
+        test(Instr::Return);
     }
 }

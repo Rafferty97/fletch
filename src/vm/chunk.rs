@@ -1,9 +1,7 @@
 use std::fmt::Write;
 use std::sync::Arc;
 
-use self::instr::{EncodedInstr, Instr};
-
-mod instr;
+use super::instr::{EncodedInstr, Instr};
 
 pub struct Chunk {
     code: Vec<EncodedInstr>,
@@ -11,6 +9,10 @@ pub struct Chunk {
 }
 
 impl Chunk {
+    pub fn code(&self) -> &[EncodedInstr] {
+        &self.code
+    }
+
     pub fn disassemble(&self) -> String {
         let mut out = String::new();
         let mut labels = self.labels.iter();
