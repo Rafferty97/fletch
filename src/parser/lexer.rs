@@ -52,10 +52,22 @@ impl<'a> std::fmt::Display for Token<'a> {
         let str = match self {
             Self::Ident(_) => "identifer",
             Self::Number(_) => "number",
-            Self::Plus => "'+'",
-            Self::RightParen => "')'",
+            Self::Str(_) => "string",
+            Self::Null => "'null'",
+            Self::True => "'true'",
+            Self::False => "'false'",
             Self::Func => "'fn'",
-            other => return write!(f, "{other:?}"),
+            Self::Print => "'print'",
+            Self::LeftParen => "'('",
+            Self::RightParen => "')'",
+            Self::LeftBrace => "'{'",
+            Self::RightBrace => "'}'",
+            Self::Plus => "'+'",
+            Self::Minus => "'-'",
+            Self::Asterisk => "'*'",
+            Self::Solidus => "'/'",
+            Self::Semi => "';'",
+            Self::Eof => "end of input",
         };
         write!(f, "{}", str)
     }

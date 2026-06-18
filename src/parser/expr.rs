@@ -41,7 +41,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 ExprKind::Lit(lit)
             }
             Token::Str(raw) => {
-                let unescaped = match unescape(raw) {
+                let unescaped = match unescape(&raw[1..raw.len() - 1]) {
                     Ok(str) => self.make_symbol(&str),
                     Err(err) => {
                         let kind = ParseErrorKind::UnescapeStr(err.kind);

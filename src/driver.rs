@@ -4,6 +4,7 @@ use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 
+use crate::ast::sexpr::{SExpr, SExprCtx};
 use crate::ast::{ExprKind, Lit, StmtKind};
 use crate::interner::IndexedInterner;
 use crate::parser::error::ParseError;
@@ -33,27 +34,9 @@ pub fn run(filename: &str, src: &str) {
         }
     };
 
-    // Execute
-    for stmt in ast.main.body.stmts {
-        match stmt.node {
-            StmtKind::Print(expr) => match expr.node {
-                ExprKind::Lit(lit) => {
-                    match lit {
-                        Lit::Int(sym) => {
-                            let value: i64 = sym_interner.get_str(sym).parse().unwrap();
-                            println!("{value}")
-                        }
-                        Lit::Float(sym) => {
-                            let value: f64 = sym_interner.get_str(sym).parse().unwrap();
-                            println!("{value}")
-                        }
-                        _ => todo!(),
-                    };
-                }
-                _ => {
-                    println!("binary op")
-                }
-            },
-        }
-    }
+    // Print s-expr
+    let mut output = String::new();
+    let mut sexpr_ctx = SExprCtx { str: &mut output, sym_interner: &sym_interner };
+    SExpr::write(&ast, &mut sexpr_ctx);
+    println!("{output}");
 }

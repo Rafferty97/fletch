@@ -4,7 +4,7 @@ use std::fmt::Display;
 
 use bumpalo::Bump;
 
-use crate::ast::{SExpr, SExprCtx};
+use crate::ast::sexpr::{SExpr, SExprCtx};
 use crate::interner::IndexedInterner;
 use crate::parser::ParseCtx;
 
@@ -39,6 +39,7 @@ fn parse_literals() {
         test_parse(ctx, |p| p.parse_expr(), "true", "true");
         test_parse(ctx, |p| p.parse_expr(), "42", "(int 42)");
         test_parse(ctx, |p| p.parse_expr(), "4.2", "(float 4.2)");
+        test_parse(ctx, |p| p.parse_expr(), "\"hello world\"", "(str \"hello world\")");
     });
 }
 
