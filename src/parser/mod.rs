@@ -5,16 +5,20 @@ use logos::{Lexer, Logos, SpannedIter};
 
 use crate::ast::Symbol;
 use crate::interner::IndexedInterner;
-use crate::span::Span;
+use crate::span::{Span, Spanned};
 
 use self::error::ParseErrorKind;
 use self::error::{ParseError, Result};
 use self::lexer::Token;
 
 pub mod error;
+mod escape;
+mod expr;
 mod lexer;
 mod program;
+mod test;
 
+#[derive(Copy, Clone, Debug)]
 pub struct ParseCtx<'a, 'sym> {
     pub arena: &'sym Bump,
     pub sym_interner: &'a IndexedInterner<'sym, Symbol, str>,
@@ -51,6 +55,23 @@ impl<'a, 'sym> Parser<'a, 'sym> {
             current: SpannedToken::dummy(),
             previous: SpannedToken::dummy(),
         }
+    }
+
+    fn make_symbol(&self, raw: &str) -> Symbol {
+        self.ctx.sym_interner.intern_str(self.ctx.arena, raw)
+    }
+
+    fn curr_pos(&self) -> u32 {
+        self.current.span.lo()
+    }
+
+    fn make_span(&self, start: u32) -> Span {
+        Span::new(start, self.curr_pos())
+    }
+
+    fn make_spanned<T>(&self, start: u32, node: T) -> Spanned<T> {
+        let span = self.make_span(start);
+        Spanned { node, span }
     }
 
     /// Returns the current token without consuming it

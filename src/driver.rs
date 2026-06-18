@@ -39,14 +39,19 @@ pub fn run(filename: &str, src: &str) {
         match stmt.node {
             StmtKind::Print(expr) => match expr.node {
                 ExprKind::Lit(lit) => {
-                    let value = match lit {
+                    match lit {
                         Lit::Int(sym) => {
-                            let raw: i64 = sym_interner.get_str(sym).parse().unwrap();
-                            raw
+                            let value: i64 = sym_interner.get_str(sym).parse().unwrap();
+                            println!("{value}")
                         }
+                        Lit::Float(sym) => {
+                            let value: f64 = sym_interner.get_str(sym).parse().unwrap();
+                            println!("{value}")
+                        }
+                        _ => todo!(),
                     };
-                    println!("{value}");
                 }
+                _ => todo!(),
             },
         }
     }

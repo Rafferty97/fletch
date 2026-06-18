@@ -8,9 +8,6 @@ use super::lexer::Token;
 
 impl<'a, 'sym> Parser<'a, 'sym> {
     pub fn parse_program(&mut self) -> Result<'a, Program> {
-        // Consume the initial dummy token
-        self.consume()?;
-
         // Expect a single main function
         let func = self.parse_func()?;
 
@@ -62,64 +59,11 @@ impl<'a, 'sym> Parser<'a, 'sym> {
         }
     }
 
-    fn parse_expr(&mut self) -> Result<'a, Expr> {
-        let start = self.curr_pos();
-        match self.peek() {
-            Token::Integer(raw) => {
-                self.consume()?;
-                let lit = Lit::Int(self.make_symbol(raw));
-                Ok(self.make_spanned(start, ExprKind::Lit(lit)))
-            }
-            _ => Err(self.unexpected_token()),
-        }
-    }
-
     fn parse_ident(&mut self) -> Result<'a, Ident> {
         let token = self.consume()?;
         let Token::Ident(raw) = token.token else {
             Err(self.error(ParseErrorKind::ExpectedToken { act: token.token, exp: Token::Ident("") }))?
         };
         Ok(Ident { sym: self.make_symbol(raw) })
-    }
-
-    fn make_symbol(&self, raw: &str) -> Symbol {
-        self.ctx.sym_interner.intern_str(self.ctx.arena, raw)
-    }
-
-    fn curr_pos(&self) -> u32 {
-        self.current.span.lo()
-    }
-
-    fn make_span(&self, start: u32) -> Span {
-        Span::new(start, self.curr_pos())
-    }
-
-    fn make_spanned<T>(&self, start: u32, node: T) -> Spanned<T> {
-        let span = self.make_span(start);
-        Spanned { node, span }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use bumpalo::Bump;
-
-    use crate::{interner::IndexedInterner, parser::ParseCtx};
-
-    use super::*;
-
-    #[test]
-    fn parse_simple_arithmetic() {
-        let src = r#"
-            fn main() {
-                print(4);
-            }"#;
-
-        let arena = &Bump::new();
-        let sym_interner = &IndexedInterner::new();
-        let ctx = ParseCtx { arena, sym_interner };
-        let mut parser = Parser::new(ctx, src);
-
-        parser.parse_program().unwrap();
     }
 }

@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+use crate::parser::escape::{UnescapeError, UnescapeErrorKind};
 use crate::span::Span;
 
 use super::Parser;
@@ -24,6 +25,8 @@ pub enum ParseErrorKind<'a> {
     UnexpectedToken { act: Token<'a> },
     #[error("unexpected end of input")]
     UnexpectedEof,
+    #[error("{0}")]
+    UnescapeStr(UnescapeErrorKind),
 }
 
 impl<'a, 'sym> Parser<'a, 'sym> {

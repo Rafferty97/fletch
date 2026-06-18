@@ -5,8 +5,16 @@ use logos::Logos;
 pub enum Token<'a> {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*")]
     Ident(&'a str),
-    #[regex("-?[0-9]+")]
-    Integer(&'a str),
+    #[regex("-?[0-9]+(\\.[0-9]*)?")]
+    Number(&'a str),
+    #[regex(r#""([^"\\]|\\.)*""#)]
+    Str(&'a str),
+    #[token("null")]
+    Null,
+    #[token("true")]
+    True,
+    #[token("false")]
+    False,
     #[token("fn")]
     Func,
     #[token("print")]
@@ -43,7 +51,7 @@ impl<'a> std::fmt::Display for Token<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let str = match self {
             Self::Ident(_) => "identifer",
-            Self::Integer(_) => "integer",
+            Self::Number(_) => "number",
             Self::Plus => "'+'",
             Self::RightParen => "')'",
             _ => todo!(),
@@ -73,9 +81,9 @@ mod test {
         assert_eq!(next(), Token::LeftBrace);
         assert_eq!(next(), Token::Print);
         assert_eq!(next(), Token::LeftParen);
-        assert_eq!(next(), Token::Integer("2"));
+        assert_eq!(next(), Token::Number("2"));
         assert_eq!(next(), Token::Plus);
-        assert_eq!(next(), Token::Integer("2"));
+        assert_eq!(next(), Token::Number("2"));
         assert_eq!(next(), Token::RightParen);
         assert_eq!(next(), Token::RightBrace);
         assert_eq!(lexer.next(), None);
