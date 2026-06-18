@@ -3,6 +3,7 @@ use self::instr::Instr;
 
 mod chunk;
 mod instr;
+mod value;
 
 pub struct Vm {}
 
