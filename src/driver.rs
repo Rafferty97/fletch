@@ -43,7 +43,7 @@ pub fn run(filename: &str, src: &str) {
     // println!("{output}");
 
     // Compile
-    let chunk = match compile_func(&ast.main) {
+    let chunk = match compile_func(&ast.main, &sym_interner) {
         Ok(func) => func,
         Err(err) => {
             eprintln!("compiler error: {err}");
