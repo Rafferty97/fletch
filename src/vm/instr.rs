@@ -4,11 +4,20 @@ use std::fmt::Display;
 pub enum Instr {
     Return,
     Const(Reg, Imm),
-    Print(Reg),
+    PrintInt(Reg),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct EncodedInstr(u32);
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[repr(u8)]
+pub enum Width {
+    _8 = 0,
+    _16 = 1,
+    _32 = 2,
+    _64 = 3,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Reg(pub u16);
@@ -19,63 +28,122 @@ pub struct Imm(pub u16);
 impl Instr {
     pub fn encode(self) -> EncodedInstr {
         match self {
-            Self::Return => Self::encode_bare(0),
-            Self::Const(dst, imm) => Self::encode_reg_imm(1, dst, imm),
-            Self::Print(src) => Self::encode_reg(2, src),
+            Self::Return => EncodedInstr::opcode(0),
+            Self::Const(dst, imm) => EncodedInstr::opcode(1).reg0(dst).imm1(imm),
+            Self::PrintInt(src) => EncodedInstr::opcode(2).reg0(src),
         }
-    }
-
-    fn encode_bare(opcode: u8) -> EncodedInstr {
-        EncodedInstr(opcode as u32)
-    }
-
-    fn encode_reg(opcode: u8, reg: Reg) -> EncodedInstr {
-        let mut i = opcode as u32;
-        i |= (reg.0 as u32) << 6;
-        EncodedInstr(i)
-    }
-
-    fn encode_reg_imm(opcode: u8, reg: Reg, imm: Imm) -> EncodedInstr {
-        let mut i = opcode as u32;
-        i |= (reg.0 as u32) << 6;
-        i |= (imm.0 as u32) << 15;
-        EncodedInstr(i)
     }
 
     pub fn decode(enc: EncodedInstr) -> Self {
-        match Self::get_opcode(enc) {
+        match enc.get_opcode() {
             0 => Self::Return,
-            1 => Self::Const(Self::get_reg0(enc), Self::get_imm1(enc)),
-            2 => Self::Print(Self::get_reg0(enc)),
+            1 => Self::Const(enc.get_reg0(), enc.get_imm1()),
+            2 => Self::PrintInt(enc.get_reg0()),
             _ => panic!("illegal instruction"),
         }
     }
+}
 
-    fn get_opcode(enc: EncodedInstr) -> u8 {
-        (enc.0 & 0x3f) as u8
+impl EncodedInstr {
+    fn opcode(opcode: u8) -> Self {
+        Self(opcode as u32)
     }
 
-    fn get_reg0(enc: EncodedInstr) -> Reg {
-        Reg(((enc.0 >> 6) & 0x1ff) as _)
+    fn width(self, width: Width) -> Self {
+        Self(self.0 | ((width as u32) << 6))
     }
 
-    fn get_imm1(enc: EncodedInstr) -> Imm {
-        Imm(((enc.0 >> 15) & 0x1ff) as _)
+    fn reg0(self, reg: Reg) -> Self {
+        Self(self.0 | ((reg.0 as u32) << 8))
+    }
+
+    fn imm1(self, imm: Imm) -> Self {
+        Self(self.0 | ((imm.0 as u32) << 16))
+    }
+
+    fn get_opcode(self) -> u8 {
+        (self.0 & 0x3f) as u8
+    }
+
+    fn get_width(self) -> Width {
+        match ((self.0 >> 6) & 0x03) {
+            0 => Width::_8,
+            1 => Width::_16,
+            2 => Width::_32,
+            3 => Width::_64,
+            _ => unreachable!(),
+        }
+    }
+
+    fn get_reg0(self) -> Reg {
+        Reg(((self.0 >> 8) & 0xff) as _)
+    }
+
+    fn get_imm1(self) -> Imm {
+        Imm(((self.0 >> 16) & 0xff) as _)
     }
 }
 
 impl Display for Instr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use std::fmt::Formatter;
-        let write_bare = |f: &mut Formatter<'_>, op| write!(f, "{op}");
-        let write_reg = |f: &mut Formatter<'_>, op, arg0| write!(f, "{op:<6 } {arg0}");
-        let write_reg_imm = |f: &mut Formatter<'_>, op, arg0, imm1| write!(f, "{op:<6 } {arg0}, {imm1}");
-
-        match self {
-            Self::Return => write_bare(f, "ret"),
-            Self::Const(dst, imm) => write_reg_imm(f, "const", dst, imm),
-            Self::Print(src) => write_reg(f, "print", src),
+        struct InstrWriter<'a, 'b> {
+            f: &'a mut std::fmt::Formatter<'b>,
+            instr_len: usize,
+            first_arg: bool,
         }
+
+        impl<'a, 'b> InstrWriter<'a, 'b> {
+            fn new(f: &'a mut std::fmt::Formatter<'b>) -> Self {
+                Self { f, instr_len: 0, first_arg: true }
+            }
+
+            fn mnem(mut self, mnem: &str) -> Self {
+                self.instr_len += mnem.len();
+                write!(self.f, "{}", mnem);
+                self
+            }
+
+            fn width(mut self, width: Width) -> Self {
+                self.instr_len += 1;
+                match width {
+                    Width::_8 => write!(self.f, "b"),
+                    Width::_16 => write!(self.f, "w"),
+                    Width::_32 => write!(self.f, "l"),
+                    Width::_64 => write!(self.f, "q"),
+                };
+                self
+            }
+
+            fn reg(mut self, reg: Reg) -> Self {
+                self.start_arg();
+                write!(self.f, "{}", reg);
+                self
+            }
+
+            fn imm(mut self, imm: Imm) -> Self {
+                self.start_arg();
+                write!(self.f, "{}", imm);
+                self
+            }
+
+            fn start_arg(&mut self) {
+                if self.first_arg {
+                    const WIDTH: &str = "        ";
+                    write!(self.f, "{}", &WIDTH[self.instr_len..]);
+                    self.first_arg = false;
+                } else {
+                    write!(self.f, ", ");
+                }
+            }
+        }
+
+        let w = InstrWriter::new(f);
+        match *self {
+            Self::Return => w.mnem("ret"),
+            Self::Const(dst, imm) => w.mnem("const").reg(dst).imm(imm),
+            Self::PrintInt(src) => w.mnem("printi").reg(src),
+        };
+        Ok(())
     }
 }
 
@@ -102,7 +170,10 @@ mod test {
         };
 
         test(Instr::Return);
-        test(Instr::Print(Reg(0)));
-        test(Instr::Print(Reg(248)));
+        test(Instr::Const(Reg(0), Imm(0)));
+        test(Instr::Const(Reg(78), Imm(89)));
+        test(Instr::PrintInt(Reg(0)));
+        test(Instr::PrintInt(Reg(86)));
+        test(Instr::PrintInt(Reg(234)));
     }
 }

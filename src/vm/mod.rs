@@ -27,9 +27,9 @@ impl Vm {
                 Instr::Const(dst, imm) => {
                     self.write(dst, chunk.get_const(imm).clone());
                 }
-                Instr::Print(src) => {
-                    let value = self.read(src);
-                    println!("{value:?}");
+                Instr::PrintInt(src) => {
+                    let value = self.read(src).as_int();
+                    println!("{value}");
                 }
             }
             pc += 1;
