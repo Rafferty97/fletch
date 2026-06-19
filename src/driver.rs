@@ -6,9 +6,11 @@ use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 
 use crate::ast::sexpr::{SExpr, SExprCtx};
 use crate::ast::{ExprKind, Lit, StmtKind};
+use crate::compiler::compile_func;
 use crate::interner::IndexedInterner;
 use crate::parser::error::ParseError;
 use crate::parser::{ParseCtx, Parser};
+use crate::vm::Vm;
 
 pub fn run(filename: &str, src: &str) {
     // Create arena and interners
@@ -35,8 +37,24 @@ pub fn run(filename: &str, src: &str) {
     };
 
     // Print s-expr
-    let mut output = String::new();
-    let mut sexpr_ctx = SExprCtx { str: &mut output, sym_interner: &sym_interner };
-    SExpr::write(&ast, &mut sexpr_ctx);
-    println!("{output}");
+    // let mut output = String::new();
+    // let mut sexpr_ctx = SExprCtx { str: &mut output, sym_interner: &sym_interner };
+    // SExpr::write(&ast, &mut sexpr_ctx);
+    // println!("{output}");
+
+    // Compile
+    let chunk = match compile_func(&ast.main) {
+        Ok(func) => func,
+        Err(err) => {
+            eprintln!("compiler error: {err}");
+            return;
+        }
+    };
+
+    // Print chunk
+    println!("{}", chunk.disassemble());
+
+    // Execute
+    let mut vm = Vm::new();
+    vm.execute(&chunk);
 }

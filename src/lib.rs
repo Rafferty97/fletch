@@ -3,6 +3,7 @@
 pub use driver::run;
 
 mod ast;
+mod compiler;
 mod diagnostics;
 mod driver;
 mod interner;
