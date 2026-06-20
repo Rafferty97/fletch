@@ -5,19 +5,11 @@ pub enum Instr {
     Return,
     Const(Reg, Imm),
     PrintInt(Reg),
+    Add { r0: Reg, r1: Reg, rd: Reg },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct EncodedInstr(u32);
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-#[repr(u8)]
-pub enum Width {
-    _8 = 0,
-    _16 = 1,
-    _32 = 2,
-    _64 = 3,
-}
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Reg(pub u16);
@@ -31,6 +23,7 @@ impl Instr {
             Self::Return => EncodedInstr::opcode(0),
             Self::Const(dst, imm) => EncodedInstr::opcode(1).reg0(dst).imm1(imm),
             Self::PrintInt(src) => EncodedInstr::opcode(2).reg0(src),
+            Self::Add { r0, r1, rd } => EncodedInstr::opcode(3).reg0(r0).reg1(r1).reg2(rd),
         }
     }
 
@@ -39,6 +32,7 @@ impl Instr {
             0 => Self::Return,
             1 => Self::Const(enc.get_reg0(), enc.get_imm1()),
             2 => Self::PrintInt(enc.get_reg0()),
+            3 => Self::Add { r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
             _ => panic!("illegal instruction"),
         }
     }
@@ -49,12 +43,16 @@ impl EncodedInstr {
         Self(opcode as u32)
     }
 
-    fn width(self, width: Width) -> Self {
-        Self(self.0 | ((width as u32) << 6))
-    }
-
     fn reg0(self, reg: Reg) -> Self {
         Self(self.0 | ((reg.0 as u32) << 8))
+    }
+
+    fn reg1(self, reg: Reg) -> Self {
+        Self(self.0 | ((reg.0 as u32) << 16))
+    }
+
+    fn reg2(self, reg: Reg) -> Self {
+        Self(self.0 | ((reg.0 as u32) << 24))
     }
 
     fn imm1(self, imm: Imm) -> Self {
@@ -65,18 +63,16 @@ impl EncodedInstr {
         (self.0 & 0x3f) as u8
     }
 
-    fn get_width(self) -> Width {
-        match ((self.0 >> 6) & 0x03) {
-            0 => Width::_8,
-            1 => Width::_16,
-            2 => Width::_32,
-            3 => Width::_64,
-            _ => unreachable!(),
-        }
-    }
-
     fn get_reg0(self) -> Reg {
         Reg(((self.0 >> 8) & 0xff) as _)
+    }
+
+    fn get_reg1(self) -> Reg {
+        Reg(((self.0 >> 16) & 0xff) as _)
+    }
+
+    fn get_reg2(self) -> Reg {
+        Reg(((self.0 >> 24) & 0xff) as _)
     }
 
     fn get_imm1(self) -> Imm {
@@ -100,17 +96,6 @@ impl Display for Instr {
             fn mnem(mut self, mnem: &str) -> Self {
                 self.instr_len += mnem.len();
                 write!(self.f, "{}", mnem);
-                self
-            }
-
-            fn width(mut self, width: Width) -> Self {
-                self.instr_len += 1;
-                match width {
-                    Width::_8 => write!(self.f, "b"),
-                    Width::_16 => write!(self.f, "w"),
-                    Width::_32 => write!(self.f, "l"),
-                    Width::_64 => write!(self.f, "q"),
-                };
                 self
             }
 
@@ -142,6 +127,7 @@ impl Display for Instr {
             Self::Return => w.mnem("ret"),
             Self::Const(dst, imm) => w.mnem("const").reg(dst).imm(imm),
             Self::PrintInt(src) => w.mnem("printi").reg(src),
+            Self::Add { r0, r1, rd } => w.mnem("add").reg(rd).reg(r0).reg(r1),
         };
         Ok(())
     }

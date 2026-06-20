@@ -37,10 +37,10 @@ pub fn run(filename: &str, src: &str) {
     };
 
     // Print s-expr
-    // let mut output = String::new();
-    // let mut sexpr_ctx = SExprCtx { str: &mut output, sym_interner: &sym_interner };
-    // SExpr::write(&ast, &mut sexpr_ctx);
-    // println!("{output}");
+    let mut output = String::new();
+    let mut sexpr_ctx = SExprCtx { str: &mut output, sym_interner: &sym_interner };
+    SExpr::write(&ast, &mut sexpr_ctx);
+    println!("{output}");
 
     // Compile
     let chunk = match compile_func(&ast.main, &sym_interner) {

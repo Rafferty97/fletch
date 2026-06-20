@@ -62,6 +62,11 @@ impl<'a, 'sym> SExprCtx<'a, 'sym> {
     fn write_expr(&mut self, node: &Expr) {
         match &node.node {
             ExprKind::Lit(lit) => self.write_lit(lit),
+            ExprKind::Var(var) => {
+                self.str.push_str("(var ");
+                self.str.push_str(self.sym_interner.get_str(var.sym));
+                self.str.push(')');
+            }
             ExprKind::Binary(op, lhs, rhs) => {
                 self.str.push('(');
                 self.write_binop(*op);

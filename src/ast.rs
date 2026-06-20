@@ -34,6 +34,7 @@ pub enum StmtKind {
 #[derive(Clone, Debug)]
 pub enum ExprKind {
     Lit(Lit),
+    Var(Ident),
     Binary(BinOp, Box<Expr>, Box<Expr>),
 }
 

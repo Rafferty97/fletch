@@ -1,22 +1,23 @@
 use thiserror::Error;
 
-use crate::ast::{Expr, ExprKind, Func, Lit, Stmt, StmtKind, Symbol};
+use crate::ast::{BinOp, Expr, ExprKind, Func, Lit, Stmt, StmtKind, Symbol};
 use crate::interner::IndexedInterner;
 use crate::vm::chunk::{Chunk, ChunkBuilder};
-use crate::vm::instr::Width;
 use crate::vm::instr::{Instr, Reg};
 use crate::vm::value::Value;
 
 pub fn compile_func(ast: &Func, sym_interner: &IndexedInterner<'_, Symbol, str>) -> Result<Chunk> {
     let builder = ChunkBuilder::new();
-    let mut compiler = Compiler { builder, sym_interner };
+    let mut compiler = Compiler { builder, sym_interner, stack_pos: 0, stack_size: 0 };
     compiler.compile_func(ast)?;
-    Ok(compiler.builder.build())
+    Ok(compiler.builder.build(compiler.stack_size as usize))
 }
 
 struct Compiler<'a, 'sym> {
     builder: ChunkBuilder,
     sym_interner: &'a IndexedInterner<'sym, Symbol, str>,
+    stack_pos: u16,
+    stack_size: u16,
 }
 
 impl<'a, 'sym> Compiler<'a, 'sym> {
@@ -24,38 +25,55 @@ impl<'a, 'sym> Compiler<'a, 'sym> {
         for stmt in &ast.body.stmts {
             self.compile_stmt(stmt);
         }
+        self.builder.ins(Instr::Return);
         Ok(())
     }
 
     fn compile_stmt(&mut self, stmt: &Stmt) -> Result<()> {
         match &stmt.node {
             StmtKind::Print(expr) => {
-                let value = self.compile_expr(expr)?;
+                let value = self.compile_expr(expr, None)?;
                 self.builder.ins(Instr::PrintInt(value));
             }
         }
         Ok(())
     }
 
-    fn compile_expr(&mut self, expr: &Expr) -> Result<Reg> {
+    fn compile_expr(&mut self, expr: &Expr, rd: Option<Reg>) -> Result<Reg> {
+        let (stack_pos, rd) = match rd {
+            Some(rd) => (self.stack_pos, rd),
+            None => (self.stack_pos + 1, Reg(self.stack_pos)),
+        };
+
         match &expr.node {
-            ExprKind::Lit(lit) => self.compile_lit(lit),
-            ExprKind::Binary(op, lhs, rhs) => todo!(),
+            ExprKind::Lit(lit) => self.compile_lit(lit, rd)?,
+            ExprKind::Var(ident) => {
+                let reg = todo!() as Reg;
+            }
+            ExprKind::Binary(op, lhs, rhs) => {
+                let r0 = self.compile_expr(lhs, None)?;
+                let r1 = self.compile_expr(rhs, None)?;
+                match op {
+                    BinOp::Add => self.builder.ins(Instr::Add { r0, r1, rd }),
+                }
+            }
         }
+
+        self.stack_pos = stack_pos;
+        Ok(rd)
     }
 
-    fn compile_lit(&mut self, lit: &Lit) -> Result<Reg> {
+    fn compile_lit(&mut self, lit: &Lit, rd: Reg) -> Result<()> {
         match lit {
             &Lit::Int(sym) => {
-                let reg = Reg(0);
                 let value = self
                     .sym_interner
                     .get_str(sym)
                     .parse()
                     .map_err(|_| CompilerError::InvalidLiteral)?;
                 let imm = self.builder.constant(Value::new_int(value));
-                self.builder.ins(Instr::Const(reg, imm));
-                Ok(reg)
+                self.builder.ins(Instr::Const(rd, imm));
+                Ok(())
             }
             _ => todo!(),
         }

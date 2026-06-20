@@ -31,6 +31,11 @@ impl Vm {
                     let value = self.read(src).as_int();
                     println!("{value}");
                 }
+                Instr::Add { r0, r1, rd } => {
+                    let lhs = self.read(r0).as_int();
+                    let rhs = self.read(r1).as_int();
+                    self.write(rd, Value::new_int(lhs + rhs));
+                }
             }
             pc += 1;
         }

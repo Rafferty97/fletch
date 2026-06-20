@@ -11,6 +11,7 @@ pub struct Chunk {
     code: Vec<EncodedInstr>,
     labels: Vec<(usize, Arc<str>)>,
     constants: Vec<Value>,
+    stack_size: usize,
 }
 
 impl Chunk {
@@ -66,8 +67,13 @@ impl ChunkBuilder {
         imm
     }
 
-    pub fn build(self) -> Chunk {
-        Chunk { code: self.code, labels: vec![(0, "start".into())], constants: self.constants }
+    pub fn build(self, stack_size: usize) -> Chunk {
+        Chunk {
+            code: self.code,
+            labels: vec![(0, "start".into())],
+            constants: self.constants,
+            stack_size,
+        }
     }
 }
 
@@ -81,6 +87,7 @@ mod test {
             code: vec![Instr::Return.encode()],
             labels: vec![(0, "start".into())],
             constants: vec![],
+            stack_size: 0,
         };
         let text = chunk.disassemble();
         let mut lines = text.lines();
