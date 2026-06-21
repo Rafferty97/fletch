@@ -25,7 +25,7 @@ struct Compiler<'a, 'sym> {
 impl<'a, 'sym> Compiler<'a, 'sym> {
     fn compile_func(&mut self, ast: &Func) -> Result<()> {
         for stmt in &ast.body.stmts {
-            self.compile_stmt(stmt);
+            self.compile_stmt(stmt)?;
         }
         self.builder.ins(Instr::Return);
         Ok(())
@@ -33,12 +33,26 @@ impl<'a, 'sym> Compiler<'a, 'sym> {
 
     fn compile_stmt(&mut self, stmt: &Stmt) -> Result<()> {
         match &stmt.node {
+            StmtKind::Expr(expr) => {
+                let sp = self.stack_pos;
+                let value = self.compile_expr(expr, None)?;
+                self.stack_pos = sp;
+                Ok(())
+            }
             StmtKind::Let(name, value) => {
                 let sp = self.stack_pos;
-                let rd = self.reserve();
-                let value = self.compile_expr(value, Some(rd))?;
-                self.stack_pos = sp + 1;
-                self.locals.push(name.sym);
+                match self.lookup_var(name) {
+                    Ok(rd) => {
+                        self.compile_expr(value, Some(rd))?;
+                        self.stack_pos = sp;
+                    }
+                    Err(_) => {
+                        let rd = self.reserve();
+                        self.compile_expr(value, Some(rd))?;
+                        self.stack_pos = sp + 1;
+                        self.locals.push(name.sym);
+                    }
+                }
                 Ok(())
             }
             StmtKind::Assign(lhs, rhs) => {
@@ -47,7 +61,7 @@ impl<'a, 'sym> Compiler<'a, 'sym> {
                 };
                 let sp = self.stack_pos;
                 let rd = self.lookup_var(lhs)?;
-                let value = self.compile_expr(rhs, Some(rd))?;
+                self.compile_expr(rhs, Some(rd))?;
                 self.stack_pos = sp;
                 Ok(())
             }

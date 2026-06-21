@@ -51,6 +51,9 @@ impl<'a, 'sym> SExprCtx<'a, 'sym> {
 
     fn write_stmt(&mut self, stmt: &Stmt) {
         match &stmt.node {
+            StmtKind::Expr(expr) => {
+                self.write_expr(expr);
+            }
             StmtKind::Let(name, value) => {
                 self.str.push_str("(let ");
                 self.write_sym(name.sym);

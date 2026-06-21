@@ -46,14 +46,14 @@ impl<'a, 'sym> Parser<'a, 'sym> {
 
     fn parse_stmt(&mut self) -> Result<'a, Stmt> {
         let start = self.curr_pos();
-        match self.peek() {
+        let kind = match self.peek() {
             Token::Let => {
                 self.consume()?;
                 let name = self.parse_ident()?;
                 self.expect(Token::Eq)?;
                 let value = self.parse_expr()?.into();
                 self.expect(Token::Semi)?;
-                Ok(self.make_spanned(start, StmtKind::Let(name, value)))
+                StmtKind::Let(name, value)
             }
             Token::Print => {
                 self.consume()?;
@@ -61,10 +61,23 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 let expr = self.parse_expr()?.into();
                 self.expect(Token::RightParen)?;
                 self.expect(Token::Semi)?;
-                Ok(self.make_spanned(start, StmtKind::Print(expr)))
+                StmtKind::Print(expr)
             }
-            _ => Err(self.unexpected_curr()),
-        }
+            _ => {
+                let expr = self.parse_expr()?;
+                match self.consume()?.token {
+                    Token::Eq => {
+                        let lhs = expr.into();
+                        let rhs = self.parse_expr()?.into();
+                        self.expect(Token::Semi)?;
+                        StmtKind::Assign(lhs, rhs)
+                    }
+                    Token::Semi => StmtKind::Expr(expr.into()),
+                    _ => Err(self.unexpected_prev())?,
+                }
+            }
+        };
+        Ok(self.make_spanned(start, kind))
     }
 
     pub(crate) fn parse_ident(&mut self) -> Result<'a, Ident> {

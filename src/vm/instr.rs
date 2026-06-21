@@ -139,13 +139,13 @@ impl Display for Instr {
 
 impl Display for Reg {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "%{}", self.0)
+        write!(f, "r{}", self.0)
     }
 }
 
 impl Display for Imm {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "${}", self.0)
+        write!(f, "%{}", self.0)
     }
 }
 
