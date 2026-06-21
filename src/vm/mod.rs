@@ -36,6 +36,9 @@ impl Vm {
                     let rhs = self.read(r1).as_int();
                     self.write(rd, Value::new_int(lhs + rhs));
                 }
+                Instr::Move { r0, rd } => {
+                    self.write(rd, self.read(r0).clone());
+                }
             }
             pc += 1;
         }

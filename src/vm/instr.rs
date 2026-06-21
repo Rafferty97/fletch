@@ -6,6 +6,7 @@ pub enum Instr {
     Const(Reg, Imm),
     PrintInt(Reg),
     Add { r0: Reg, r1: Reg, rd: Reg },
+    Move { r0: Reg, rd: Reg },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -24,6 +25,7 @@ impl Instr {
             Self::Const(dst, imm) => EncodedInstr::opcode(1).reg0(dst).imm1(imm),
             Self::PrintInt(src) => EncodedInstr::opcode(2).reg0(src),
             Self::Add { r0, r1, rd } => EncodedInstr::opcode(3).reg0(r0).reg1(r1).reg2(rd),
+            Self::Move { r0, rd } => EncodedInstr::opcode(4).reg0(r0).reg1(rd),
         }
     }
 
@@ -33,6 +35,7 @@ impl Instr {
             1 => Self::Const(enc.get_reg0(), enc.get_imm1()),
             2 => Self::PrintInt(enc.get_reg0()),
             3 => Self::Add { r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
+            4 => Self::Move { r0: enc.get_reg0(), rd: enc.get_reg1() },
             _ => panic!("illegal instruction"),
         }
     }
@@ -128,6 +131,7 @@ impl Display for Instr {
             Self::Const(dst, imm) => w.mnem("const").reg(dst).imm(imm),
             Self::PrintInt(src) => w.mnem("printi").reg(src),
             Self::Add { r0, r1, rd } => w.mnem("add").reg(rd).reg(r0).reg(r1),
+            Self::Move { r0, rd } => w.mnem("move").reg(rd).reg(r0),
         };
         Ok(())
     }
