@@ -21,11 +21,19 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 let node = ExprKind::Binary(BinOp::Add, lhs.into(), rhs.into());
                 Ok(Expr { node, span })
             }
+            Token::LeftParen => {
+                let func = expr;
+                self.consume()?;
+                let args = self.parse_args()?;
+                let span = Span::cover(func.span, self.previous.span);
+                let node = ExprKind::Call(func.into(), args);
+                Ok(Expr { node, span })
+            }
             _ => Ok(expr),
         }
     }
 
-    pub(super) fn parse_prefix(&mut self) -> Result<'a, Expr> {
+    pub fn parse_prefix(&mut self) -> Result<'a, Expr> {
         let start = self.curr_pos();
 
         let kind = match self.peek() {
@@ -67,5 +75,26 @@ impl<'a, 'sym> Parser<'a, 'sym> {
         };
 
         Ok(self.make_spanned(start, kind))
+    }
+
+    fn parse_args(&mut self) -> Result<'a, Vec<Expr>> {
+        let mut args = vec![];
+
+        loop {
+            if self.peek() == Token::RightParen {
+                self.consume()?;
+                break;
+            }
+
+            args.push(self.parse_expr()?);
+
+            match self.consume()?.token {
+                Token::Comma => {}
+                Token::RightParen => break,
+                _ => Err(self.unexpected_prev())?,
+            }
+        }
+
+        Ok(args)
     }
 }

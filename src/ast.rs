@@ -31,7 +31,6 @@ pub enum StmtKind {
     Expr(Box<Expr>),
     Let(Ident, Box<Expr>),
     Assign(Box<Expr>, Box<Expr>),
-    Print(Box<Expr>),
 }
 
 #[derive(Clone, Debug)]
@@ -39,6 +38,7 @@ pub enum ExprKind {
     Lit(Lit),
     Var(Ident),
     Binary(BinOp, Box<Expr>, Box<Expr>),
+    Call(Box<Expr>, Vec<Expr>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

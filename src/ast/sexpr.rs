@@ -68,11 +68,6 @@ impl<'a, 'sym> SExprCtx<'a, 'sym> {
                 self.write_expr(rhs);
                 self.str.push(')');
             }
-            StmtKind::Print(expr) => {
-                self.str.push_str("(print ");
-                self.write_expr(expr);
-                self.str.push(')');
-            }
         }
     }
 
@@ -91,6 +86,15 @@ impl<'a, 'sym> SExprCtx<'a, 'sym> {
                 self.write_expr(lhs);
                 self.str.push(' ');
                 self.write_expr(rhs);
+                self.str.push(')');
+            }
+            ExprKind::Call(func, args) => {
+                self.str.push_str("(call ");
+                self.write_expr(func);
+                for arg in args {
+                    self.str.push(' ');
+                    self.write_expr(arg);
+                }
                 self.str.push(')');
             }
         }

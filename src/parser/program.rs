@@ -55,14 +55,6 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 self.expect(Token::Semi)?;
                 StmtKind::Let(name, value)
             }
-            Token::Print => {
-                self.consume()?;
-                self.expect(Token::LeftParen)?;
-                let expr = self.parse_expr()?.into();
-                self.expect(Token::RightParen)?;
-                self.expect(Token::Semi)?;
-                StmtKind::Print(expr)
-            }
             _ => {
                 let expr = self.parse_expr()?;
                 match self.consume()?.token {

@@ -17,8 +17,6 @@ pub enum Token<'a> {
     False,
     #[token("fn")]
     Func,
-    #[token("print")]
-    Print, // FIXME: remove
     #[token("let")]
     Let,
     #[token("(")]
@@ -39,6 +37,8 @@ pub enum Token<'a> {
     Solidus,
     #[token("=")]
     Eq,
+    #[token(",")]
+    Comma,
     #[token(";")]
     Semi,
     Eof,
@@ -61,7 +61,6 @@ impl<'a> std::fmt::Display for Token<'a> {
             Self::True => "'true'",
             Self::False => "'false'",
             Self::Func => "'fn'",
-            Self::Print => "'print'",
             Self::Let => "'let'",
             Self::LeftParen => "'('",
             Self::RightParen => "')'",
@@ -73,6 +72,7 @@ impl<'a> std::fmt::Display for Token<'a> {
             Self::Solidus => "'/'",
             Self::Eq => "'='",
             Self::Semi => "';'",
+            Self::Comma => "','",
             Self::Eof => "end of input",
         };
         write!(f, "{}", str)
@@ -98,7 +98,7 @@ mod test {
         assert_eq!(next(), Token::LeftParen);
         assert_eq!(next(), Token::RightParen);
         assert_eq!(next(), Token::LeftBrace);
-        assert_eq!(next(), Token::Print);
+        assert_eq!(next(), Token::Ident("print"));
         assert_eq!(next(), Token::LeftParen);
         assert_eq!(next(), Token::Number("2"));
         assert_eq!(next(), Token::Plus);

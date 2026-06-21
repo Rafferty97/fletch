@@ -65,13 +65,6 @@ impl<'a, 'sym> Compiler<'a, 'sym> {
                 self.stack_pos = sp;
                 Ok(())
             }
-            StmtKind::Print(expr) => {
-                let sp = self.stack_pos;
-                let value = self.compile_expr(expr, None)?;
-                self.builder.ins(Instr::PrintInt(value));
-                self.stack_pos = sp;
-                Ok(())
-            }
         }
     }
 
@@ -103,6 +96,21 @@ impl<'a, 'sym> Compiler<'a, 'sym> {
                     BinOp::Add => self.builder.ins(Instr::Add { r0, r1, rd }),
                 }
                 Ok(rd)
+            }
+            ExprKind::Call(func, args) => {
+                let ExprKind::Var(func) = func.node else { todo!() };
+                match self.sym_interner.get_str(func.sym) {
+                    "print" => {
+                        let [arg] = &args[..] else {
+                            Err(CompilerError::Arity { exp: 1, act: args.len() })?
+                        };
+                        let value = self.compile_expr(arg, rd)?;
+                        self.builder.ins(Instr::PrintInt(value));
+                        Ok(value)
+                    }
+                    name => Err(CompilerError::UndefinedName(name.into()))?,
+                }
+                //
             }
         }
     }
@@ -157,6 +165,8 @@ pub enum CompilerError {
     UndefinedName(Box<str>),
     #[error("cannot assign to this expression")]
     InvalidAssignment,
+    #[error("expected {exp} arguments, got {act}")]
+    Arity { exp: usize, act: usize },
 }
 
 pub type Result<T, E = CompilerError> = std::result::Result<T, E>;
