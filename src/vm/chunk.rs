@@ -26,7 +26,10 @@ impl Chunk {
     pub fn disassemble(&self) -> String {
         let mut out = String::new();
 
-        write!(out, "[code]\n");
+        write!(out, "[attrs]\n");
+        write!(out, "stack_size = {}\n", self.stack_size);
+
+        write!(out, "\n[code]\n");
         let mut labels = self.labels.iter();
         let mut next_label = labels.next();
         for (index, &instr) in self.code.iter().enumerate() {
@@ -62,9 +65,14 @@ impl ChunkBuilder {
     }
 
     pub fn constant(&mut self, value: Value) -> Imm {
-        let imm = Imm(self.constants.len().try_into().expect("too many constants"));
-        self.constants.push(value);
-        imm
+        match self.constants.iter().position(|v| *v == value) {
+            Some(idx) => Imm(idx as u16),
+            None => {
+                let imm = Imm(self.constants.len().try_into().expect("too many constants"));
+                self.constants.push(value);
+                imm
+            }
+        }
     }
 
     pub fn build(self, stack_size: usize) -> Chunk {

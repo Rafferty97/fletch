@@ -32,13 +32,16 @@ impl<'a, 'sym> Compiler<'a, 'sym> {
     }
 
     fn compile_stmt(&mut self, stmt: &Stmt) -> Result<()> {
+        let stack_pos = self.stack_pos;
+
         match &stmt.node {
             StmtKind::Print(expr) => {
                 let value = self.compile_expr(expr, None)?;
+                self.stack_pos = stack_pos;
                 self.builder.ins(Instr::PrintInt(value));
+                Ok(())
             }
         }
-        Ok(())
     }
 
     fn compile_expr(&mut self, expr: &Expr, rd: Option<Reg>) -> Result<Reg> {
@@ -100,6 +103,7 @@ impl<'a, 'sym> Compiler<'a, 'sym> {
             }
             None => {
                 self.stack_pos = pos + 1;
+                self.stack_size = self.stack_size.max(self.stack_pos);
                 Reg(pos)
             }
         }
