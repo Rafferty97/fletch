@@ -97,12 +97,14 @@ impl<'a, 'sym> SExprCtx<'a, 'sym> {
                 }
                 self.str.push(')');
             }
+            ExprKind::Grouped(expr) => self.write_expr(expr),
         }
     }
 
     fn write_binop(&mut self, op: BinOp) {
         match op {
             BinOp::Add => self.str.push('+'),
+            BinOp::Sub => self.str.push('-'),
         }
     }
 

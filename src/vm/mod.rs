@@ -14,10 +14,12 @@ pub struct Vm {
 
 impl Vm {
     pub fn new() -> Self {
-        Self { registers: vec![Value::Null; 16] }
+        Self { registers: vec![] }
     }
 
     pub fn execute(&mut self, chunk: &Chunk) {
+        self.registers.resize(chunk.stack_size(), Value::new_null());
+
         let code = chunk.code();
         let mut pc = 0;
 
@@ -35,6 +37,11 @@ impl Vm {
                     let lhs = self.read(r0).as_int();
                     let rhs = self.read(r1).as_int();
                     self.write(rd, Value::new_int(lhs + rhs));
+                }
+                Instr::Sub { r0, r1, rd } => {
+                    let lhs = self.read(r0).as_int();
+                    let rhs = self.read(r1).as_int();
+                    self.write(rd, Value::new_int(lhs - rhs));
                 }
                 Instr::Move { r0, rd } => {
                     self.write(rd, self.read(r0).clone());

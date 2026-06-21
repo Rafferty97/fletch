@@ -20,6 +20,12 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 let rhs = self.parse_prefix()?;
                 ExprKind::Binary(BinOp::Add, lhs.into(), rhs.into())
             }
+            Token::Minus => {
+                let lhs = expr;
+                self.consume()?;
+                let rhs = self.parse_prefix()?;
+                ExprKind::Binary(BinOp::Sub, lhs.into(), rhs.into())
+            }
             Token::LeftParen => {
                 let func = expr;
                 self.consume()?;
@@ -70,6 +76,12 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 ExprKind::Lit(Lit::Str(unescaped))
             }
             Token::Ident(raw) => ExprKind::Var(self.parse_ident()?),
+            Token::LeftParen => {
+                self.consume()?;
+                let expr = self.parse_expr()?.into();
+                self.expect(Token::RightParen)?;
+                ExprKind::Grouped(expr)
+            }
             _ => Err(self.unexpected_curr())?,
         };
 

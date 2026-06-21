@@ -25,7 +25,6 @@ pub fn compile_func(ast: &Func, arena: &Bump, sym_interner: &IndexedInterner<'_,
         stack_size: 0,
     };
     compiler.typech_func(ast)?;
-    println!("{:?}", compiler.type_map);
     compiler.compile_func(ast)?;
     Ok(compiler.builder.build(compiler.stack_size as usize))
 }
@@ -112,6 +111,7 @@ impl<'a, 'sym, 'ty> Compiler<'a, 'sym, 'ty> {
                 let rd = rd.unwrap_or_else(|| self.push());
                 match op {
                     BinOp::Add => self.builder.ins(Instr::Add { r0, r1, rd }),
+                    BinOp::Sub => self.builder.ins(Instr::Sub { r0, r1, rd }),
                 }
                 Ok(rd)
             }
@@ -128,13 +128,18 @@ impl<'a, 'sym, 'ty> Compiler<'a, 'sym, 'ty> {
                     }
                     name => Err(CompilerError::UndefinedName(name.into()))?,
                 }
-                //
             }
+            ExprKind::Grouped(expr) => self.compile_expr(expr, rd),
         }
     }
 
     fn compile_lit(&mut self, lit: &Lit, rd: Reg) -> Result<()> {
         match lit {
+            &Lit::Null => {
+                let imm = self.builder.constant(Value::new_null());
+                self.builder.ins(Instr::Const(rd, imm));
+                Ok(())
+            }
             &Lit::Bool(value) => {
                 let imm = self.builder.constant(Value::new_bool(value));
                 self.builder.ins(Instr::Const(rd, imm));
@@ -147,6 +152,22 @@ impl<'a, 'sym, 'ty> Compiler<'a, 'sym, 'ty> {
                     .parse()
                     .map_err(|_| CompilerError::InvalidLiteral)?;
                 let imm = self.builder.constant(Value::new_int(value));
+                self.builder.ins(Instr::Const(rd, imm));
+                Ok(())
+            }
+            &Lit::Float(sym) => {
+                let value = self
+                    .sym_interner
+                    .get_str(sym)
+                    .parse()
+                    .map_err(|_| CompilerError::InvalidLiteral)?;
+                let imm = self.builder.constant(Value::new_f64(value));
+                self.builder.ins(Instr::Const(rd, imm));
+                Ok(())
+            }
+            &Lit::Str(str) => {
+                let str = self.sym_interner.get_str(str);
+                let imm = self.builder.constant(Value::new_str(str));
                 self.builder.ins(Instr::Const(rd, imm));
                 Ok(())
             }

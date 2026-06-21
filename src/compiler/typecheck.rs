@@ -68,11 +68,18 @@ impl<'a, 'sym, 'ty> Compiler<'a, 'sym, 'ty> {
                 }
             },
             ExprKind::Binary(op, lhs, rhs) => {
-                let lhs = self.typech_expr(ctx, ast, ctx.common().infer)?;
-                let rhs = self.typech_expr(ctx, ast, ctx.common().infer)?;
-                ctx.ty_ctx.join(lhs, rhs) // FIXME
+                let lhs = self.typech_expr(ctx, lhs, ctx.common().infer)?;
+                let rhs = self.typech_expr(ctx, rhs, ctx.common().infer)?;
+                if lhs == rhs {
+                    lhs
+                } else {
+                    Err(CompilerError::TypeError(format!(
+                        "no implementation of '{lhs}' {op} '{rhs}'"
+                    )))?
+                }
             }
             ExprKind::Call(func, args) => ctx.common().opt_never, // FIXME
+            ExprKind::Grouped(expr) => self.typech_expr(ctx, expr, expected)?,
         };
 
         let ty = if expected.is_final() {

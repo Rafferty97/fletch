@@ -15,6 +15,10 @@ pub struct Chunk {
 }
 
 impl Chunk {
+    pub fn stack_size(&self) -> usize {
+        self.stack_size
+    }
+
     pub fn code(&self) -> &[EncodedInstr] {
         &self.code
     }

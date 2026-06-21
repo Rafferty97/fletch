@@ -44,6 +44,7 @@ pub enum ExprKind {
     Var(Ident),
     Binary(BinOp, Box<Expr>, Box<Expr>),
     Call(Box<Expr>, Vec<Expr>),
+    Grouped(Box<Expr>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -59,6 +60,7 @@ pub enum Lit {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum BinOp {
     Add,
+    Sub,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -76,5 +78,14 @@ impl Index for Symbol {
 
     fn into_usize(self) -> usize {
         self.0 as usize
+    }
+}
+
+impl Display for BinOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Add => write!(f, "+"),
+            Self::Sub => write!(f, "-"),
+        }
     }
 }

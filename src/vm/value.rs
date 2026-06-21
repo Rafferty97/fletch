@@ -6,6 +6,7 @@ use crate::ast::Symbol;
 pub enum Value {
     Null,
     Scalar(u64),
+    Str(Arc<str>),
     // Variant(Symbol, Arc<Value>),
 }
 
@@ -32,6 +33,10 @@ impl Value {
 
     pub fn new_f64(value: f64) -> Self {
         Self::Scalar(u64::from_ne_bytes(f64::to_ne_bytes(value)))
+    }
+
+    pub fn new_str(value: impl Into<Arc<str>>) -> Self {
+        Self::Str(value.into())
     }
 
     pub fn is_null(&self) -> bool {
