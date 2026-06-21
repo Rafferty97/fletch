@@ -58,6 +58,13 @@ impl<'a, 'sym> SExprCtx<'a, 'sym> {
                 self.write_expr(value);
                 self.str.push(')');
             }
+            StmtKind::Assign(lhs, rhs) => {
+                self.str.push_str("(= ");
+                self.write_expr(lhs);
+                self.str.push(' ');
+                self.write_expr(rhs);
+                self.str.push(')');
+            }
             StmtKind::Print(expr) => {
                 self.str.push_str("(print ");
                 self.write_expr(expr);

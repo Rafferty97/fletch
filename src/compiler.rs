@@ -1,7 +1,7 @@
 use itertools::Itertools;
 use thiserror::Error;
 
-use crate::ast::{BinOp, Expr, ExprKind, Func, Lit, Stmt, StmtKind, Symbol};
+use crate::ast::{BinOp, Expr, ExprKind, Func, Ident, Lit, Stmt, StmtKind, Symbol};
 use crate::interner::IndexedInterner;
 use crate::vm::chunk::{Chunk, ChunkBuilder};
 use crate::vm::instr::{Instr, Reg};
@@ -41,6 +41,16 @@ impl<'a, 'sym> Compiler<'a, 'sym> {
                 self.locals.push(name.sym);
                 Ok(())
             }
+            StmtKind::Assign(lhs, rhs) => {
+                let ExprKind::Var(lhs) = &lhs.node else {
+                    Err(CompilerError::InvalidAssignment)?
+                };
+                let sp = self.stack_pos;
+                let rd = self.lookup_var(lhs)?;
+                let value = self.compile_expr(rhs, Some(rd))?;
+                self.stack_pos = sp;
+                Ok(())
+            }
             StmtKind::Print(expr) => {
                 let sp = self.stack_pos;
                 let value = self.compile_expr(expr, None)?;
@@ -59,12 +69,7 @@ impl<'a, 'sym> Compiler<'a, 'sym> {
                 Ok(rd)
             }
             ExprKind::Var(ident) => {
-                let index = self.locals.iter().position(|s| *s == ident.sym).ok_or_else(|| {
-                    let name = self.sym_interner.get_str(ident.sym).into();
-                    CompilerError::UndefinedName(name)
-                })?;
-                let r0 = Reg(index as u16);
-
+                let r0 = self.lookup_var(ident)?;
                 Ok(match rd {
                     Some(rd) if rd != r0 => {
                         self.builder.ins(Instr::Move { r0, rd });
@@ -104,6 +109,14 @@ impl<'a, 'sym> Compiler<'a, 'sym> {
         }
     }
 
+    fn lookup_var(&self, ident: &Ident) -> Result<Reg> {
+        let index = self.locals.iter().position(|s| *s == ident.sym).ok_or_else(|| {
+            let name = self.sym_interner.get_str(ident.sym).into();
+            CompilerError::UndefinedName(name)
+        })?;
+        Ok(Reg(index as u16))
+    }
+
     fn reserve(&mut self) -> Reg {
         let reg = Reg(self.stack_pos);
         self.stack_size = self.stack_size.max(self.stack_pos + 1);
@@ -128,6 +141,8 @@ pub enum CompilerError {
     InvalidLiteral,
     #[error("cannot find name `{0}`")]
     UndefinedName(Box<str>),
+    #[error("cannot assign to this expression")]
+    InvalidAssignment,
 }
 
 pub type Result<T, E = CompilerError> = std::result::Result<T, E>;
