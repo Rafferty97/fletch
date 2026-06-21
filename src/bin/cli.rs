@@ -5,7 +5,11 @@ use tap::Pipe;
 
 #[derive(Parser, Debug)]
 struct Args {
+    /// Input file
     filename: PathBuf,
+    /// Print disassembly of each chunk
+    #[arg(short, long)]
+    disassemble: bool,
 }
 
 pub fn run() -> Result<(), String> {
@@ -18,7 +22,9 @@ pub fn run() -> Result<(), String> {
         .pipe(String::from_utf8)
         .map_err(|_| format!("Cannot read '{}': Invalid UTF-8", &filename))?;
 
-    eld::run(&filename, &src);
+    let opts = eld::FletchOpts { disassemble: args.disassemble };
+
+    eld::run(&filename, &src, opts);
 
     Ok(())
 }

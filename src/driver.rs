@@ -12,7 +12,12 @@ use crate::parser::error::ParseError;
 use crate::parser::{ParseCtx, Parser};
 use crate::vm::Vm;
 
-pub fn run(filename: &str, src: &str) {
+#[derive(Default)]
+pub struct FletchOpts {
+    pub disassemble: bool,
+}
+
+pub fn run(filename: &str, src: &str, opts: FletchOpts) {
     // Create arena and interners
     let arena = Bump::new();
     let sym_interner = IndexedInterner::new();
@@ -37,10 +42,10 @@ pub fn run(filename: &str, src: &str) {
     };
 
     // Print s-expr
-    let mut output = String::new();
-    let mut sexpr_ctx = SExprCtx { str: &mut output, sym_interner: &sym_interner };
-    SExpr::write(&ast, &mut sexpr_ctx);
-    println!("{output}");
+    // let mut output = String::new();
+    // let mut sexpr_ctx = SExprCtx { str: &mut output, sym_interner: &sym_interner };
+    // SExpr::write(&ast, &mut sexpr_ctx);
+    // println!("{output}");
 
     // Compile
     let chunk = match compile_func(&ast.main, &sym_interner) {
@@ -51,8 +56,10 @@ pub fn run(filename: &str, src: &str) {
         }
     };
 
-    // Print chunk
-    println!("{}", chunk.disassemble());
+    if opts.disassemble {
+        // Print chunk
+        println!("{}", chunk.disassemble());
+    }
 
     // Execute
     let mut vm = Vm::new();

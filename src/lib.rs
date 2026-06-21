@@ -1,6 +1,6 @@
 #![allow(unused)]
 
-pub use driver::run;
+pub use driver::{FletchOpts, run};
 
 mod ast;
 mod compiler;
