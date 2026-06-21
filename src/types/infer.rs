@@ -268,9 +268,9 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
     }
 
     /// Reconciles the expected type `exp` against the provided type `act`,
-    /// returning the resolved actual type, or an error if the types are incompatible or ambiguous
+    /// returning the resolved expected type, or an error if the types are incompatible or ambiguous
     pub fn reconcile(self, act: Ty<'ty>, exp: Ty<'ty>) -> TyResult<'ty> {
-        // FIXME: is "actual" type always the best choice?
+        // FIXME: is "expected" type always the best choice?
         use TyKind::*;
 
         match (act.kind(), exp.kind()) {
@@ -309,7 +309,7 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
                 let result = self
                     .reconcile(act, exp_in)
                     .map_err(|err| TypeError::unassignable(act, exp).with_cause(err))?;
-                Ok(result)
+                Ok(self.mk_nullable(result))
             }
             (Array(act_in), Array(exp_in)) => {
                 let result = self
@@ -353,12 +353,12 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
             }
 
             // Scalar types
-            (Int(act_in), Int(exp_in)) if act_in <= exp_in => Ok(act),
-            (UInt(act_in), UInt(exp_in)) if act_in <= exp_in => Ok(act),
-            (Float(act_in), Float(exp_in)) if act_in <= exp_in => Ok(act),
+            (Int(act_in), Int(exp_in)) if act_in <= exp_in => Ok(exp),
+            (UInt(act_in), UInt(exp_in)) if act_in <= exp_in => Ok(exp),
+            (Float(act_in), Float(exp_in)) if act_in <= exp_in => Ok(exp),
 
             // Top and bottom types
-            (Never, _) | (_, Any) => Ok(act),
+            (Never, _) | (_, Any) => Ok(exp),
 
             // Type mismatch
             _ => Err(TypeError::unassignable(act, exp)),
