@@ -283,42 +283,20 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
             _ if act == exp => Ok(act),
 
             // Type inference
-            (Infer, _) => match exp.kind() {
-                Nullable(exp) => self.reconcile(act, exp),
-                Array(exp) => self.reconcile(act, exp),
-                Tuple(exp_in) => {
-                    for &exp in exp_in.iter() {
-                        self.reconcile(act, exp)?;
-                    }
+            (Infer, _) => {
+                if exp.has_infer() {
+                    Err(TypeError::ambiguous())
+                } else {
                     Ok(exp)
                 }
-                Func(exp_in) => {
-                    for &exp in exp_in.params.iter() {
-                        self.reconcile(act, exp)?;
-                    }
-                    self.reconcile(act, exp_in.ret)?;
-                    Ok(exp)
-                }
-                _ => Ok(exp),
-            },
-            (_, Infer) => match act.kind() {
-                Nullable(act) => self.reconcile(act, exp),
-                Array(act) => self.reconcile(act, exp),
-                Tuple(act_in) => {
-                    for &act in act_in.iter() {
-                        self.reconcile(act, exp)?;
-                    }
+            }
+            (_, Infer) => {
+                if act.has_infer() {
+                    Err(TypeError::ambiguous())
+                } else {
                     Ok(act)
                 }
-                Func(act_in) => {
-                    for &act in act_in.params.iter() {
-                        self.reconcile(act, exp)?;
-                    }
-                    self.reconcile(act, act_in.ret)?;
-                    Ok(act)
-                }
-                _ => Ok(act),
-            },
+            }
 
             // Structural decomposition
             (Nullable(act_in), Nullable(exp_in)) => {

@@ -48,7 +48,7 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts) {
     // println!("{output}");
 
     // Compile
-    let chunk = match compile_func(&ast.main, &sym_interner) {
+    let chunk = match compile_func(&ast.main, &arena, &sym_interner) {
         Ok(func) => func,
         Err(err) => {
             eprintln!("compiler error: {err}");

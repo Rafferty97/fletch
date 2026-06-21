@@ -1,28 +1,46 @@
+use bumpalo::Bump;
+use fnv::FnvHashMap;
 use itertools::Itertools;
 use thiserror::Error;
 
-use crate::ast::{BinOp, Expr, ExprKind, Func, Ident, Lit, Stmt, StmtKind, Symbol};
+use crate::ast::{BinOp, Expr, ExprKind, Func, Ident, Lit, NodeId, Stmt, StmtKind, Symbol};
 use crate::interner::IndexedInterner;
+use crate::types::Ty;
+use crate::types::infer::TypeError;
 use crate::vm::chunk::{Chunk, ChunkBuilder};
 use crate::vm::instr::{Instr, Reg};
 use crate::vm::value::Value;
 
-pub fn compile_func(ast: &Func, sym_interner: &IndexedInterner<'_, Symbol, str>) -> Result<Chunk> {
+mod typecheck;
+
+pub fn compile_func(ast: &Func, arena: &Bump, sym_interner: &IndexedInterner<'_, Symbol, str>) -> Result<Chunk> {
     let builder = ChunkBuilder::new();
-    let mut compiler = Compiler { builder, sym_interner, locals: vec![], stack_pos: 0, stack_size: 0 };
+    let mut compiler = Compiler {
+        builder,
+        sym_interner,
+        type_map: FnvHashMap::default(),
+        arena,
+        locals: vec![],
+        stack_pos: 0,
+        stack_size: 0,
+    };
+    compiler.typech_func(ast)?;
+    println!("{:?}", compiler.type_map);
     compiler.compile_func(ast)?;
     Ok(compiler.builder.build(compiler.stack_size as usize))
 }
 
-struct Compiler<'a, 'sym> {
+struct Compiler<'a, 'sym, 'ty> {
     builder: ChunkBuilder,
     sym_interner: &'a IndexedInterner<'sym, Symbol, str>,
+    arena: &'ty Bump,
+    type_map: FnvHashMap<NodeId, Ty<'ty>>,
     locals: Vec<Symbol>,
     stack_pos: u16,
     stack_size: u16,
 }
 
-impl<'a, 'sym> Compiler<'a, 'sym> {
+impl<'a, 'sym, 'ty> Compiler<'a, 'sym, 'ty> {
     fn compile_func(&mut self, ast: &Func) -> Result<()> {
         for stmt in &ast.body.stmts {
             self.compile_stmt(stmt)?;
@@ -117,6 +135,11 @@ impl<'a, 'sym> Compiler<'a, 'sym> {
 
     fn compile_lit(&mut self, lit: &Lit, rd: Reg) -> Result<()> {
         match lit {
+            &Lit::Bool(value) => {
+                let imm = self.builder.constant(Value::new_bool(value));
+                self.builder.ins(Instr::Const(rd, imm));
+                Ok(())
+            }
             &Lit::Int(sym) => {
                 let value = self
                     .sym_interner
@@ -167,6 +190,8 @@ pub enum CompilerError {
     InvalidAssignment,
     #[error("expected {exp} arguments, got {act}")]
     Arity { exp: usize, act: usize },
+    #[error("{0}")]
+    TypeError(String),
 }
 
 pub type Result<T, E = CompilerError> = std::result::Result<T, E>;

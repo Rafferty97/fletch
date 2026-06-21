@@ -1,10 +1,15 @@
 use std::fmt::Display;
+use std::hash::Hash;
 
+use crate::ast::span::Spanned;
 use crate::diagnostics::ErrGuaranteed;
 use crate::interner::{Index, IndexedInterner};
-use crate::span::Spanned;
 
 pub mod sexpr;
+pub mod span;
+
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Hash)]
+pub struct NodeId(pub u32);
 
 pub type Stmt = Spanned<StmtKind>;
 pub type Expr = Spanned<ExprKind>;
@@ -61,7 +66,7 @@ pub struct Ident {
     pub sym: Symbol,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub struct Symbol(u32);
 
 impl Index for Symbol {

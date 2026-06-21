@@ -115,7 +115,13 @@ impl<'ty> Display for Ty<'ty> {
             TyKind::Float(FloatTy::Float32) => write!(f, "float32"),
             TyKind::Float(FloatTy::Float64) => write!(f, "float64"),
             TyKind::Str => write!(f, "str"),
-            TyKind::Nullable(inner) => write!(f, "{inner}?"),
+            TyKind::Nullable(inner) => {
+                if inner.kind() == TyKind::Never {
+                    write!(f, "null")
+                } else {
+                    write!(f, "{inner}?")
+                }
+            }
             TyKind::Array(inner) => write!(f, "{inner}[]"),
             TyKind::Tuple(tys) => match &tys[..] {
                 [] => write!(f, "()"),
@@ -167,6 +173,15 @@ mod test {
         let interners = TyInterners::new(&arena);
         let ctx = TyCtx::new(&arena, &interners);
         f(ctx);
+    }
+
+    #[test]
+    fn test_opt_never() {
+        with_ctx(|ctx| {
+            let actual = ctx.common().opt_never;
+            let expected = ctx.mk_ty_from_kind(TyKind::Nullable(ctx.mk_ty_from_kind(TyKind::Never)));
+            assert_eq!(actual, expected);
+        });
     }
 
     #[test]

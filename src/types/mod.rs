@@ -1,6 +1,6 @@
 pub use ty::{Ty, TyKind, Tys};
 
-mod infer;
-mod ty;
-mod ty_ctx;
-mod ty_interners;
+pub mod infer;
+pub mod ty;
+pub mod ty_ctx;
+pub mod ty_interners;

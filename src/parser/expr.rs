@@ -1,7 +1,7 @@
+use crate::ast::span::{Span, Spanned};
 use crate::ast::{BinOp, Block, Expr, ExprKind, Func, Ident, Lit, Program, Stmt, StmtKind, Symbol};
 use crate::parser::SpannedToken;
 use crate::parser::escape::unescape;
-use crate::span::{Span, Spanned};
 
 use super::Parser;
 use super::error::{ParseError, ParseErrorKind, Result};
@@ -9,28 +9,27 @@ use super::lexer::Token;
 
 impl<'a, 'sym> Parser<'a, 'sym> {
     pub(super) fn parse_expr(&mut self) -> Result<'a, Expr> {
+        let start = self.curr_pos();
         let expr = self.parse_prefix()?;
 
         // FIXME
-        match self.peek() {
+        let node = match self.peek() {
             Token::Plus => {
                 let lhs = expr;
                 self.consume()?;
                 let rhs = self.parse_prefix()?;
-                let span = Span::cover(lhs.span, rhs.span);
-                let node = ExprKind::Binary(BinOp::Add, lhs.into(), rhs.into());
-                Ok(Expr { node, span })
+                ExprKind::Binary(BinOp::Add, lhs.into(), rhs.into())
             }
             Token::LeftParen => {
                 let func = expr;
                 self.consume()?;
                 let args = self.parse_args()?;
-                let span = Span::cover(func.span, self.previous.span);
-                let node = ExprKind::Call(func.into(), args);
-                Ok(Expr { node, span })
+                ExprKind::Call(func.into(), args)
             }
-            _ => Ok(expr),
-        }
+            _ => return Ok(expr),
+        };
+
+        Ok(self.make_spanned(start, node))
     }
 
     pub fn parse_prefix(&mut self) -> Result<'a, Expr> {

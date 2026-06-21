@@ -14,6 +14,10 @@ impl Value {
         Self::Null
     }
 
+    pub fn new_bool(value: bool) -> Self {
+        Self::Scalar(value as u64)
+    }
+
     pub fn new_int(value: i64) -> Self {
         Self::Scalar(u64::from_ne_bytes(i64::to_ne_bytes(value)))
     }

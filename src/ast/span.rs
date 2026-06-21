@@ -1,3 +1,5 @@
+use crate::ast::NodeId;
+
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct Span {
     lo: u32,
@@ -6,6 +8,7 @@ pub struct Span {
 
 #[derive(Copy, Clone, Debug)]
 pub struct Spanned<T> {
+    pub id: NodeId,
     pub node: T,
     pub span: Span,
 }

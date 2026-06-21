@@ -1,11 +1,12 @@
 use std::iter::Peekable;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use bumpalo::Bump;
 use logos::{Lexer, Logos, SpannedIter};
 
-use crate::ast::{Expr, Program, Symbol};
+use crate::ast::span::{Span, Spanned};
+use crate::ast::{Expr, NodeId, Program, Symbol};
 use crate::interner::IndexedInterner;
-use crate::span::{Span, Spanned};
 
 use self::error::ParseErrorKind;
 use self::error::{ParseError, Result};
@@ -33,6 +34,8 @@ pub struct Parser<'a, 'sym> {
     current: SpannedToken<'a>,
     /// The previously consumed token
     previous: SpannedToken<'a>,
+    /// The next `NodeId`
+    next_id: AtomicU32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -60,6 +63,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
             lexer: Token::lexer(src).spanned(),
             current: SpannedToken::dummy(),
             previous: SpannedToken::dummy(),
+            next_id: AtomicU32::new(0),
         }
     }
 
@@ -75,9 +79,14 @@ impl<'a, 'sym> Parser<'a, 'sym> {
         Span::new(start, self.curr_pos())
     }
 
-    fn make_spanned<T>(&self, start: u32, node: T) -> Spanned<T> {
+    fn make_spanned<T>(&mut self, start: u32, node: T) -> Spanned<T> {
+        let id = self.next_id();
         let span = self.make_span(start);
-        Spanned { node, span }
+        Spanned { id, node, span }
+    }
+
+    fn next_id(&self) -> NodeId {
+        NodeId(self.next_id.fetch_add(1, Ordering::Relaxed))
     }
 
     /// Returns the current token without consuming it

@@ -57,7 +57,7 @@ fn parse_simple_arithmetic_program() {
             fn main() {
                 print(2 + 2);
             }"#;
-        let expected = r#"(func main (block (print (+ (int 2) (int 2))) none))"#;
+        let expected = r#"(func main (block (call (var print) (+ (int 2) (int 2))) none))"#;
         test_parse(ctx, |p| p.parse_program(), src, expected);
     });
 }

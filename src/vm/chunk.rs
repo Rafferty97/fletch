@@ -99,6 +99,9 @@ mod test {
         };
         let text = chunk.disassemble();
         let mut lines = text.lines();
+        assert_eq!(lines.next(), Some("[attrs]"));
+        assert_eq!(lines.next(), Some("stack_size = 0"));
+        assert_eq!(lines.next(), Some(""));
         assert_eq!(lines.next(), Some("[code]"));
         assert_eq!(lines.next(), Some("start:"));
         assert_eq!(lines.next(), Some("    ret"));

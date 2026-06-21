@@ -1,6 +1,6 @@
+use crate::ast::span::{Span, Spanned};
 use crate::ast::{Block, Expr, ExprKind, Func, Ident, Lit, Program, Stmt, StmtKind, Symbol};
 use crate::parser::SpannedToken;
-use crate::span::{Span, Spanned};
 
 use super::Parser;
 use super::error::{ParseError, ParseErrorKind, Result};

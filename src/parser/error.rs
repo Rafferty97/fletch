@@ -1,7 +1,7 @@
 use thiserror::Error;
 
+use crate::ast::span::Span;
 use crate::parser::escape::{UnescapeError, UnescapeErrorKind};
-use crate::span::Span;
 
 use super::Parser;
 use super::lexer::Token;

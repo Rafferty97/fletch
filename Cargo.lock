@@ -143,6 +143,7 @@ dependencies = [
  "bumpalo",
  "clap",
  "codespan-reporting",
+ "fnv",
  "hashbrown",
  "itertools",
  "line-index",
