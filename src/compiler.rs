@@ -32,24 +32,29 @@ impl<'a, 'sym> Compiler<'a, 'sym> {
     }
 
     fn compile_stmt(&mut self, stmt: &Stmt) -> Result<()> {
-        let stack_pos = self.stack_pos;
-
         match &stmt.node {
+            StmtKind::Let(name, value) => {
+                let sp = self.stack_pos;
+                let rd = self.reserve();
+                let value = self.compile_expr(value, Some(rd))?;
+                self.stack_pos = sp + 1;
+                self.locals.push(name.sym);
+                Ok(())
+            }
             StmtKind::Print(expr) => {
+                let sp = self.stack_pos;
                 let value = self.compile_expr(expr, None)?;
-                self.stack_pos = stack_pos;
                 self.builder.ins(Instr::PrintInt(value));
+                self.stack_pos = sp;
                 Ok(())
             }
         }
     }
 
     fn compile_expr(&mut self, expr: &Expr, rd: Option<Reg>) -> Result<Reg> {
-        let stack_pos = self.stack_pos;
-
         match &expr.node {
             ExprKind::Lit(lit) => {
-                let rd = self.alloc(rd, stack_pos);
+                let rd = rd.unwrap_or_else(|| self.push());
                 self.compile_lit(lit, rd)?;
                 Ok(rd)
             }
@@ -59,18 +64,22 @@ impl<'a, 'sym> Compiler<'a, 'sym> {
                     CompilerError::UndefinedName(name)
                 })?;
                 let r0 = Reg(index as u16);
-                match rd {
-                    Some(rd) => {
+
+                Ok(match rd {
+                    Some(rd) if rd != r0 => {
                         self.builder.ins(Instr::Move { r0, rd });
-                        Ok(rd)
+                        rd
                     }
-                    None => Ok(r0),
-                }
+                    _ => r0,
+                })
             }
             ExprKind::Binary(op, lhs, rhs) => {
+                let sp = self.stack_pos;
                 let r0 = self.compile_expr(lhs, None)?;
                 let r1 = self.compile_expr(rhs, None)?;
-                let rd = self.alloc(rd, stack_pos);
+                self.stack_pos = sp;
+
+                let rd = rd.unwrap_or_else(|| self.push());
                 match op {
                     BinOp::Add => self.builder.ins(Instr::Add { r0, r1, rd }),
                 }
@@ -95,18 +104,21 @@ impl<'a, 'sym> Compiler<'a, 'sym> {
         }
     }
 
-    fn alloc(&mut self, rd: Option<Reg>, pos: u16) -> Reg {
-        match rd {
-            Some(rd) => {
-                self.stack_pos = pos;
-                rd
-            }
-            None => {
-                self.stack_pos = pos + 1;
-                self.stack_size = self.stack_size.max(self.stack_pos);
-                Reg(pos)
-            }
-        }
+    fn reserve(&mut self) -> Reg {
+        let reg = Reg(self.stack_pos);
+        self.stack_size = self.stack_size.max(self.stack_pos + 1);
+        reg
+    }
+
+    fn push(&mut self) -> Reg {
+        let reg = Reg(self.stack_pos);
+        self.stack_pos += 1;
+        self.stack_size = self.stack_size.max(self.stack_pos);
+        reg
+    }
+
+    fn pop(&mut self) {
+        self.stack_pos -= 1;
     }
 }
 

@@ -19,6 +19,8 @@ pub enum Token<'a> {
     Func,
     #[token("print")]
     Print, // FIXME: remove
+    #[token("let")]
+    Let,
     #[token("(")]
     LeftParen,
     #[token(")")]
@@ -35,6 +37,8 @@ pub enum Token<'a> {
     Asterisk,
     #[token("/")]
     Solidus,
+    #[token("=")]
+    Eq,
     #[token(";")]
     Semi,
     Eof,
@@ -58,6 +62,7 @@ impl<'a> std::fmt::Display for Token<'a> {
             Self::False => "'false'",
             Self::Func => "'fn'",
             Self::Print => "'print'",
+            Self::Let => "'let'",
             Self::LeftParen => "'('",
             Self::RightParen => "')'",
             Self::LeftBrace => "'{'",
@@ -66,6 +71,7 @@ impl<'a> std::fmt::Display for Token<'a> {
             Self::Minus => "'-'",
             Self::Asterisk => "'*'",
             Self::Solidus => "'/'",
+            Self::Eq => "'='",
             Self::Semi => "';'",
             Self::Eof => "end of input",
         };

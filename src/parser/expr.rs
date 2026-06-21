@@ -28,11 +28,21 @@ impl<'a, 'sym> Parser<'a, 'sym> {
     pub(super) fn parse_prefix(&mut self) -> Result<'a, Expr> {
         let start = self.curr_pos();
 
-        let kind = match self.consume()?.token {
-            Token::Null => ExprKind::Lit(Lit::Null),
-            Token::False => ExprKind::Lit(Lit::Bool(false)),
-            Token::True => ExprKind::Lit(Lit::Bool(true)),
+        let kind = match self.peek() {
+            Token::Null => {
+                self.consume()?;
+                ExprKind::Lit(Lit::Null)
+            }
+            Token::False => {
+                self.consume()?;
+                ExprKind::Lit(Lit::Bool(false))
+            }
+            Token::True => {
+                self.consume()?;
+                ExprKind::Lit(Lit::Bool(true))
+            }
             Token::Number(raw) => {
+                self.consume()?;
                 let lit = if raw.contains('.') {
                     Lit::Float(self.make_symbol(raw))
                 } else {
@@ -41,6 +51,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 ExprKind::Lit(lit)
             }
             Token::Str(raw) => {
+                self.consume()?;
                 let unescaped = match unescape(&raw[1..raw.len() - 1]) {
                     Ok(str) => self.make_symbol(&str),
                     Err(err) => {
@@ -51,7 +62,8 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 };
                 ExprKind::Lit(Lit::Str(unescaped))
             }
-            _ => Err(self.unexpected_token())?,
+            Token::Ident(raw) => ExprKind::Var(self.parse_ident()?),
+            _ => Err(self.unexpected_curr())?,
         };
 
         Ok(self.make_spanned(start, kind))

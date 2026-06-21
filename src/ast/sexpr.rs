@@ -51,6 +51,13 @@ impl<'a, 'sym> SExprCtx<'a, 'sym> {
 
     fn write_stmt(&mut self, stmt: &Stmt) {
         match &stmt.node {
+            StmtKind::Let(name, value) => {
+                self.str.push_str("(let ");
+                self.write_sym(name.sym);
+                self.str.push(' ');
+                self.write_expr(value);
+                self.str.push(')');
+            }
             StmtKind::Print(expr) => {
                 self.str.push_str("(print ");
                 self.write_expr(expr);
@@ -64,7 +71,7 @@ impl<'a, 'sym> SExprCtx<'a, 'sym> {
             ExprKind::Lit(lit) => self.write_lit(lit),
             ExprKind::Var(var) => {
                 self.str.push_str("(var ");
-                self.str.push_str(self.sym_interner.get_str(var.sym));
+                self.write_sym(var.sym);
                 self.str.push(')');
             }
             ExprKind::Binary(op, lhs, rhs) => {
@@ -92,12 +99,12 @@ impl<'a, 'sym> SExprCtx<'a, 'sym> {
             Lit::Bool(true) => self.str.push_str("true"),
             Lit::Int(sym) => {
                 self.str.push_str("(int ");
-                self.str.push_str(self.sym_interner.get_str(*sym));
+                self.write_sym(*sym);
                 self.str.push(')');
             }
             Lit::Float(sym) => {
                 self.str.push_str("(float ");
-                self.str.push_str(self.sym_interner.get_str(*sym));
+                self.write_sym(*sym);
                 self.str.push(')');
             }
             Lit::Str(sym) => {
@@ -108,5 +115,9 @@ impl<'a, 'sym> SExprCtx<'a, 'sym> {
             }
             Lit::Err(_) => self.str.push_str("err"),
         }
+    }
+
+    fn write_sym(&mut self, sym: Symbol) {
+        self.str.push_str(self.sym_interner.get_str(sym));
     }
 }

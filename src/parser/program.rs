@@ -47,6 +47,14 @@ impl<'a, 'sym> Parser<'a, 'sym> {
     fn parse_stmt(&mut self) -> Result<'a, Stmt> {
         let start = self.curr_pos();
         match self.peek() {
+            Token::Let => {
+                self.consume()?;
+                let name = self.parse_ident()?;
+                self.expect(Token::Eq)?;
+                let value = self.parse_expr()?.into();
+                self.expect(Token::Semi)?;
+                Ok(self.make_spanned(start, StmtKind::Let(name, value)))
+            }
             Token::Print => {
                 self.consume()?;
                 self.expect(Token::LeftParen)?;
@@ -55,11 +63,11 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 self.expect(Token::Semi)?;
                 Ok(self.make_spanned(start, StmtKind::Print(expr)))
             }
-            _ => Err(self.unexpected_token()),
+            _ => Err(self.unexpected_curr()),
         }
     }
 
-    fn parse_ident(&mut self) -> Result<'a, Ident> {
+    pub(crate) fn parse_ident(&mut self) -> Result<'a, Ident> {
         let token = self.consume()?;
         let Token::Ident(raw) = token.token else {
             Err(self.error(ParseErrorKind::ExpectedToken { act: token.token, exp: Token::Ident("") }))?

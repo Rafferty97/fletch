@@ -36,8 +36,14 @@ impl<'a, 'sym> Parser<'a, 'sym> {
     }
 
     /// Creates an unexpected token error from the current (unconsumed) token
-    pub(super) fn unexpected_token(&self) -> ParseError<'a> {
+    pub(super) fn unexpected_curr(&self) -> ParseError<'a> {
         let kind = ParseErrorKind::UnexpectedToken { act: self.current.token };
         ParseError { kind, span: self.current.span }
+    }
+
+    /// Creates an unexpected token error from the previously consumed token
+    pub(super) fn unexpected_prev(&self) -> ParseError<'a> {
+        let kind = ParseErrorKind::UnexpectedToken { act: self.previous.token };
+        ParseError { kind, span: self.previous.span }
     }
 }

@@ -28,6 +28,7 @@ pub struct Block {
 
 #[derive(Clone, Debug)]
 pub enum StmtKind {
+    Let(Ident, Box<Expr>),
     Print(Box<Expr>),
 }
 
