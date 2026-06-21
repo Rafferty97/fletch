@@ -93,7 +93,7 @@ mod test {
                 print(2 + 2)
             }"#;
 
-        let mut lexer = Token::lexer(src);
+        let mut lexer = Token::lexer(src.trim());
         let mut next = || lexer.next().unwrap().unwrap();
 
         assert_eq!(next(), Token::Func);
@@ -101,12 +101,14 @@ mod test {
         assert_eq!(next(), Token::LeftParen);
         assert_eq!(next(), Token::RightParen);
         assert_eq!(next(), Token::LeftBrace);
+        assert_eq!(next(), Token::Newline);
         assert_eq!(next(), Token::Ident("print"));
         assert_eq!(next(), Token::LeftParen);
         assert_eq!(next(), Token::Number("2"));
         assert_eq!(next(), Token::Plus);
         assert_eq!(next(), Token::Number("2"));
         assert_eq!(next(), Token::RightParen);
+        assert_eq!(next(), Token::Newline);
         assert_eq!(next(), Token::RightBrace);
         assert_eq!(lexer.next(), None);
     }
