@@ -1,7 +1,7 @@
 use logos::Logos;
 
 #[derive(Logos, Copy, Clone, PartialEq, Eq, Debug)]
-#[logos(skip r"[ \t\r\n\f]+")]
+#[logos(skip r"[ \t\r\f]+")]
 pub enum Token<'a> {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*")]
     Ident(&'a str),
@@ -41,6 +41,8 @@ pub enum Token<'a> {
     Comma,
     #[token(";")]
     Semi,
+    #[token("\n")]
+    Newline,
     Eof,
 }
 
@@ -73,6 +75,7 @@ impl<'a> std::fmt::Display for Token<'a> {
             Self::Eq => "'='",
             Self::Semi => "';'",
             Self::Comma => "','",
+            Self::Newline => "new line",
             Self::Eof => "end of input",
         };
         write!(f, "{}", str)

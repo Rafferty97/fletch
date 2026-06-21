@@ -97,15 +97,37 @@ impl<'a, 'sym> Parser<'a, 'sym> {
     /// Consumes the current token and returns it
     fn consume(&mut self) -> Result<'a, SpannedToken<'a>> {
         self.previous = self.current;
-        self.current = match self.lexer.next() {
-            Some((Ok(token), span)) => SpannedToken { token, span: span.into() },
-            Some((Err(_), span)) => Err(ParseError { kind: ParseErrorKind::Lex, span: span.into() })?,
-            None => {
-                let pos = self.previous.span.hi();
-                SpannedToken { token: Token::Eof, span: Span::new(pos, pos) }
+        self.current = loop {
+            let token = match self.lexer.next() {
+                Some((Ok(token), span)) => SpannedToken { token, span: span.into() },
+                Some((Err(_), span)) => Err(ParseError { kind: ParseErrorKind::Lex, span: span.into() })?,
+                None => {
+                    let pos = self.previous.span.hi();
+                    SpannedToken { token: Token::Eof, span: Span::new(pos, pos) }
+                }
+            };
+            if token.token == Token::Newline {
+                if self.should_insert_semi() {
+                    break SpannedToken { token: Token::Semi, ..token };
+                }
+            } else {
+                break token;
             }
         };
         Ok(self.previous)
+    }
+
+    fn should_insert_semi(&self) -> bool {
+        match self.previous.token {
+            Token::Ident(_) => true,
+            Token::Null => true,
+            Token::False | Token::True => true,
+            Token::Number(_) => true,
+            Token::Str(_) => true,
+            Token::RightParen => true,
+            // Token::RightBrace => true,
+            _ => false,
+        }
     }
 
     /// Consumes the current token, checks that it matches the expected token, and returns it
