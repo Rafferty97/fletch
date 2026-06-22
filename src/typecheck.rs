@@ -79,7 +79,6 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 }
             },
             ExprKind::Binary(op, lhs, rhs) => {
-                println!("{op:?}, {lhs:?}, {rhs:?}");
                 let lhs = self.check_expr(lhs, self.common().infer)?;
                 let rhs = self.check_expr(rhs, self.common().infer)?;
                 if lhs == rhs {
