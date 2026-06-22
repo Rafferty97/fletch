@@ -6,14 +6,18 @@ use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 
 use crate::ast::sexpr::{SExpr, SExprCtx};
 use crate::ast::{ExprKind, Lit, StmtKind};
-use crate::compiler::compile_func;
+use crate::compile::compile_func;
 use crate::interner::IndexedInterner;
 use crate::parser::error::ParseError;
 use crate::parser::{ParseCtx, Parser};
+use crate::typecheck::TypeChecker;
+use crate::types::ty_ctx::TyCtx;
+use crate::types::ty_interners::{self, TyInterners};
 use crate::vm::Vm;
 
 #[derive(Default)]
 pub struct FletchOpts {
+    pub sexpr: bool,
     pub disassemble: bool,
 }
 
@@ -40,15 +44,30 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts) {
             return;
         }
     };
+    let sym_table = &sym_interner.freeze();
 
     // Print s-expr
-    // let mut output = String::new();
-    // let mut sexpr_ctx = SExprCtx { str: &mut output, sym_interner: &sym_interner };
-    // SExpr::write(&ast, &mut sexpr_ctx);
-    // println!("{output}");
+    if opts.sexpr {
+        let mut output = String::new();
+        let mut sexpr_ctx = SExprCtx { str: &mut output, sym_table };
+        SExpr::write(&ast, &mut sexpr_ctx);
+        println!("{output}\n");
+    }
+
+    // Typecheck
+    let ty_interners = TyInterners::new(&arena);
+    let ty_ctx = TyCtx::new(&arena, &ty_interners);
+    let mut checker = TypeChecker::new(ty_ctx, sym_table);
+    match checker.check_func(&ast.main) {
+        Ok(_) => {}
+        Err(err) => {
+            eprintln!("type error: {}", err);
+            return;
+        }
+    }
 
     // Compile
-    let chunk = match compile_func(&ast.main, &arena, &sym_interner) {
+    let chunk = match compile_func(&ast.main, sym_table) {
         Ok(func) => func,
         Err(err) => {
             eprintln!("compiler error: {err}");
@@ -56,8 +75,8 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts) {
         }
     };
 
+    // Print chunk
     if opts.disassemble {
-        // Print chunk
         println!("{}", chunk.disassemble());
     }
 

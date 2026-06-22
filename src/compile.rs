@@ -4,42 +4,37 @@ use itertools::Itertools;
 use thiserror::Error;
 
 use crate::ast::{BinOp, Expr, ExprKind, Func, Ident, Lit, NodeId, Stmt, StmtKind, Symbol};
-use crate::interner::IndexedInterner;
+use crate::interner::IndexTable;
 use crate::types::Ty;
 use crate::types::infer::TypeError;
 use crate::vm::chunk::{Chunk, ChunkBuilder};
 use crate::vm::instr::{Instr, Reg};
 use crate::vm::value::Value;
 
-mod typecheck;
-
-pub fn compile_func(ast: &Func, arena: &Bump, sym_interner: &IndexedInterner<'_, Symbol, str>) -> Result<Chunk> {
+pub fn compile_func(ast: &Func, sym_table: &IndexTable<'_, Symbol, str>) -> Result<Chunk> {
     let builder = ChunkBuilder::new();
     let mut compiler = Compiler {
         builder,
-        sym_interner,
+        sym_table,
         type_map: FnvHashMap::default(),
-        arena,
         locals: vec![],
         stack_pos: 0,
         stack_size: 0,
     };
-    compiler.typech_func(ast)?;
     compiler.compile_func(ast)?;
     Ok(compiler.builder.build(compiler.stack_size as usize))
 }
 
-struct Compiler<'a, 'sym, 'ty> {
+struct Compiler<'a> {
     builder: ChunkBuilder,
-    sym_interner: &'a IndexedInterner<'sym, Symbol, str>,
-    arena: &'ty Bump,
-    type_map: FnvHashMap<NodeId, Ty<'ty>>,
+    sym_table: &'a IndexTable<'a, Symbol, str>,
+    type_map: FnvHashMap<NodeId, Ty<'a>>,
     locals: Vec<Symbol>,
     stack_pos: u16,
     stack_size: u16,
 }
 
-impl<'a, 'sym, 'ty> Compiler<'a, 'sym, 'ty> {
+impl<'a> Compiler<'a> {
     fn compile_func(&mut self, ast: &Func) -> Result<()> {
         for stmt in &ast.body.stmts {
             self.compile_stmt(stmt)?;
@@ -73,9 +68,6 @@ impl<'a, 'sym, 'ty> Compiler<'a, 'sym, 'ty> {
                 Ok(())
             }
             StmtKind::Assign(lhs, rhs) => {
-                let ExprKind::Var(lhs) = &lhs.node else {
-                    Err(CompilerError::InvalidAssignment)?
-                };
                 let sp = self.stack_pos;
                 let rd = self.lookup_var(lhs)?;
                 self.compile_expr(rhs, Some(rd))?;
@@ -117,7 +109,7 @@ impl<'a, 'sym, 'ty> Compiler<'a, 'sym, 'ty> {
             }
             ExprKind::Call(func, args) => {
                 let ExprKind::Var(func) = func.node else { todo!() };
-                match self.sym_interner.get_str(func.sym) {
+                match self.sym_table.get_str(func.sym) {
                     "print" => {
                         let [arg] = &args[..] else {
                             Err(CompilerError::Arity { exp: 1, act: args.len() })?
@@ -147,7 +139,7 @@ impl<'a, 'sym, 'ty> Compiler<'a, 'sym, 'ty> {
             }
             &Lit::Int(sym) => {
                 let value = self
-                    .sym_interner
+                    .sym_table
                     .get_str(sym)
                     .parse()
                     .map_err(|_| CompilerError::InvalidLiteral)?;
@@ -157,7 +149,7 @@ impl<'a, 'sym, 'ty> Compiler<'a, 'sym, 'ty> {
             }
             &Lit::Float(sym) => {
                 let value = self
-                    .sym_interner
+                    .sym_table
                     .get_str(sym)
                     .parse()
                     .map_err(|_| CompilerError::InvalidLiteral)?;
@@ -166,7 +158,7 @@ impl<'a, 'sym, 'ty> Compiler<'a, 'sym, 'ty> {
                 Ok(())
             }
             &Lit::Str(str) => {
-                let str = self.sym_interner.get_str(str);
+                let str = self.sym_table.get_str(str);
                 let imm = self.builder.constant(Value::new_str(str));
                 self.builder.ins(Instr::Const(rd, imm));
                 Ok(())
@@ -177,7 +169,7 @@ impl<'a, 'sym, 'ty> Compiler<'a, 'sym, 'ty> {
 
     fn lookup_var(&self, ident: &Ident) -> Result<Reg> {
         let index = self.locals.iter().position(|s| *s == ident.sym).ok_or_else(|| {
-            let name = self.sym_interner.get_str(ident.sym).into();
+            let name = self.sym_table.get_str(ident.sym).into();
             CompilerError::UndefinedName(name)
         })?;
         Ok(Reg(index as u16))
@@ -207,8 +199,6 @@ pub enum CompilerError {
     InvalidLiteral,
     #[error("cannot find name `{0}`")]
     UndefinedName(Box<str>),
-    #[error("cannot assign to this expression")]
-    InvalidAssignment,
     #[error("expected {exp} arguments, got {act}")]
     Arity { exp: usize, act: usize },
     #[error("{0}")]

@@ -7,6 +7,9 @@ use tap::Pipe;
 struct Args {
     /// Input file
     filename: PathBuf,
+    /// Print the parsed AST as an s-expr
+    #[arg(long)]
+    sexpr: bool,
     /// Print disassembly of each chunk
     #[arg(short, long)]
     disassemble: bool,
@@ -22,7 +25,7 @@ pub fn run() -> Result<(), String> {
         .pipe(String::from_utf8)
         .map_err(|_| format!("Cannot read '{}': Invalid UTF-8", &filename))?;
 
-    let opts = eld::FletchOpts { disassemble: args.disassemble };
+    let opts = eld::FletchOpts { sexpr: args.sexpr, disassemble: args.disassemble };
 
     eld::run(&filename, &src, opts);
 

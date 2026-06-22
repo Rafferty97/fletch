@@ -1,6 +1,7 @@
 use std::hash::{BuildHasher, Hash, RandomState};
+use std::marker::PhantomData;
 use std::ops::Deref;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use bumpalo::Bump;
 use hashbrown::HashTable;
@@ -99,6 +100,14 @@ impl<'a, S, T: ?Sized> IndexedInterner<'a, S, T> {
     pub fn size(&self) -> usize {
         self.values.lock().unwrap().len()
     }
+
+    pub fn freeze(self) -> OwnedIndexTable<'a, S, T> {
+        OwnedIndexTable { values: self.values.into_inner().unwrap(), _symbol: PhantomData }
+    }
+
+    pub fn snapshot(&self) -> OwnedIndexTable<'a, S, T> {
+        OwnedIndexTable { values: self.values.lock().unwrap().clone(), _symbol: PhantomData }
+    }
 }
 
 impl<'a, S: Index> IndexedInterner<'a, S, str> {
@@ -122,6 +131,40 @@ impl<'a, S: Index> IndexedInterner<'a, S, str> {
 
     pub fn get_str(&self, symbol: S) -> &'a str {
         self.values.lock().unwrap()[symbol.into_usize()]
+    }
+}
+
+#[repr(transparent)]
+pub struct IndexTable<'a, S, T: ?Sized> {
+    _symbol: PhantomData<S>,
+    values: [&'a T],
+}
+
+impl<'a, S, T: ?Sized> IndexTable<'a, S, T> {
+    pub fn from_slice<'s>(values: &'s [&'a T]) -> &'s Self {
+        // SAFETY: repr(transparent) gives IndexTable the same layout and the
+        // same pointer metadata (slice length) as [&'a T], so reinterpreting
+        // the fat pointer preserves len. This is the Path::new pattern.
+        unsafe { &*(values as *const [&'a T] as *const Self) }
+    }
+}
+
+impl<'a, S: Index> IndexTable<'a, S, str> {
+    pub fn get_str(&self, symbol: S) -> &'a str {
+        self.values[symbol.into_usize()]
+    }
+}
+
+pub struct OwnedIndexTable<'a, S, T: ?Sized> {
+    values: Vec<&'a T>,
+    _symbol: PhantomData<S>,
+}
+
+impl<'a, S, T: ?Sized> Deref for OwnedIndexTable<'a, S, T> {
+    type Target = IndexTable<'a, S, T>;
+
+    fn deref(&self) -> &Self::Target {
+        IndexTable::from_slice(&self.values)
     }
 }
 

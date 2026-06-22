@@ -3,11 +3,12 @@
 pub use driver::{FletchOpts, run};
 
 mod ast;
-mod compiler;
+mod compile;
 mod diagnostics;
 mod driver;
 mod interner;
 mod parser;
+mod typecheck;
 mod types;
 mod util;
 mod vm;

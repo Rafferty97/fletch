@@ -35,7 +35,7 @@ pub struct Block {
 pub enum StmtKind {
     Expr(Box<Expr>),
     Let(Ident, Box<Expr>),
-    Assign(Box<Expr>, Box<Expr>),
+    Assign(Ident, Box<Expr>),
 }
 
 #[derive(Clone, Debug)]

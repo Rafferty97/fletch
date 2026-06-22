@@ -26,7 +26,8 @@ where
     parser.consume().unwrap();
     let result = parse(&mut parser).unwrap();
     let mut actual = String::new();
-    let mut sexpr_ctx = SExprCtx { str: &mut actual, sym_interner: ctx.sym_interner };
+    let sym_table = &ctx.sym_interner.snapshot();
+    let mut sexpr_ctx = SExprCtx { str: &mut actual, sym_table };
     result.write(&mut sexpr_ctx);
     assert_eq!(actual, expected);
 }

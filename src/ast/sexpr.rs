@@ -1,12 +1,14 @@
+use crate::interner::IndexTable;
+
 use super::*;
 
 pub trait SExpr {
     fn write(&self, ctx: &mut SExprCtx);
 }
 
-pub struct SExprCtx<'a, 'sym> {
+pub struct SExprCtx<'a> {
     pub str: &'a mut String,
-    pub sym_interner: &'a IndexedInterner<'sym, Symbol, str>,
+    pub sym_table: &'a IndexTable<'a, Symbol, str>,
 }
 
 impl SExpr for Program {
@@ -21,14 +23,14 @@ impl SExpr for Expr {
     }
 }
 
-impl<'a, 'sym> SExprCtx<'a, 'sym> {
+impl<'a> SExprCtx<'a> {
     fn write_program(&mut self, node: &Program) {
         self.write_func(&node.main);
     }
 
     fn write_func(&mut self, node: &Func) {
         self.str.push_str("(func ");
-        self.str.push_str(self.sym_interner.get_str(node.name.sym));
+        self.str.push_str(self.sym_table.get_str(node.name.sym));
         self.str.push(' ');
         self.write_block(&node.body);
         self.str.push(')');
@@ -63,7 +65,7 @@ impl<'a, 'sym> SExprCtx<'a, 'sym> {
             }
             StmtKind::Assign(lhs, rhs) => {
                 self.str.push_str("(= ");
-                self.write_expr(lhs);
+                self.write_sym(lhs.sym);
                 self.str.push(' ');
                 self.write_expr(rhs);
                 self.str.push(')');
@@ -125,7 +127,7 @@ impl<'a, 'sym> SExprCtx<'a, 'sym> {
             }
             Lit::Str(sym) => {
                 self.str.push_str("(str \"");
-                let str = self.sym_interner.get_str(*sym);
+                let str = self.sym_table.get_str(*sym);
                 self.str.push_str(&crate::parser::escape::escape(str));
                 self.str.push_str("\")");
             }
@@ -134,6 +136,6 @@ impl<'a, 'sym> SExprCtx<'a, 'sym> {
     }
 
     fn write_sym(&mut self, sym: Symbol) {
-        self.str.push_str(self.sym_interner.get_str(sym));
+        self.str.push_str(self.sym_table.get_str(sym));
     }
 }

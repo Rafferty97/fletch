@@ -59,7 +59,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 let expr = self.parse_expr()?;
                 match self.consume()?.token {
                     Token::Eq => {
-                        let lhs = expr.into();
+                        let lhs = convert_expr_to_place(expr)?;
                         let rhs = self.parse_expr()?.into();
                         self.expect(Token::Semi)?;
                         StmtKind::Assign(lhs, rhs)
@@ -78,5 +78,12 @@ impl<'a, 'sym> Parser<'a, 'sym> {
             Err(self.error(ParseErrorKind::ExpectedToken { act: token.token, exp: Token::Ident("") }))?
         };
         Ok(Ident { sym: self.make_symbol(raw) })
+    }
+}
+
+fn convert_expr_to_place(expr: Expr) -> Result<'static, Ident> {
+    match expr.node {
+        ExprKind::Var(ident) => Ok(ident),
+        _ => Err(ParseError { kind: ParseErrorKind::InvalidAssignment, span: expr.span }),
     }
 }

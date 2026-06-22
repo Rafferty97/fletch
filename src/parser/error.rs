@@ -27,6 +27,8 @@ pub enum ParseErrorKind<'a> {
     UnexpectedEof,
     #[error("{0}")]
     UnescapeStr(UnescapeErrorKind),
+    #[error("this expression can not be assigned to")]
+    InvalidAssignment,
 }
 
 impl<'a, 'sym> Parser<'a, 'sym> {
