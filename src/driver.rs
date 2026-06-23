@@ -1,5 +1,7 @@
+use std::num;
+
 use bumpalo::Bump;
-use codespan_reporting::diagnostic::{Diagnostic, Label};
+use codespan_reporting::diagnostic::{self, Diagnostic, Label};
 use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
@@ -7,7 +9,7 @@ use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use crate::ast::sexpr::{SExpr, SExprCtx};
 use crate::ast::{ExprKind, Lit, StmtKind};
 use crate::compile::compile_func;
-use crate::diagnostics::{DiagnosticReporter, VecReporter};
+use crate::diagnostics::{DiagnosticReporter, Level, VecReporter};
 use crate::interner::IndexedInterner;
 use crate::name_resolution::{self, NameResolution};
 use crate::parser::error::ParseError;
@@ -75,21 +77,25 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts) {
     }
 
     // Report errors and bail if necessary
-    let failed = errors.has_errors();
-    let errors = errors.into_errors();
-
-    let err_cnt = errors.len();
-    for err in errors {
-        let mut labels = vec![Label::primary(file_id, err.span).with_message(&err.message)];
-        if let Some((msg, span)) = err.secondary {
-            labels.push(Label::secondary(file_id, span).with_message(msg));
-        }
-        let diagnostic = Diagnostic::error().with_message(&err.message).with_labels(labels);
+    let num_errors = errors.num_errors();
+    for err in errors.into_errors() {
+        let primary = Label::primary(file_id, err.primary.span).with_message(&err.primary.message);
+        let secondary = err
+            .secondary
+            .iter()
+            .map(|l| Label::secondary(file_id, l.span).with_message(&l.message));
+        let labels = std::iter::once(primary).chain(secondary).collect();
+        let diagnostic = match err.level {
+            Level::Error => Diagnostic::error(),
+            Level::Warning => Diagnostic::warning(),
+        };
+        let diagnostic = diagnostic.with_message(&err.primary.message).with_labels(labels);
         term::emit_to_write_style(&mut writer.lock(), &config, &files, &diagnostic).unwrap();
     }
 
-    if failed {
-        eprintln!("error: could not run `{}` due to {} errors", filename, err_cnt);
+    if num_errors > 0 {
+        let s = if num_errors == 1 { "" } else { "s" };
+        eprintln!("error: could not run `{}` due to {} error{}", filename, num_errors, s);
         return;
     }
 

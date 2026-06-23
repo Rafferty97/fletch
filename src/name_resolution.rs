@@ -63,12 +63,12 @@ impl<'a> NameResolution<'a> {
                     self.resolve_expr(rhs);
                     let Some(binding_info) = self.resolve_name(*name) else {
                         let msg = format!("cannot find `{}` in this scope", self.sym_table.get_str(name.sym));
-                        self.errors.report(Diagnostic::new(msg, name.span));
+                        self.errors.report(Diagnostic::error(msg, name.span));
                         continue;
                     };
                     if binding_info.mutability == Mutability::Not {
-                        let diag = Diagnostic::new("cannot assign to immutable binding", name.span)
-                            .with_secondary("variable was declared here", binding_info.span);
+                        let diag = Diagnostic::error("cannot assign to immutable binding", name.span)
+                            .with_label("variable was declared here", binding_info.span);
                         self.errors.report(diag);
                     }
                 }
@@ -84,7 +84,7 @@ impl<'a> NameResolution<'a> {
                 Some(_) => {}
                 None => {
                     let msg = format!("cannot find `{}` in this scope", self.sym_table.get_str(name.sym));
-                    self.errors.report(Diagnostic::new(msg, name.span));
+                    self.errors.report(Diagnostic::error(msg, name.span));
                 }
             },
             ExprKind::Binary(_, lhs, rhs) => {

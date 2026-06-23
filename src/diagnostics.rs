@@ -3,25 +3,51 @@ use std::sync::{Arc, Mutex};
 use crate::ast::span::Span;
 
 pub trait DiagnosticReporter {
-    fn report(&self, diagnostic: Diagnostic) -> ErrGuaranteed;
+    fn report(&self, diagnostic: Diagnostic);
+
+    fn report_err(&self, diagnostic: Diagnostic) -> ErrGuaranteed {
+        assert!(diagnostic.is_error());
+        self.report(diagnostic);
+        ErrGuaranteed(())
+    }
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Diagnostic {
     pub level: Level,
+    pub primary: Label,
+    pub secondary: Vec<Label>,
+    pub notes: Vec<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Label {
     pub message: String,
     pub span: Span,
-    pub secondary: Option<(String, Span)>,
 }
 
 impl Diagnostic {
-    pub fn new(message: impl Into<String>, span: Span) -> Self {
-        Self { level: Level::Error, message: message.into(), span, secondary: None }
+    pub fn new(level: Level, message: impl Into<String>, span: Span) -> Self {
+        let primary = Label { message: message.into(), span };
+        Self { level, primary, secondary: vec![], notes: vec![] }
     }
 
-    pub fn with_secondary(self, message: impl Into<String>, span: Span) -> Self {
-        let secondary = Some((message.into(), span));
-        Self { secondary, ..self }
+    pub fn error(message: impl Into<String>, span: Span) -> Self {
+        Self::new(Level::Error, message, span)
+    }
+
+    pub fn warning(message: impl Into<String>, span: Span) -> Self {
+        Self::new(Level::Error, message, span)
+    }
+
+    pub fn with_label(mut self, message: impl Into<String>, span: Span) -> Self {
+        self.secondary.push(Label { message: message.into(), span });
+        self
+    }
+
+    pub fn with_note(mut self, note: impl Into<String>) -> Self {
+        self.notes.push(note.into());
+        self
     }
 
     pub fn is_error(&self) -> bool {
@@ -43,9 +69,7 @@ pub fn dummy_reporter() -> &'static impl DiagnosticReporter {
     struct Reporter;
 
     impl DiagnosticReporter for Reporter {
-        fn report(&self, diagnostic: Diagnostic) -> ErrGuaranteed {
-            ErrGuaranteed(())
-        }
+        fn report(&self, diagnostic: Diagnostic) {}
     }
 
     &Reporter
@@ -59,8 +83,8 @@ impl VecReporter {
         Self(Arc::default())
     }
 
-    pub fn has_errors(&self) -> bool {
-        self.0.lock().unwrap().iter().any(|d| d.is_error())
+    pub fn num_errors(&self) -> usize {
+        self.0.lock().unwrap().iter().filter(|d| d.is_error()).count()
     }
 
     pub fn into_errors(&self) -> Vec<Diagnostic> {
@@ -76,8 +100,7 @@ impl VecReporter {
 }
 
 impl DiagnosticReporter for VecReporter {
-    fn report(&self, diagnostic: Diagnostic) -> ErrGuaranteed {
+    fn report(&self, diagnostic: Diagnostic) {
         self.0.lock().unwrap().push(diagnostic);
-        ErrGuaranteed(())
     }
 }
