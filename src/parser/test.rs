@@ -5,6 +5,7 @@ use std::fmt::Display;
 use bumpalo::Bump;
 
 use crate::ast::sexpr::{SExpr, SExprCtx};
+use crate::diagnostics::dummy_reporter;
 use crate::interner::IndexedInterner;
 use crate::parser::ParseCtx;
 
@@ -13,17 +14,17 @@ use super::*;
 fn with_parse_ctx(f: impl FnOnce(ParseCtx)) {
     let arena = &Bump::new();
     let sym_interner = &IndexedInterner::new();
-    let ctx = ParseCtx { arena, sym_interner };
+    let errors = dummy_reporter();
+    let ctx = ParseCtx { arena, sym_interner, errors };
     f(ctx);
 }
 
 fn test_parse<'a, T, P>(ctx: ParseCtx<'a, '_>, parse: P, src: &'a str, expected: &str)
 where
     T: SExpr,
-    P: FnOnce(&mut Parser<'a, '_>) -> Result<'a, T>,
+    P: FnOnce(&mut Parser<'a, '_>) -> Result<T>,
 {
     let mut parser = Parser::new(ctx, src);
-    parser.consume().unwrap();
     let result = parse(&mut parser).unwrap();
     let mut actual = String::new();
     let sym_table = &ctx.sym_interner.snapshot();
@@ -59,6 +60,6 @@ fn parse_simple_arithmetic_program() {
                 print(2 + 2);
             }"#;
         let expected = r#"(func main (block (call (var print) (+ (int 2) (int 2))) none))"#;
-        test_parse(ctx, |p| p.parse_program(), src, expected);
+        test_parse(ctx, |p| Ok(p.parse_program()), src, expected);
     });
 }

@@ -1,5 +1,7 @@
 use logos::Logos;
 
+use crate::diagnostics::ErrGuaranteed;
+
 #[derive(Logos, Copy, Clone, PartialEq, Eq, Debug)]
 #[logos(skip r"[ \t\r\f]+")]
 pub enum Token<'a> {
@@ -46,6 +48,7 @@ pub enum Token<'a> {
     #[token("\n")]
     Newline,
     Eof,
+    Err(ErrGuaranteed),
 }
 
 impl<'a> Token<'a> {
@@ -80,6 +83,7 @@ impl<'a> std::fmt::Display for Token<'a> {
             Self::Comma => "','",
             Self::Newline => "new line",
             Self::Eof => "end of input",
+            Self::Err(_) => "unknown character",
         };
         write!(f, "{}", str)
     }

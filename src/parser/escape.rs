@@ -10,16 +10,16 @@ pub struct UnescapeError {
 #[derive(Error, Debug, Clone, PartialEq, Eq)]
 pub enum UnescapeErrorKind {
     /// Invalid escape sequence
-    #[error("Invalid escape sequence '{sequence}'")]
+    #[error("invalid escape sequence '{sequence}'")]
     InvalidEscape { sequence: String },
     /// Incomplete escape sequence at end of string
-    #[error("Incomplete escape sequence")]
+    #[error("incomplete escape sequence")]
     IncompleteEscape,
     /// Invalid unicode escape sequence
-    #[error("Invalid unicode codepoint U+{value:X}")]
+    #[error("invalid unicode codepoint U+{value:X}")]
     InvalidUnicode { value: u32 },
     /// Unexpected end of string
-    #[error("Unexpected end of string")]
+    #[error("unexpected end of string")]
     UnexpectedEnd,
 }
 

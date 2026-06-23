@@ -6,6 +6,7 @@ use thiserror::Error;
 
 use crate::ast::span::Span;
 use crate::ast::{Expr, ExprKind, Func, Lit, NodeId, Stmt, StmtKind, Symbol};
+use crate::diagnostics::{Diagnostic, DiagnosticReporter};
 use crate::interner::IndexTable;
 use crate::types::Ty;
 use crate::types::infer::TypeError;
@@ -17,17 +18,23 @@ pub struct TypeChecker<'a, 'ty> {
     type_map: FnvHashMap<NodeId, Ty<'ty>>,
     locals: FnvHashMap<Symbol, Ty<'ty>>,
     sym_table: &'a IndexTable<'a, Symbol, str>,
+    errors: &'a dyn DiagnosticReporter,
 }
 
 pub type Result<'ty, T> = std::result::Result<T, TypeError<'ty>>;
 
 impl<'a, 'ty> TypeChecker<'a, 'ty> {
-    pub fn new(ty_ctx: TyCtx<'a, 'ty>, sym_table: &'a IndexTable<'a, Symbol, str>) -> Self {
+    pub fn new(
+        ty_ctx: TyCtx<'a, 'ty>,
+        sym_table: &'a IndexTable<'a, Symbol, str>,
+        errors: &'a dyn DiagnosticReporter,
+    ) -> Self {
         Self {
             ty_ctx,
             type_map: FnvHashMap::default(),
             locals: FnvHashMap::default(),
             sym_table,
+            errors,
         }
     }
 
@@ -73,9 +80,10 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             ExprKind::Var(name) => match self.locals.get(&name.sym) {
                 Some(ty) => *ty,
                 None => {
-                    // let name = self.sym_table.get_str(name.sym).into();
-                    // Err(CompilerError::UndefinedName(name))?
-                    todo!()
+                    let span = name.span;
+                    let name = self.sym_table.get_str(name.sym);
+                    let diagnostic = Diagnostic::error(format!("cannot find name `{name}` in scope"), span);
+                    self.ty_ctx.mk_error(self.errors.report_err(diagnostic))
                 }
             },
             ExprKind::Binary(op, lhs, rhs) => {

@@ -12,7 +12,6 @@ use crate::compile::compile_func;
 use crate::diagnostics::{DiagnosticReporter, Level, VecReporter};
 use crate::interner::IndexedInterner;
 use crate::name_resolution::{self, NameResolution};
-use crate::parser::error::ParseError;
 use crate::parser::{ParseCtx, Parser};
 use crate::typecheck::TypeChecker;
 use crate::types::ty_ctx::TyCtx;
@@ -38,17 +37,9 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts) {
     let errors = VecReporter::new();
 
     // Parse
-    let ctx = ParseCtx::new(&arena, &sym_interner);
-    let ast = match ctx.parse_program(src) {
-        Ok(ast) => ast,
-        Err(err) => {
-            let diagnostic = Diagnostic::error().with_message(err.kind.to_string()).with_labels(vec![
-                Label::primary(file_id, err.span).with_message(err.kind.to_string()),
-            ]);
-            term::emit_to_write_style(&mut writer.lock(), &config, &files, &diagnostic).unwrap();
-            return;
-        }
-    };
+    let ctx = ParseCtx::new(&arena, &sym_interner, &errors);
+    let mut parser = Parser::new(ctx, src);
+    let ast = parser.parse_program();
     let sym_table = &sym_interner.freeze();
 
     // Print s-expr
@@ -67,7 +58,7 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts) {
     // Typecheck
     let ty_interners = TyInterners::new(&arena);
     let ty_ctx = TyCtx::new(&arena, &ty_interners);
-    let mut checker = TypeChecker::new(ty_ctx, sym_table);
+    let mut checker = TypeChecker::new(ty_ctx, sym_table, &errors);
     match checker.check_func(&ast.main) {
         Ok(_) => {}
         Err(err) => {

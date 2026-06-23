@@ -25,7 +25,7 @@ pub struct Func {
     pub body: Block,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Block {
     pub stmts: Vec<Stmt>,
     pub tail: Option<Expr>,

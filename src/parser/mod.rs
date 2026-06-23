@@ -2,15 +2,16 @@ use std::iter::Peekable;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use bumpalo::Bump;
+use codespan_reporting::diagnostic;
 use logos::{Lexer, Logos, SpannedIter};
 
 use crate::ast::span::{Span, Spanned};
 use crate::ast::{Expr, NodeId, Program, Symbol};
+use crate::diagnostics::{Diagnostic, DiagnosticReporter};
 use crate::interner::IndexedInterner;
-
-use self::error::ParseErrorKind;
-use self::error::{ParseError, Result};
-use self::lexer::Token;
+use crate::parser::error::Result;
+use crate::parser::lexer::Token;
+use crate::util::IdGen;
 
 pub mod error;
 pub mod escape;
@@ -19,10 +20,12 @@ mod lexer;
 mod program;
 mod test;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone)]
 pub struct ParseCtx<'a, 'sym> {
     pub arena: &'sym Bump,
     pub sym_interner: &'a IndexedInterner<'sym, Symbol, str>,
+    /// The sink for diagnostics
+    pub errors: &'a dyn DiagnosticReporter,
 }
 
 pub struct Parser<'a, 'sym> {
@@ -34,8 +37,8 @@ pub struct Parser<'a, 'sym> {
     current: SpannedToken<'a>,
     /// The previously consumed token
     previous: SpannedToken<'a>,
-    /// The next `NodeId`
-    next_id: AtomicU32,
+    /// Generates node IDs
+    node_ids: IdGen<NodeId>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -45,26 +48,31 @@ struct SpannedToken<'a> {
 }
 
 impl<'a, 'sym> ParseCtx<'a, 'sym> {
-    pub fn new(arena: &'sym Bump, sym_interner: &'a IndexedInterner<'sym, Symbol, str>) -> Self {
-        Self { arena, sym_interner }
+    pub fn new(
+        arena: &'sym Bump,
+        sym_interner: &'a IndexedInterner<'sym, Symbol, str>,
+        errors: &'a dyn DiagnosticReporter,
+    ) -> Self {
+        Self { arena, sym_interner, errors }
     }
 
-    pub fn parse_program(self, src: &'a str) -> Result<'a, Program> {
+    pub fn parse_program(self, src: &'a str) -> Program {
         let mut parser = Parser::new(self, src);
-        parser.consume()?;
         parser.parse_program()
     }
 }
 
 impl<'a, 'sym> Parser<'a, 'sym> {
-    fn new(ctx: ParseCtx<'a, 'sym>, src: &'a str) -> Self {
-        Self {
+    pub fn new(ctx: ParseCtx<'a, 'sym>, src: &'a str) -> Self {
+        let mut parser = Self {
             ctx,
             lexer: Token::lexer(src).spanned(),
             current: SpannedToken::dummy(),
             previous: SpannedToken::dummy(),
-            next_id: AtomicU32::new(0),
-        }
+            node_ids: IdGen::new(NodeId),
+        };
+        parser.consume();
+        parser
     }
 
     fn make_symbol(&self, raw: &str) -> Symbol {
@@ -80,13 +88,9 @@ impl<'a, 'sym> Parser<'a, 'sym> {
     }
 
     fn make_spanned<T>(&mut self, start: u32, node: T) -> Spanned<T> {
-        let id = self.next_id();
+        let id = self.node_ids.next();
         let span = self.make_span(start);
         Spanned { id, node, span }
-    }
-
-    fn next_id(&self) -> NodeId {
-        NodeId(self.next_id.fetch_add(1, Ordering::Relaxed))
     }
 
     /// Returns the current token without consuming it
@@ -95,12 +99,17 @@ impl<'a, 'sym> Parser<'a, 'sym> {
     }
 
     /// Consumes the current token and returns it
-    fn consume(&mut self) -> Result<'a, SpannedToken<'a>> {
+    fn consume(&mut self) -> SpannedToken<'a> {
         self.previous = self.current;
         self.current = loop {
             let token = match self.lexer.next() {
                 Some((Ok(token), span)) => SpannedToken { token, span: span.into() },
-                Some((Err(_), span)) => Err(ParseError { kind: ParseErrorKind::Lex, span: span.into() })?,
+                Some((Err(_), span)) => {
+                    let span = span.into();
+                    let diagnostic = Diagnostic::error("unexpected character", span);
+                    let err = self.report_err(diagnostic);
+                    SpannedToken { token: Token::Err(err), span }
+                }
                 None => {
                     let pos = self.previous.span.hi();
                     SpannedToken { token: Token::Eof, span: Span::new(pos, pos) }
@@ -114,7 +123,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 break token;
             }
         };
-        Ok(self.previous)
+        self.previous
     }
 
     fn should_insert_semi(&self) -> bool {
@@ -131,26 +140,27 @@ impl<'a, 'sym> Parser<'a, 'sym> {
     }
 
     /// Consumes the current token, checks that it matches the expected token, and returns it
-    fn expect(&mut self, expected: Token<'a>) -> Result<'a, SpannedToken<'a>> {
-        let token = self.consume()?;
+    fn expect(&mut self, expected: Token<'a>) -> Result<SpannedToken<'a>> {
+        let token = self.consume();
         if token.token != expected {
-            Err(self.error(ParseErrorKind::ExpectedToken { act: token.token, exp: expected }))?;
+            let diagnostic = Diagnostic::error(format!("expected {expected}"), token.span);
+            Err(self.report_err(diagnostic))?;
         }
         Ok(token)
     }
 
     /// Checks whether the next token matches the predicate, and if so, consumes and returns it
-    fn consume_if(&mut self, pred: impl FnOnce(Token<'a>) -> bool) -> Result<'a, Option<SpannedToken<'a>>> {
-        Ok(if pred(self.current.token) {
-            Some(self.consume()?)
+    fn consume_if(&mut self, pred: impl FnOnce(Token<'a>) -> bool) -> Option<SpannedToken<'a>> {
+        if pred(self.current.token) {
+            Some(self.consume())
         } else {
             None
-        })
+        }
     }
 
     /// Checks whether the next token matches the predicate, and if so, consumes it
-    fn check(&mut self, pred: impl FnOnce(Token<'a>) -> bool) -> Result<'a, bool> {
-        Ok(self.consume_if(pred)?.is_some())
+    fn check(&mut self, pred: impl FnOnce(Token<'a>) -> bool) -> bool {
+        self.consume_if(pred).is_some()
     }
 }
 
