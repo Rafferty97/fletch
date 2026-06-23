@@ -44,7 +44,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             StmtKind::Expr(expr) => {
                 self.check_expr(&*expr, self.common().infer)?;
             }
-            StmtKind::Let(name, value) => {
+            StmtKind::Let(name, value, _) => {
                 let ty = self.check_expr(&*value, self.common().infer)?;
                 self.locals.insert(name.sym, ty);
             }

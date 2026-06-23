@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex};
 
+use crate::ast::span::Span;
+
 pub trait DiagnosticReporter {
     fn report(&self, diagnostic: Diagnostic) -> ErrGuaranteed;
 }
@@ -7,12 +9,25 @@ pub trait DiagnosticReporter {
 #[derive(Debug)]
 pub struct Diagnostic {
     pub message: String,
+    pub span: Span,
+    pub secondary: Option<(String, Span)>,
 }
 
 impl Diagnostic {
-    pub fn new(message: impl Into<String>) -> Self {
-        Self { message: message.into() }
+    pub fn new(message: impl Into<String>, span: Span) -> Self {
+        Self { message: message.into(), span, secondary: None }
     }
+
+    pub fn with_secondary(self, message: impl Into<String>, span: Span) -> Self {
+        let secondary = Some((message.into(), span));
+        Self { secondary, ..self }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Level {
+    Warning,
+    Error,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

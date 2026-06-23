@@ -51,7 +51,7 @@ impl<'a> Compiler<'a> {
                 self.stack_pos = sp;
                 Ok(())
             }
-            StmtKind::Let(name, value) => {
+            StmtKind::Let(name, value, _) => {
                 let sp = self.stack_pos;
                 match self.lookup_var(name) {
                     Ok(rd) => {

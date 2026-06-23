@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use std::hash::Hash;
 
-use crate::ast::span::Spanned;
+use crate::ast::span::{Span, Spanned};
 use crate::diagnostics::ErrGuaranteed;
 use crate::interner::{Index, IndexedInterner};
 
@@ -34,8 +34,14 @@ pub struct Block {
 #[derive(Clone, Debug)]
 pub enum StmtKind {
     Expr(Box<Expr>),
-    Let(Ident, Box<Expr>),
+    Let(Ident, Box<Expr>, Mutability),
     Assign(Ident, Box<Expr>),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Mutability {
+    Mut,
+    Not,
 }
 
 #[derive(Clone, Debug)]
@@ -65,7 +71,9 @@ pub enum BinOp {
 
 #[derive(Clone, Copy, Debug)]
 pub struct Ident {
+    pub id: NodeId,
     pub sym: Symbol,
+    pub span: Span,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]

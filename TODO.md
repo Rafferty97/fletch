@@ -1,34 +1,38 @@
 # Compiler TODO
 
 ## Name resolution pass (new, runs before typecheck)
-- [ ] Add a resolution pass that walks the AST with a scope stack
+
+- [x] Add a resolution pass that walks the AST with a scope stack
       (`Vec<HashMap<Symbol, DefId>>`); push on block entry, pop on exit.
-- [ ] On a binder: mint a fresh global `DefId`, record `Symbol -> DefId` in the
+- [x] On a binder: mint a fresh global `DefId`, record `Symbol -> DefId` in the
       current scope, append a `BindingInfo` to the def table.
-- [ ] On a use: walk scopes outward to first hit, record `NodeId -> DefId`.
-- [ ] Emit two tables:
+- [x] On a use: walk scopes outward to first hit, record `NodeId -> DefId`.
+- [x] Emit two tables:
   - `uses: FnvHashMap<NodeId, DefId>` (use-site -> binding)
   - `defs: Vec<BindingInfo>` (indexed by global `DefId`)
-- [ ] `BindingInfo { mutable: bool, span: Span }`
-  - span is worth storing: lets diagnostics point at the *declaration*, which
+- [x] `BindingInfo { mutable: bool, span: Span }`
+  - span is worth storing: lets diagnostics point at the _declaration_, which
     is the awkward site to reach from a `DefId`.
   - `name: Symbol` is redundant (recoverable via node), skip unless node-hopping
     for the name gets annoying.
-- [ ] Keep `Resolved` lifetime-free (`DefId`/`Symbol`/`Span` all Copy/owned) so
+- [x] Keep `Resolved` lifetime-free (`DefId`/`Symbol`/`Span` all Copy/owned) so
       it threads as `&Resolved` without touching existing lifetimes.
 
 ## Assignment LHS
-- [ ] Parser: narrow `Expr -> Place` at the parse site (shape check, local).
-- [ ] Semantic analysis: assignability check (immutable binding / non-place
+
+- [x] Parser: narrow `Expr -> Place` at the parse site (shape check, local).
+- [x] Semantic analysis: assignability check (immutable binding / non-place
       target) using `BindingInfo.mutable` via the use table.
 
 ## Typechecker
+
 - [ ] Rekey `locals`: `FnvHashMap<Symbol, Ty<'ty>>` -> `FnvHashMap<DefId, Ty<'ty>>`.
       Kills the shadowing conflation (same-name bindings now have distinct ids).
 - [ ] Consume `&Resolved` (the use table) to resolve each `Var` to its binding.
 - [ ] Lifetimes unchanged: still `<'a, 'ty>`.
 
 ## Lowerer / Compiler
+
 - [ ] **Fix `type_map`**: currently `FnvHashMap<NodeId, Ty<'a>>` — this puts arena
       refs back into lowering and pins the type arena alive through the whole
       phase. Change values to lifetime-free:
@@ -43,22 +47,24 @@
       so disjoint sibling scopes reuse slots (same mark-and-reset as temps:
       `free_reg` high-water / `free_if_temp`). No interval/colouring liveness yet.
 - [ ] Keep `DefId` (stable, in side tables) and `Slot` (reused, lowerer-local,
-      per-function) firmly distinct. The `DefId -> Slot` map is the *only* place
+      per-function) firmly distinct. The `DefId -> Slot` map is the _only_ place
       they meet — it does NOT belong in `BindingInfo` and does not outlive
       lowering. Resist storing the slot on the binding.
 
 ## Interner freezing (in progress)
-- [ ] Make `IndexedInterner` freeze into a readonly form: `freeze(self) ->
-      OwnedIndexTable<'a, ..>` (consuming = "interning finished" as a type fact).
-- [ ] Frozen form drops the `str -> Symbol` lookup map (dedup-only); keep just the
+
+- [x] Make `IndexedInterner` freeze into a readonly form: `freeze(self) ->
+  OwnedIndexTable<'a, ..>` (consuming = "interning finished" as a type fact).
+- [x] Frozen form drops the `str -> Symbol` lookup map (dedup-only); keep just the
       indexed slice. Readonly form is covariant in the source lifetime.
-- [ ] `IndexTable` as the shared view type (`#[repr(transparent)]` DST over
+- [x] `IndexTable` as the shared view type (`#[repr(transparent)]` DST over
       `[&'a T]`); `OwnedIndexTable` derefs to it.
-- [ ] Test affordance: `to_owned_table(&self) -> OwnedIndexTable` (snapshot clone
+- [x] Test affordance: `to_owned_table(&self) -> OwnedIndexTable` (snapshot clone
       under the lock — fine for tests, lands on the production type, no
       "interning stopped" precondition).
 
 ## Later / optional
+
 - [ ] Weeder pass — only if non-local checks accumulate (`break`/`return`
       outside loop/fn, duplicate params). Don't stand one up for just the
       assignment target.

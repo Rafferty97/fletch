@@ -1,5 +1,5 @@
 use crate::ast::span::{Span, Spanned};
-use crate::ast::{Block, Expr, ExprKind, Func, Ident, Lit, Program, Stmt, StmtKind, Symbol};
+use crate::ast::{Block, Expr, ExprKind, Func, Ident, Lit, Mutability, Program, Stmt, StmtKind, Symbol};
 use crate::parser::SpannedToken;
 
 use super::Parser;
@@ -47,13 +47,17 @@ impl<'a, 'sym> Parser<'a, 'sym> {
     fn parse_stmt(&mut self) -> Result<'a, Stmt> {
         let start = self.curr_pos();
         let kind = match self.peek() {
-            Token::Let => {
-                self.consume()?;
+            Token::Let | Token::Var => {
+                let mutability = match self.consume()?.token {
+                    Token::Let => Mutability::Not,
+                    Token::Var => Mutability::Mut,
+                    _ => unreachable!(),
+                };
                 let name = self.parse_ident()?;
                 self.expect(Token::Eq)?;
                 let value = self.parse_expr()?.into();
                 self.expect(Token::Semi)?;
-                StmtKind::Let(name, value)
+                StmtKind::Let(name, value, mutability)
             }
             _ => {
                 let expr = self.parse_expr()?;
@@ -77,7 +81,10 @@ impl<'a, 'sym> Parser<'a, 'sym> {
         let Token::Ident(raw) = token.token else {
             Err(self.error(ParseErrorKind::ExpectedToken { act: token.token, exp: Token::Ident("") }))?
         };
-        Ok(Ident { sym: self.make_symbol(raw) })
+        let id = self.next_id();
+        let sym = self.make_symbol(raw);
+        let span = token.span;
+        Ok(Ident { id, sym, span })
     }
 }
 

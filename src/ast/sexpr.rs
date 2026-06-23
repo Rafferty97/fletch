@@ -56,8 +56,11 @@ impl<'a> SExprCtx<'a> {
             StmtKind::Expr(expr) => {
                 self.write_expr(expr);
             }
-            StmtKind::Let(name, value) => {
-                self.str.push_str("(let ");
+            StmtKind::Let(name, value, mutability) => {
+                match mutability {
+                    Mutability::Not => self.str.push_str("(let "),
+                    Mutability::Mut => self.str.push_str("(var "),
+                };
                 self.write_sym(name.sym);
                 self.str.push(' ');
                 self.write_expr(value);

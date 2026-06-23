@@ -7,7 +7,9 @@ use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use crate::ast::sexpr::{SExpr, SExprCtx};
 use crate::ast::{ExprKind, Lit, StmtKind};
 use crate::compile::compile_func;
+use crate::diagnostics::{DiagnosticReporter, VecReporter};
 use crate::interner::IndexedInterner;
+use crate::name_resolution::{self, NameResolution};
 use crate::parser::error::ParseError;
 use crate::parser::{ParseCtx, Parser};
 use crate::typecheck::TypeChecker;
@@ -31,6 +33,7 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts) {
     let file_id = files.add(filename, src);
     let writer = StandardStream::stderr(ColorChoice::Always);
     let config = codespan_reporting::term::Config::default();
+    let errors = VecReporter::new();
 
     // Parse
     let ctx = ParseCtx::new(&arena, &sym_interner);
@@ -54,6 +57,11 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts) {
         println!("{output}\n");
     }
 
+    // Name resolution
+    let mut name_resolution = NameResolution::new(sym_table, &errors);
+    name_resolution.resolve_program(&ast);
+    let name_tables = name_resolution.finish();
+
     // Typecheck
     let ty_interners = TyInterners::new(&arena);
     let ty_ctx = TyCtx::new(&arena, &ty_interners);
@@ -64,6 +72,21 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts) {
             eprintln!("type error: {}", err);
             return;
         }
+    }
+
+    // Report errors and bail if necessary
+    let errors = errors.into_errors();
+    if !errors.is_empty() {
+        let err_cnt = errors.len();
+        for err in errors {
+            let mut labels = vec![Label::primary(file_id, err.span).with_message(&err.message)];
+            if let Some((msg, span)) = err.secondary {
+                labels.push(Label::secondary(file_id, span).with_message(msg));
+            }
+            let diagnostic = Diagnostic::error().with_message(&err.message).with_labels(labels);
+            term::emit_to_write_style(&mut writer.lock(), &config, &files, &diagnostic).unwrap();
+        }
+        eprintln!("error: could not run `{}` due to {} errors", filename, err_cnt);
     }
 
     // Compile

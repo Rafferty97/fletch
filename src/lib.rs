@@ -7,6 +7,7 @@ mod compile;
 mod diagnostics;
 mod driver;
 mod interner;
+mod name_resolution;
 mod parser;
 mod typecheck;
 mod types;
