@@ -92,7 +92,8 @@ impl<'a> NameResolution<'a> {
                 self.resolve_expr(rhs);
             }
             ExprKind::Call(func, args) => {
-                self.resolve_expr(func);
+                // FIXME
+                // self.resolve_expr(func);
                 args.iter().for_each(|arg| self.resolve_expr(arg));
             }
             ExprKind::Grouped(expr) => self.resolve_expr(expr),

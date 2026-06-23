@@ -8,6 +8,7 @@ pub trait DiagnosticReporter {
 
 #[derive(Debug)]
 pub struct Diagnostic {
+    pub level: Level,
     pub message: String,
     pub span: Span,
     pub secondary: Option<(String, Span)>,
@@ -15,12 +16,16 @@ pub struct Diagnostic {
 
 impl Diagnostic {
     pub fn new(message: impl Into<String>, span: Span) -> Self {
-        Self { message: message.into(), span, secondary: None }
+        Self { level: Level::Error, message: message.into(), span, secondary: None }
     }
 
     pub fn with_secondary(self, message: impl Into<String>, span: Span) -> Self {
         let secondary = Some((message.into(), span));
         Self { secondary, ..self }
+    }
+
+    pub fn is_error(&self) -> bool {
+        matches!(self.level, Level::Error)
     }
 }
 
@@ -52,6 +57,10 @@ pub struct VecReporter(Arc<Mutex<Vec<Diagnostic>>>);
 impl VecReporter {
     pub fn new() -> Self {
         Self(Arc::default())
+    }
+
+    pub fn has_errors(&self) -> bool {
+        self.0.lock().unwrap().iter().any(|d| d.is_error())
     }
 
     pub fn into_errors(&self) -> Vec<Diagnostic> {

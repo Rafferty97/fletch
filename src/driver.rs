@@ -75,18 +75,22 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts) {
     }
 
     // Report errors and bail if necessary
+    let failed = errors.has_errors();
     let errors = errors.into_errors();
-    if !errors.is_empty() {
-        let err_cnt = errors.len();
-        for err in errors {
-            let mut labels = vec![Label::primary(file_id, err.span).with_message(&err.message)];
-            if let Some((msg, span)) = err.secondary {
-                labels.push(Label::secondary(file_id, span).with_message(msg));
-            }
-            let diagnostic = Diagnostic::error().with_message(&err.message).with_labels(labels);
-            term::emit_to_write_style(&mut writer.lock(), &config, &files, &diagnostic).unwrap();
+
+    let err_cnt = errors.len();
+    for err in errors {
+        let mut labels = vec![Label::primary(file_id, err.span).with_message(&err.message)];
+        if let Some((msg, span)) = err.secondary {
+            labels.push(Label::secondary(file_id, span).with_message(msg));
         }
+        let diagnostic = Diagnostic::error().with_message(&err.message).with_labels(labels);
+        term::emit_to_write_style(&mut writer.lock(), &config, &files, &diagnostic).unwrap();
+    }
+
+    if failed {
         eprintln!("error: could not run `{}` due to {} errors", filename, err_cnt);
+        return;
     }
 
     // Compile
