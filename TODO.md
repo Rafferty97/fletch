@@ -26,10 +26,10 @@
 
 ## Typechecker
 
-- [ ] Rekey `locals`: `FnvHashMap<Symbol, Ty<'ty>>` -> `FnvHashMap<DefId, Ty<'ty>>`.
+- [x] Rekey `locals`: `FnvHashMap<Symbol, Ty<'ty>>` -> `FnvHashMap<DefId, Ty<'ty>>`.
       Kills the shadowing conflation (same-name bindings now have distinct ids).
-- [ ] Consume `&Resolved` (the use table) to resolve each `Var` to its binding.
-- [ ] Lifetimes unchanged: still `<'a, 'ty>`.
+- [x] Consume `&Resolved` (the use table) to resolve each `Var` to its binding.
+- [x] Lifetimes unchanged: still `<'a, 'ty>`.
 
 ## Lowerer / Compiler
 

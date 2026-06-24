@@ -3,14 +3,14 @@ use fnv::FnvHashMap;
 use crate::ast::ExprKind::Binary;
 use crate::ast::span::Span;
 use crate::ast::{Expr, ExprKind, Func, Ident, Mutability, NodeId, Program, StmtKind, Symbol};
-use crate::diagnostics::{Diagnostic, DiagnosticReporter};
+use crate::diagnostics::{Diagnostic, DiagnosticReporter, ErrGuaranteed};
 use crate::interner::IndexTable;
 use crate::util::IdGen;
 
 pub struct NameResolution<'a> {
     sym_table: &'a IndexTable<'a, Symbol, str>,
     defs: FnvHashMap<DefId, BindingInfo>,
-    uses: FnvHashMap<NodeId, DefId>,
+    uses: FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
     scopes: Vec<FnvHashMap<Symbol, DefId>>,
     def_ids: IdGen<DefId>,
     errors: &'a dyn DiagnosticReporter,
@@ -18,7 +18,7 @@ pub struct NameResolution<'a> {
 
 pub struct NameTables {
     pub defs: FnvHashMap<DefId, BindingInfo>,
-    pub uses: FnvHashMap<NodeId, DefId>,
+    pub uses: FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -62,8 +62,6 @@ impl<'a> NameResolution<'a> {
                 StmtKind::Assign(name, rhs) => {
                     self.resolve_expr(rhs);
                     let Some(binding_info) = self.resolve_name(*name) else {
-                        let msg = format!("cannot find `{}` in this scope", self.sym_table.get_str(name.sym));
-                        self.errors.report(Diagnostic::error(msg, name.span));
                         continue;
                     };
                     if binding_info.mutability == Mutability::Not {
@@ -80,13 +78,9 @@ impl<'a> NameResolution<'a> {
     pub fn resolve_expr(&mut self, expr: &Expr) {
         match &expr.node {
             ExprKind::Lit(_) => {}
-            ExprKind::Var(name) => match self.resolve_name(*name) {
-                Some(_) => {}
-                None => {
-                    let msg = format!("cannot find `{}` in this scope", self.sym_table.get_str(name.sym));
-                    self.errors.report(Diagnostic::error(msg, name.span));
-                }
-            },
+            ExprKind::Var(name) => {
+                self.resolve_name(*name);
+            }
             ExprKind::Binary(_, lhs, rhs) => {
                 self.resolve_expr(lhs);
                 self.resolve_expr(rhs);
@@ -112,16 +106,18 @@ impl<'a> NameResolution<'a> {
         let def_id = self.def_ids.next();
         let binding_info = BindingInfo { mutability, span: ident.span };
         self.defs.insert(def_id, binding_info);
-        self.uses.insert(ident.id, def_id);
+        self.uses.insert(ident.id, Ok(def_id));
         self.scopes.last_mut().unwrap().insert(ident.sym, def_id);
         def_id
     }
 
     fn resolve_name(&mut self, ident: Ident) -> Option<&BindingInfo> {
-        let def_id = self.find_name(ident.sym)?;
-        let binding_info = &self.defs[&def_id];
+        let def_id = self.find_name(ident.sym).ok_or_else(|| {
+            let msg = format!("cannot find `{}` in this scope", self.sym_table.get_str(ident.sym));
+            self.errors.report_err(Diagnostic::error(msg, ident.span))
+        });
         self.uses.insert(ident.id, def_id);
-        Some(binding_info)
+        def_id.ok().map(|def_id| &self.defs[&def_id])
     }
 
     fn find_name(&self, name: Symbol) -> Option<DefId> {

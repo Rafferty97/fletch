@@ -8,6 +8,7 @@ use crate::ast::span::Span;
 use crate::ast::{Expr, ExprKind, Func, Lit, NodeId, Stmt, StmtKind, Symbol};
 use crate::diagnostics::{Diagnostic, DiagnosticReporter};
 use crate::interner::IndexTable;
+use crate::name_resolution::{DefId, NameTables};
 use crate::types::Ty;
 use crate::types::infer::TypeError;
 use crate::types::ty_ctx::TyCtx;
@@ -15,8 +16,9 @@ use crate::types::ty_interners::{CommonTypes, TyInterners};
 
 pub struct TypeChecker<'a, 'ty> {
     ty_ctx: TyCtx<'a, 'ty>,
+    name_tables: &'a NameTables,
     type_map: FnvHashMap<NodeId, Ty<'ty>>,
-    locals: FnvHashMap<Symbol, Ty<'ty>>,
+    locals: FnvHashMap<DefId, Ty<'ty>>,
     sym_table: &'a IndexTable<'a, Symbol, str>,
     errors: &'a dyn DiagnosticReporter,
 }
@@ -26,11 +28,13 @@ pub type Result<'ty, T> = std::result::Result<T, TypeError<'ty>>;
 impl<'a, 'ty> TypeChecker<'a, 'ty> {
     pub fn new(
         ty_ctx: TyCtx<'a, 'ty>,
+        name_tables: &'a NameTables,
         sym_table: &'a IndexTable<'a, Symbol, str>,
         errors: &'a dyn DiagnosticReporter,
     ) -> Self {
         Self {
             ty_ctx,
+            name_tables,
             type_map: FnvHashMap::default(),
             locals: FnvHashMap::default(),
             sym_table,
@@ -52,15 +56,20 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 self.check_expr(&*expr, self.common().infer)?;
             }
             StmtKind::Let(name, value, _) => {
+                let def_id = *self.name_tables.uses.get(&name.id).unwrap(); // FIXME
                 let ty = self.check_expr(&*value, self.common().infer)?;
-                self.locals.insert(name.sym, ty);
+                if let Ok(def_id) = def_id {
+                    self.locals.insert(def_id, ty); // FIXME?
+                }
             }
             StmtKind::Assign(lhs, rhs) => {
-                let Some(&expected) = self.locals.get(&lhs.sym) else {
-                    // let name = self.sym_interner.get_str(lhs.sym).into();
-                    // Err(CompilerError::UndefinedName(name))?
-                    todo!()
-                };
+                let expected = *self
+                    .name_tables
+                    .uses
+                    .get(&lhs.id)
+                    .and_then(|def_id| def_id.ok())
+                    .and_then(|def_id| self.locals.get(&def_id))
+                    .unwrap_or(&self.common().infer);
                 self.check_expr(rhs, expected)?;
             }
         }
@@ -77,15 +86,14 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 Lit::Str(_) => self.common().str,
                 Lit::Err(err) => self.ty_ctx.mk_error(*err),
             },
-            ExprKind::Var(name) => match self.locals.get(&name.sym) {
-                Some(ty) => *ty,
-                None => {
-                    let span = name.span;
-                    let name = self.sym_table.get_str(name.sym);
-                    let diagnostic = Diagnostic::error(format!("cannot find name `{name}` in scope"), span);
-                    self.ty_ctx.mk_error(self.errors.report_err(diagnostic))
-                }
-            },
+            ExprKind::Var(name) => {
+                self.name_tables
+                    .uses
+                    .get(&name.id)
+                    .unwrap()
+                    .map(|def_id| *self.locals.get(&def_id).unwrap()) // FIXME: unwrap
+                    .unwrap_or_else(|err| self.ty_ctx.mk_error(err)) // FIXME: unwrap
+            }
             ExprKind::Binary(op, lhs, rhs) => {
                 let lhs = self.check_expr(lhs, self.common().infer)?;
                 let rhs = self.check_expr(rhs, self.common().infer)?;
