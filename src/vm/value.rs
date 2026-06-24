@@ -1,5 +1,5 @@
 use arcstr::ArcStr;
-use triomphe::Arc;
+use triomphe::{Arc, ThinArc};
 
 use crate::ast::Symbol;
 
@@ -8,6 +8,7 @@ pub enum Value {
     Null,
     Scalar(u64),
     Str(ArcStr),
+    Array(ThinArc<(), Value>),
 }
 
 impl Value {
