@@ -5,22 +5,19 @@ use thiserror::Error;
 
 use crate::ast::{BinOp, Expr, ExprKind, Func, Ident, Lit, NodeId, Stmt, StmtKind, Symbol};
 use crate::interner::IndexTable;
-use crate::types::Ty;
 use crate::types::infer::TypeError;
+use crate::types::{Ty, TyKind};
 use crate::vm::chunk::{Chunk, ChunkBuilder};
 use crate::vm::instr::{Instr, Reg};
 use crate::vm::value::Value;
 
-pub fn compile_func(ast: &Func, sym_table: &IndexTable<'_, Symbol, str>) -> Result<Chunk> {
+pub fn compile_func(
+    ast: &Func,
+    sym_table: &IndexTable<'_, Symbol, str>,
+    type_map: FnvHashMap<NodeId, Ty<'_>>,
+) -> Result<Chunk> {
     let builder = ChunkBuilder::new();
-    let mut compiler = Compiler {
-        builder,
-        sym_table,
-        type_map: FnvHashMap::default(),
-        locals: vec![],
-        stack_pos: 0,
-        stack_size: 0,
-    };
+    let mut compiler = Compiler { builder, sym_table, type_map, locals: vec![], stack_pos: 0, stack_size: 0 };
     compiler.compile_func(ast)?;
     Ok(compiler.builder.build(compiler.stack_size as usize))
 }
@@ -115,7 +112,11 @@ impl<'a> Compiler<'a> {
                             Err(CompilerError::Arity { exp: 1, act: args.len() })?
                         };
                         let value = self.compile_expr(arg, rd)?;
-                        self.builder.ins(Instr::PrintInt(value));
+                        match self.type_map.get(&arg.id).unwrap().kind() {
+                            TyKind::Int(_) | TyKind::UInt(_) => self.builder.ins(Instr::PrintInt(value)),
+                            TyKind::Str => self.builder.ins(Instr::PrintStr(value)),
+                            _ => todo!(),
+                        }
                         Ok(value)
                     }
                     name => Err(CompilerError::UndefinedName(name.into()))?,

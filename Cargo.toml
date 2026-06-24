@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+arcstr = "1.2.0"
 bumpalo = "3.20.3"
 clap = { version = "4.6.1", features = ["derive"] }
 codespan-reporting = "0.13.1"
@@ -15,3 +16,4 @@ logos = "0.16.1"
 paste = "1.0.15"
 tap = "1.0.1"
 thiserror = "2.0.18"
+triomphe = "0.1.15"

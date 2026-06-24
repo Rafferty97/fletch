@@ -66,6 +66,7 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts) {
             return;
         }
     }
+    let type_map = checker.finish();
 
     // Report errors and bail if necessary
     let num_errors = errors.num_errors();
@@ -91,7 +92,7 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts) {
     }
 
     // Compile
-    let chunk = match compile_func(&ast.main, sym_table) {
+    let chunk = match compile_func(&ast.main, sym_table, type_map) {
         Ok(func) => func,
         Err(err) => {
             eprintln!("compiler error: {err}");

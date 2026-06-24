@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use arcstr::ArcStr;
+use triomphe::Arc;
 
 use crate::ast::Symbol;
 
@@ -6,8 +7,7 @@ use crate::ast::Symbol;
 pub enum Value {
     Null,
     Scalar(u64),
-    Str(Arc<str>),
-    // Variant(Symbol, Arc<Value>),
+    Str(ArcStr),
 }
 
 impl Value {
@@ -35,7 +35,7 @@ impl Value {
         Self::Scalar(u64::from_ne_bytes(f64::to_ne_bytes(value)))
     }
 
-    pub fn new_str(value: impl Into<Arc<str>>) -> Self {
+    pub fn new_str(value: impl Into<ArcStr>) -> Self {
         Self::Str(value.into())
     }
 
@@ -57,6 +57,13 @@ impl Value {
 
     pub fn as_f64(&self) -> f64 {
         f64::from_ne_bytes(u64::to_ne_bytes(self.as_scalar()))
+    }
+
+    pub fn as_str(&self) -> &ArcStr {
+        match self {
+            Self::Str(value) => value,
+            _ => panic!("expected string value"),
+        }
     }
 
     fn as_scalar(&self) -> u64 {

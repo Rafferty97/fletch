@@ -42,6 +42,10 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
         }
     }
 
+    pub fn finish(self) -> FnvHashMap<NodeId, Ty<'ty>> {
+        self.type_map
+    }
+
     pub fn check_func(&mut self, ast: &Func) -> Result<'ty, ()> {
         self.locals.clear();
         for stmt in &ast.body.stmts {
