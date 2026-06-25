@@ -25,9 +25,9 @@ pub fn run() -> Result<(), String> {
         .pipe(String::from_utf8)
         .map_err(|_| format!("Cannot read '{}': Invalid UTF-8", &filename))?;
 
-    let opts = eld::FletchOpts { sexpr: args.sexpr, disassemble: args.disassemble };
+    let opts = fletch::FletchOpts { sexpr: args.sexpr, disassemble: args.disassemble };
 
-    eld::run(&filename, &src, opts);
+    fletch::run(&filename, &src, opts);
 
     Ok(())
 }
