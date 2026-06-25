@@ -5,6 +5,7 @@ use crate::ast::{BinOp, Block, Expr, ExprKind, Func, Ident, Lit, Program, Stmt, 
 use crate::diagnostics::Diagnostic;
 use crate::parser::SpannedToken;
 use crate::parser::escape::unescape;
+use crate::parser::lexer::Token::RightParen;
 
 use super::Parser;
 use super::error::Result;
@@ -32,7 +33,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
             Token::LeftParen => {
                 let func = expr;
                 self.consume();
-                let args = self.parse_args()?;
+                let args = self.parse_args(Token::RightParen)?;
                 ExprKind::Call(func.into(), args)
             }
             _ => return Ok(expr),
@@ -86,17 +87,22 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 self.expect(Token::RightParen)?;
                 ExprKind::Grouped(expr)
             }
+            Token::LeftBracket => {
+                self.consume();
+                let exprs = self.parse_args(Token::RightBracket)?;
+                ExprKind::Array(exprs)
+            }
             _ => Err(self.unexpected_curr())?,
         };
 
         Ok(self.make_spanned(start, kind))
     }
 
-    fn parse_args(&mut self) -> Result<Vec<Expr>> {
+    fn parse_args(&mut self, terminator: Token) -> Result<Vec<Expr>> {
         let mut args = vec![];
 
         loop {
-            if self.peek() == Token::RightParen {
+            if self.peek() == terminator {
                 self.consume();
                 break;
             }
@@ -105,7 +111,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
 
             match self.consume().token {
                 Token::Comma => {}
-                Token::RightParen => break,
+                t if t == terminator => break,
                 _ => Err(self.unexpected_prev())?,
             }
         }

@@ -59,13 +59,7 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts) {
     let ty_interners = TyInterners::new(&arena);
     let ty_ctx = TyCtx::new(&arena, &ty_interners);
     let mut checker = TypeChecker::new(ty_ctx, &name_tables, sym_table, &errors);
-    match checker.check_func(&ast.main) {
-        Ok(_) => {}
-        Err(err) => {
-            eprintln!("type error: {}", err);
-            return;
-        }
-    }
+    checker.check_func(&ast.main);
     let type_map = checker.finish();
 
     // Report errors and bail if necessary

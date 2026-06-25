@@ -26,7 +26,7 @@ impl Vm {
         loop {
             match Instr::decode(code[pc]) {
                 Instr::Return => return,
-                Instr::Const(dst, imm) => {
+                Instr::Load(dst, imm) => {
                     self.write(dst, chunk.get_const(imm).clone());
                 }
                 Instr::Print(src) => {
@@ -46,6 +46,10 @@ impl Vm {
                 Instr::Move { r0, rd } => {
                     self.write(rd, self.read(r0).clone());
                 }
+                Instr::MakeArray { r0, rn, rd } => {
+                    let elements = self.read_many(r0, rn);
+                    self.write(rd, Value::new_array(elements.iter().cloned()));
+                }
             }
             pc += 1;
         }
@@ -53,6 +57,10 @@ impl Vm {
 
     fn read(&self, reg: Reg) -> &Value {
         &self.registers[reg.0 as usize]
+    }
+
+    fn read_many(&self, start: Reg, end: Reg) -> &[Value] {
+        &self.registers[start.0 as usize..end.0 as usize]
     }
 
     fn write(&mut self, reg: Reg, value: Value) {

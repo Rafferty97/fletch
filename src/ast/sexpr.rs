@@ -103,6 +103,14 @@ impl<'a> SExprCtx<'a> {
                 self.str.push(')');
             }
             ExprKind::Grouped(expr) => self.write_expr(expr),
+            ExprKind::Array(exprs) => {
+                self.str.push_str("(array");
+                for arg in exprs {
+                    self.str.push(' ');
+                    self.write_expr(arg);
+                }
+                self.str.push(')');
+            }
         }
     }
 

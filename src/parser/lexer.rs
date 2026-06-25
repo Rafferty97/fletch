@@ -31,6 +31,10 @@ pub enum Token<'a> {
     LeftBrace,
     #[token("}")]
     RightBrace,
+    #[token("[")]
+    LeftBracket,
+    #[token("]")]
+    RightBracket,
     #[token("+")]
     Plus,
     #[token("-")]
@@ -74,6 +78,8 @@ impl<'a> std::fmt::Display for Token<'a> {
             Self::RightParen => "')'",
             Self::LeftBrace => "'{'",
             Self::RightBrace => "'}'",
+            Self::LeftBracket => "'['",
+            Self::RightBracket => "']'",
             Self::Plus => "'+'",
             Self::Minus => "'-'",
             Self::Asterisk => "'*'",

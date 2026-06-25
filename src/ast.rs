@@ -51,6 +51,7 @@ pub enum ExprKind {
     Binary(BinOp, Box<Expr>, Box<Expr>),
     Call(Box<Expr>, Vec<Expr>),
     Grouped(Box<Expr>),
+    Array(Vec<Expr>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

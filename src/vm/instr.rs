@@ -3,11 +3,12 @@ use std::fmt::Display;
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Instr {
     Return,
-    Const(Reg, Imm),
+    Load(Reg, Imm),
     Print(Reg),
     Add { r0: Reg, r1: Reg, rd: Reg },
     Sub { r0: Reg, r1: Reg, rd: Reg },
     Move { r0: Reg, rd: Reg },
+    MakeArray { r0: Reg, rn: Reg, rd: Reg },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -23,22 +24,24 @@ impl Instr {
     pub fn encode(self) -> EncodedInstr {
         match self {
             Self::Return => EncodedInstr::opcode(0),
-            Self::Const(dst, imm) => EncodedInstr::opcode(1).reg0(dst).imm1(imm),
+            Self::Load(dst, imm) => EncodedInstr::opcode(1).reg0(dst).imm1(imm),
             Self::Print(src) => EncodedInstr::opcode(2).reg0(src),
             Self::Add { r0, r1, rd } => EncodedInstr::opcode(3).reg0(r0).reg1(r1).reg2(rd),
             Self::Sub { r0, r1, rd } => EncodedInstr::opcode(4).reg0(r0).reg1(r1).reg2(rd),
             Self::Move { r0, rd } => EncodedInstr::opcode(5).reg0(r0).reg1(rd),
+            Self::MakeArray { r0, rn: r1, rd } => EncodedInstr::opcode(6).reg0(r0).reg1(r1).reg2(rd),
         }
     }
 
     pub fn decode(enc: EncodedInstr) -> Self {
         match enc.get_opcode() {
             0 => Self::Return,
-            1 => Self::Const(enc.get_reg0(), enc.get_imm1()),
+            1 => Self::Load(enc.get_reg0(), enc.get_imm1()),
             2 => Self::Print(enc.get_reg0()),
             3 => Self::Add { r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
             4 => Self::Sub { r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
             5 => Self::Move { r0: enc.get_reg0(), rd: enc.get_reg1() },
+            6 => Self::MakeArray { r0: enc.get_reg0(), rn: enc.get_reg1(), rd: enc.get_reg2() },
             i => panic!("illegal instruction: {i}"),
         }
     }
@@ -131,11 +134,12 @@ impl Display for Instr {
         let w = InstrWriter::new(f);
         match *self {
             Self::Return => w.mnem("ret"),
-            Self::Const(dst, imm) => w.mnem("const").reg(dst).imm(imm),
+            Self::Load(dst, imm) => w.mnem("load").reg(dst).imm(imm),
             Self::Print(src) => w.mnem("print").reg(src),
             Self::Add { r0, r1, rd } => w.mnem("add").reg(rd).reg(r0).reg(r1),
             Self::Sub { r0, r1, rd } => w.mnem("sub").reg(rd).reg(r0).reg(r1),
             Self::Move { r0, rd } => w.mnem("move").reg(rd).reg(r0),
+            Self::MakeArray { r0, rn: r1, rd } => w.mnem("mk.arr").reg(rd).reg(r0).reg(r1),
         };
         Ok(())
     }
@@ -164,8 +168,8 @@ mod test {
         };
 
         test(Instr::Return);
-        test(Instr::Const(Reg(0), Imm(0)));
-        test(Instr::Const(Reg(78), Imm(89)));
+        test(Instr::Load(Reg(0), Imm(0)));
+        test(Instr::Load(Reg(78), Imm(89)));
         test(Instr::Print(Reg(0)));
         test(Instr::Print(Reg(86)));
         test(Instr::Print(Reg(234)));

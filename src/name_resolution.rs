@@ -91,6 +91,9 @@ impl<'a> NameResolution<'a> {
                 args.iter().for_each(|arg| self.resolve_expr(arg));
             }
             ExprKind::Grouped(expr) => self.resolve_expr(expr),
+            ExprKind::Array(exprs) => {
+                exprs.iter().for_each(|arg| self.resolve_expr(arg));
+            }
         }
     }
 

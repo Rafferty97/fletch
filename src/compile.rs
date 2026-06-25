@@ -17,9 +17,16 @@ pub fn compile_func(
     type_map: FnvHashMap<NodeId, Ty<'_>>,
 ) -> Result<Chunk> {
     let builder = ChunkBuilder::new();
-    let mut compiler = Compiler { builder, sym_table, type_map, locals: vec![], stack_pos: 0, stack_size: 0 };
+    let mut compiler = Compiler {
+        builder,
+        sym_table,
+        type_map,
+        locals: vec![],
+        stack_pos: StackPos(0),
+        stack_size: StackPos(0),
+    };
     compiler.compile_func(ast)?;
-    Ok(compiler.builder.build(compiler.stack_size as usize))
+    Ok(compiler.builder.build(compiler.stack_size.0 as usize))
 }
 
 struct Compiler<'a> {
@@ -27,9 +34,12 @@ struct Compiler<'a> {
     sym_table: &'a IndexTable<'a, Symbol, str>,
     type_map: FnvHashMap<NodeId, Ty<'a>>,
     locals: Vec<Symbol>,
-    stack_pos: u16,
-    stack_size: u16,
+    stack_pos: StackPos,
+    stack_size: StackPos,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+struct StackPos(u16);
 
 impl<'a> Compiler<'a> {
     fn compile_func(&mut self, ast: &Func) -> Result<()> {
@@ -49,19 +59,10 @@ impl<'a> Compiler<'a> {
                 Ok(())
             }
             StmtKind::Let(name, value, _) => {
-                let sp = self.stack_pos;
-                match self.lookup_var(name) {
-                    Ok(rd) => {
-                        self.compile_expr(value, Some(rd))?;
-                        self.stack_pos = sp;
-                    }
-                    Err(_) => {
-                        let rd = self.reserve();
-                        self.compile_expr(value, Some(rd))?;
-                        self.stack_pos = sp + 1;
-                        self.locals.push(name.sym);
-                    }
-                }
+                let (rd, sp) = self.reserve();
+                self.compile_expr(value, Some(rd))?;
+                self.stack_pos = sp;
+                self.locals.push(name.sym);
                 Ok(())
             }
             StmtKind::Assign(lhs, rhs) => {
@@ -119,6 +120,20 @@ impl<'a> Compiler<'a> {
                 }
             }
             ExprKind::Grouped(expr) => self.compile_expr(expr, rd),
+            ExprKind::Array(exprs) => {
+                let sp = self.stack_pos;
+                for (idx, expr) in exprs.iter().enumerate() {
+                    let (rd, sp) = self.reserve();
+                    self.compile_expr(expr, Some(rd))?;
+                    self.stack_pos = sp;
+                }
+                self.stack_pos = sp;
+                let (r0, rn) = self.top_n(exprs.len());
+
+                let rd = rd.unwrap_or_else(|| self.push());
+                self.builder.ins(Instr::MakeArray { r0, rn, rd });
+                Ok(rd)
+            }
         }
     }
 
@@ -126,12 +141,12 @@ impl<'a> Compiler<'a> {
         match lit {
             &Lit::Null => {
                 let imm = self.builder.constant(Value::new_null());
-                self.builder.ins(Instr::Const(rd, imm));
+                self.builder.ins(Instr::Load(rd, imm));
                 Ok(())
             }
             &Lit::Bool(value) => {
                 let imm = self.builder.constant(Value::new_bool(value));
-                self.builder.ins(Instr::Const(rd, imm));
+                self.builder.ins(Instr::Load(rd, imm));
                 Ok(())
             }
             &Lit::Int(sym) => {
@@ -141,7 +156,7 @@ impl<'a> Compiler<'a> {
                     .parse()
                     .map_err(|_| CompilerError::InvalidLiteral)?;
                 let imm = self.builder.constant(Value::new_int(value));
-                self.builder.ins(Instr::Const(rd, imm));
+                self.builder.ins(Instr::Load(rd, imm));
                 Ok(())
             }
             &Lit::Float(sym) => {
@@ -151,13 +166,13 @@ impl<'a> Compiler<'a> {
                     .parse()
                     .map_err(|_| CompilerError::InvalidLiteral)?;
                 let imm = self.builder.constant(Value::new_f64(value));
-                self.builder.ins(Instr::Const(rd, imm));
+                self.builder.ins(Instr::Load(rd, imm));
                 Ok(())
             }
             &Lit::Str(str) => {
                 let str = self.sym_table.get_str(str);
                 let imm = self.builder.constant(Value::new_str(str));
-                self.builder.ins(Instr::Const(rd, imm));
+                self.builder.ins(Instr::Load(rd, imm));
                 Ok(())
             }
             _ => todo!(),
@@ -172,21 +187,30 @@ impl<'a> Compiler<'a> {
         Ok(Reg(index as u16))
     }
 
-    fn reserve(&mut self) -> Reg {
-        let reg = Reg(self.stack_pos);
-        self.stack_size = self.stack_size.max(self.stack_pos + 1);
-        reg
+    fn top(&self) -> Reg {
+        Reg(self.stack_pos.0)
+    }
+
+    fn top_n(&self, n: usize) -> (Reg, Reg) {
+        (Reg(self.stack_pos.0), Reg(self.stack_pos.0 + n as u16))
+    }
+
+    fn reserve(&mut self) -> (Reg, StackPos) {
+        let reg = Reg(self.stack_pos.0);
+        let next = StackPos(self.stack_pos.0 + 1);
+        self.stack_size = self.stack_size.max(next);
+        (reg, next)
     }
 
     fn push(&mut self) -> Reg {
-        let reg = Reg(self.stack_pos);
-        self.stack_pos += 1;
+        let reg = Reg(self.stack_pos.0);
+        self.stack_pos.0 += 1;
         self.stack_size = self.stack_size.max(self.stack_pos);
         reg
     }
 
     fn pop(&mut self) {
-        self.stack_pos -= 1;
+        self.stack_pos.0 -= 1;
     }
 }
 
