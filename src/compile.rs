@@ -112,11 +112,7 @@ impl<'a> Compiler<'a> {
                             Err(CompilerError::Arity { exp: 1, act: args.len() })?
                         };
                         let value = self.compile_expr(arg, rd)?;
-                        match self.type_map.get(&arg.id).unwrap().kind() {
-                            TyKind::Int(_) | TyKind::UInt(_) => self.builder.ins(Instr::PrintInt(value)),
-                            TyKind::Str => self.builder.ins(Instr::PrintStr(value)),
-                            _ => todo!(),
-                        }
+                        self.builder.ins(Instr::Print(value));
                         Ok(value)
                     }
                     name => Err(CompilerError::UndefinedName(name.into()))?,
