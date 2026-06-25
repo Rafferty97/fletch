@@ -63,3 +63,15 @@ fn parse_simple_arithmetic_program() {
         test_parse(ctx, |p| Ok(p.parse_program()), src, expected);
     });
 }
+
+#[test]
+fn parse_incomplete_string_lit() {
+    with_parse_ctx(|ctx| {
+        let src = r#"
+            fn main() {
+                print("Hello world
+            }"#;
+        let expected = r#"(func main (block none))"#;
+        test_parse(ctx, |p| Ok(p.parse_program()), src, expected);
+    });
+}

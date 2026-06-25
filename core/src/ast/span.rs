@@ -1,6 +1,8 @@
+use serde::Serialize;
+
 use crate::ast::NodeId;
 
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug, Serialize)]
 pub struct Span {
     lo: u32,
     hi: u32,

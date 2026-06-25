@@ -1,5 +1,7 @@
 use std::sync::{Arc, Mutex};
 
+use serde::Serialize;
+
 use crate::ast::span::Span;
 
 pub trait DiagnosticReporter {
@@ -12,7 +14,7 @@ pub trait DiagnosticReporter {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Diagnostic {
     pub level: Level,
     pub primary: Label,
@@ -20,7 +22,7 @@ pub struct Diagnostic {
     pub notes: Vec<String>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub struct Label {
     pub message: String,
     pub span: Span,
@@ -55,7 +57,7 @@ impl Diagnostic {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize)]
 pub enum Level {
     Warning,
     Error,

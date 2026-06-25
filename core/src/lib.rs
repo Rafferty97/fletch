@@ -1,6 +1,7 @@
 #![allow(unused)]
 
-pub use driver::{FletchOpts, run};
+pub use driver::{FletchOpts, check, run};
+pub use vm::OutputSink;
 
 mod ast;
 mod compile;

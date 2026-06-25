@@ -12,12 +12,16 @@ pub struct Vm {
     registers: Vec<Value>,
 }
 
+pub trait OutputSink {
+    fn emit(&mut self, text: &str);
+}
+
 impl Vm {
     pub fn new() -> Self {
         Self { registers: vec![] }
     }
 
-    pub fn execute(&mut self, chunk: &Chunk) {
+    pub fn execute(&mut self, chunk: &Chunk, output: &mut dyn OutputSink) {
         self.registers.resize(chunk.stack_size(), Value::new_null());
 
         let code = chunk.code();
@@ -31,7 +35,7 @@ impl Vm {
                 }
                 Instr::Print(src) => {
                     let value = self.read(src);
-                    println!("{value}");
+                    output.emit(&format!("{value}\n"));
                 }
                 Instr::Add { r0, r1, rd } => {
                     let lhs = self.read(r0).as_int();

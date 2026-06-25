@@ -53,6 +53,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                     match self.consume().token {
                         Token::Semi => break,
                         Token::RightBrace => break 'outer,
+                        Token::Eof => break 'outer,
                         _ => {}
                     }
                 },

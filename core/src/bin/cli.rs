@@ -1,6 +1,7 @@
 use std::{fs, path::PathBuf};
 
 use clap::Parser;
+use fletch::OutputSink;
 use tap::Pipe;
 
 #[derive(Parser, Debug)]
@@ -15,6 +16,14 @@ struct Args {
     disassemble: bool,
 }
 
+struct StdOut;
+
+impl OutputSink for StdOut {
+    fn emit(&mut self, text: &str) {
+        print!("{text}")
+    }
+}
+
 pub fn run() -> Result<(), String> {
     let args = Args::parse();
 
@@ -27,7 +36,7 @@ pub fn run() -> Result<(), String> {
 
     let opts = fletch::FletchOpts { sexpr: args.sexpr, disassemble: args.disassemble };
 
-    fletch::run(&filename, &src, opts);
+    fletch::run(&filename, &src, opts, &mut StdOut);
 
     Ok(())
 }

@@ -51,6 +51,8 @@ pub enum Token<'a> {
     Semi,
     #[token("\n")]
     Newline,
+    #[regex(r"//[^\n]*", logos::skip, allow_greedy = true)]
+    Comment,
     Eof,
     Err(ErrGuaranteed),
 }
@@ -88,6 +90,7 @@ impl<'a> std::fmt::Display for Token<'a> {
             Self::Semi => "';'",
             Self::Comma => "','",
             Self::Newline => "new line",
+            Self::Comment => "comment",
             Self::Eof => "end of input",
             Self::Err(_) => "unknown character",
         };

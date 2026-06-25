@@ -16,7 +16,7 @@ use crate::parser::{ParseCtx, Parser};
 use crate::typecheck::TypeChecker;
 use crate::types::ty_ctx::TyCtx;
 use crate::types::ty_interners::{self, TyInterners};
-use crate::vm::Vm;
+use crate::vm::{OutputSink, Vm};
 
 #[derive(Default)]
 pub struct FletchOpts {
@@ -24,7 +24,7 @@ pub struct FletchOpts {
     pub disassemble: bool,
 }
 
-pub fn run(filename: &str, src: &str, opts: FletchOpts) {
+pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputSink) {
     // Create arena and interners
     let arena = Bump::new();
     let sym_interner = IndexedInterner::new();
@@ -101,5 +101,39 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts) {
 
     // Execute
     let mut vm = Vm::new();
-    vm.execute(&chunk);
+    vm.execute(&chunk, output);
+}
+
+pub fn check(src: &str) -> Vec<crate::diagnostics::Diagnostic> {
+    // Create arena and interners
+    let arena = Bump::new();
+    let sym_interner = IndexedInterner::new();
+
+    // Setup error reporting
+    let mut files = SimpleFiles::new();
+    let file_id = files.add("<anon>", src);
+    let writer = StandardStream::stderr(ColorChoice::Always);
+    let config = codespan_reporting::term::Config::default();
+    let errors = VecReporter::new();
+
+    // Parse
+    let ctx = ParseCtx::new(&arena, &sym_interner, &errors);
+    let mut parser = Parser::new(ctx, src);
+    let ast = parser.parse_program();
+    let sym_table = &sym_interner.freeze();
+
+    // Name resolution
+    let mut name_resolution = NameResolution::new(sym_table, &errors);
+    name_resolution.resolve_program(&ast);
+    let name_tables = name_resolution.finish();
+
+    // Typecheck
+    let ty_interners = TyInterners::new(&arena);
+    let ty_ctx = TyCtx::new(&arena, &ty_interners);
+    let mut checker = TypeChecker::new(ty_ctx, &name_tables, sym_table, &errors);
+    checker.check_func(&ast.main);
+    let type_map = checker.finish();
+
+    // Return diagnostics
+    errors.into_errors()
 }
