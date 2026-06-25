@@ -48,7 +48,7 @@ pub enum Mutability {
 pub enum ExprKind {
     Lit(Lit),
     Var(Ident),
-    Binary(BinOp, Box<Expr>, Box<Expr>),
+    Binary(BinOp, Box<Expr>, Box<Expr>, Span),
     Call(Box<Expr>, Vec<Expr>),
     Grouped(Box<Expr>),
     Array(Vec<Expr>),

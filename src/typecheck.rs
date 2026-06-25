@@ -97,16 +97,15 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     .map(|def_id| *self.locals.get(&def_id).unwrap()) // FIXME: unwrap
                     .unwrap_or_else(|err| self.ty_ctx.mk_error(err)) // FIXME: unwrap
             }
-            ExprKind::Binary(op, lhs, rhs) => {
+            ExprKind::Binary(op, lhs, rhs, span) => {
                 let lhs = self.check_expr(lhs, self.common().infer);
                 let rhs = self.check_expr(rhs, self.common().infer);
                 if lhs == rhs {
                     lhs
                 } else {
-                    // Err(CompilerError::TypeError(format!(
-                    //     "no implementation of '{lhs}' {op} '{rhs}'"
-                    // )))?
-                    todo!()
+                    let msg = format!("no implementation for '{lhs}' {op} '{rhs}'");
+                    let err = self.errors.report_err(Diagnostic::error(msg, *span));
+                    self.ty_ctx.mk_error(err)
                 }
             }
             ExprKind::Call(func, args) => {

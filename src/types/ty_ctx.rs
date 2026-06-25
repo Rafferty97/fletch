@@ -52,7 +52,11 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
     }
 
     pub fn mk_nullable(&self, inner: Ty<'ty>) -> Ty<'ty> {
-        self.mk_ty_from_kind(TyKind::Nullable(inner))
+        if inner.kind() == TyKind::Any {
+            inner
+        } else {
+            self.mk_ty_from_kind(TyKind::Nullable(inner))
+        }
     }
 
     pub fn mk_array(&self, elem: Ty<'ty>) -> Ty<'ty> {

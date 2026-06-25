@@ -13,40 +13,59 @@ use super::lexer::Token;
 
 impl<'a, 'sym> Parser<'a, 'sym> {
     pub(super) fn parse_expr(&mut self) -> Result<Expr> {
+        self.parse_precedence(Precedence::None)
+    }
+
+    fn parse_precedence(&mut self, min_prec: Precedence) -> Result<Expr> {
         let start = self.curr_pos();
-        let expr = self.parse_prefix()?;
 
-        // FIXME
-        let node = match self.peek() {
-            Token::Plus => {
-                let lhs = expr;
-                self.consume();
-                let rhs = self.parse_prefix()?;
-                ExprKind::Binary(BinOp::Add, lhs.into(), rhs.into())
-            }
-            Token::Minus => {
-                let lhs = expr;
-                self.consume();
-                let rhs = self.parse_prefix()?;
-                ExprKind::Binary(BinOp::Sub, lhs.into(), rhs.into())
-            }
-            Token::LeftParen => {
-                let func = expr;
-                self.consume();
-                let args = self.parse_args(Token::RightParen)?;
-                ExprKind::Call(func.into(), args)
-            }
-            Token::LeftBracket => {
-                let array = expr;
-                self.consume();
-                let index = self.parse_expr()?;
-                self.expect(Token::RightBracket)?;
-                ExprKind::Index(array.into(), index.into())
-            }
-            _ => return Ok(expr),
-        };
+        let mut expr = self.parse_prefix()?;
 
-        Ok(self.make_spanned(start, node))
+        loop {
+            let prec = match self.peek() {
+                Token::Plus => Precedence::Term,
+                Token::Minus => Precedence::Term,
+                Token::LeftParen => Precedence::Call,
+                Token::LeftBracket => Precedence::Call,
+                _ => break,
+            };
+            if prec < min_prec {
+                break;
+            }
+
+            let node = match self.peek() {
+                Token::Plus => {
+                    let lhs = expr;
+                    let op = self.consume();
+                    let rhs = self.parse_prefix()?;
+                    ExprKind::Binary(BinOp::Add, lhs.into(), rhs.into(), op.span)
+                }
+                Token::Minus => {
+                    let lhs = expr;
+                    let op = self.consume();
+                    let rhs = self.parse_prefix()?;
+                    ExprKind::Binary(BinOp::Sub, lhs.into(), rhs.into(), op.span)
+                }
+                Token::LeftParen => {
+                    let func = expr;
+                    self.consume();
+                    let args = self.parse_args(Token::RightParen)?;
+                    ExprKind::Call(func.into(), args)
+                }
+                Token::LeftBracket => {
+                    let array = expr;
+                    self.consume();
+                    let index = self.parse_expr()?;
+                    self.expect(Token::RightBracket)?;
+                    ExprKind::Index(array.into(), index.into())
+                }
+                _ => unreachable!(),
+            };
+
+            expr = self.make_spanned(start, node);
+        }
+
+        Ok(expr)
     }
 
     pub fn parse_prefix(&mut self) -> Result<Expr> {
@@ -125,4 +144,14 @@ impl<'a, 'sym> Parser<'a, 'sym> {
 
         Ok(args)
     }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+enum Precedence {
+    None,
+    Term,
+    Factor,
+    Unary,
+    Call,
+    Primary,
 }

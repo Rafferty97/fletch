@@ -81,7 +81,7 @@ impl<'a> NameResolution<'a> {
             ExprKind::Var(name) => {
                 self.resolve_name(*name);
             }
-            ExprKind::Binary(_, lhs, rhs) => {
+            ExprKind::Binary(_, lhs, rhs, _) => {
                 self.resolve_expr(lhs);
                 self.resolve_expr(rhs);
             }

@@ -84,7 +84,7 @@ impl<'a> SExprCtx<'a> {
                 self.write_sym(var.sym);
                 self.str.push(')');
             }
-            ExprKind::Binary(op, lhs, rhs) => {
+            ExprKind::Binary(op, lhs, rhs, _) => {
                 self.str.push('(');
                 self.write_binop(*op);
                 self.str.push(' ');

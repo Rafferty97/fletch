@@ -92,7 +92,7 @@ impl<'a> Compiler<'a> {
                     _ => r0,
                 })
             }
-            ExprKind::Binary(op, lhs, rhs) => {
+            ExprKind::Binary(op, lhs, rhs, _) => {
                 let sp = self.stack_pos;
                 let r0 = self.compile_expr(lhs, None)?;
                 let r1 = self.compile_expr(rhs, None)?;
