@@ -134,6 +134,16 @@ impl<'a> Compiler<'a> {
                 self.builder.ins(Instr::MakeArray { r0, rn, rd });
                 Ok(rd)
             }
+            ExprKind::Index(expr, index) => {
+                let sp = self.stack_pos;
+                let r0 = self.compile_expr(expr, None)?;
+                let r1 = self.compile_expr(index, None)?;
+                self.stack_pos = sp;
+
+                let rd = rd.unwrap_or_else(|| self.push());
+                self.builder.ins(Instr::Index { r0, r1, rd });
+                Ok(rd)
+            }
         }
     }
 

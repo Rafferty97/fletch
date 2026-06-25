@@ -111,6 +111,14 @@ impl<'a> SExprCtx<'a> {
                 }
                 self.str.push(')');
             }
+            ExprKind::Index(expr, index) => {
+                self.str.push_str("(index ");
+                self.str.push(' ');
+                self.write_expr(expr);
+                self.str.push(' ');
+                self.write_expr(index);
+                self.str.push(')');
+            }
         }
     }
 

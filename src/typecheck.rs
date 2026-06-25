@@ -126,6 +126,19 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 let element_ty = expr_tys.into_iter().fold(never, |a, b| self.ty_ctx.join(a, b));
                 self.ty_ctx.mk_array(element_ty)
             }
+            ExprKind::Index(expr, index) => {
+                let expr_ty = self.check_expr(expr, self.common().infer);
+                self.check_expr(index, self.common().int64);
+                match expr_ty.kind() {
+                    TyKind::Array(el) => el,
+                    TyKind::Error(_) => expr_ty,
+                    _ => {
+                        let msg = format!("cannot index into type '{}'", expr_ty);
+                        let diagnostic = Diagnostic::error(msg, expr.span);
+                        self.ty_ctx.mk_error(self.errors.report_err(diagnostic))
+                    }
+                }
+            }
         };
 
         let ty = if expected.is_final() {

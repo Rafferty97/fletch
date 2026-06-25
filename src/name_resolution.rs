@@ -94,6 +94,10 @@ impl<'a> NameResolution<'a> {
             ExprKind::Array(exprs) => {
                 exprs.iter().for_each(|arg| self.resolve_expr(arg));
             }
+            ExprKind::Index(expr, index) => {
+                self.resolve_expr(expr);
+                self.resolve_expr(index);
+            }
         }
     }
 

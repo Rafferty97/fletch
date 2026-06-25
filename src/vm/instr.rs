@@ -9,6 +9,7 @@ pub enum Instr {
     Sub { r0: Reg, r1: Reg, rd: Reg },
     Move { r0: Reg, rd: Reg },
     MakeArray { r0: Reg, rn: Reg, rd: Reg },
+    Index { r0: Reg, r1: Reg, rd: Reg },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -29,7 +30,8 @@ impl Instr {
             Self::Add { r0, r1, rd } => EncodedInstr::opcode(3).reg0(r0).reg1(r1).reg2(rd),
             Self::Sub { r0, r1, rd } => EncodedInstr::opcode(4).reg0(r0).reg1(r1).reg2(rd),
             Self::Move { r0, rd } => EncodedInstr::opcode(5).reg0(r0).reg1(rd),
-            Self::MakeArray { r0, rn: r1, rd } => EncodedInstr::opcode(6).reg0(r0).reg1(r1).reg2(rd),
+            Self::MakeArray { r0, rn, rd } => EncodedInstr::opcode(6).reg0(r0).reg1(rn).reg2(rd),
+            Self::Index { r0, r1, rd } => EncodedInstr::opcode(7).reg0(r0).reg1(r1).reg2(rd),
         }
     }
 
@@ -42,6 +44,7 @@ impl Instr {
             4 => Self::Sub { r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
             5 => Self::Move { r0: enc.get_reg0(), rd: enc.get_reg1() },
             6 => Self::MakeArray { r0: enc.get_reg0(), rn: enc.get_reg1(), rd: enc.get_reg2() },
+            7 => Self::Index { r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
             i => panic!("illegal instruction: {i}"),
         }
     }
@@ -139,7 +142,8 @@ impl Display for Instr {
             Self::Add { r0, r1, rd } => w.mnem("add").reg(rd).reg(r0).reg(r1),
             Self::Sub { r0, r1, rd } => w.mnem("sub").reg(rd).reg(r0).reg(r1),
             Self::Move { r0, rd } => w.mnem("move").reg(rd).reg(r0),
-            Self::MakeArray { r0, rn: r1, rd } => w.mnem("mk.arr").reg(rd).reg(r0).reg(r1),
+            Self::MakeArray { r0, rn, rd } => w.mnem("mk.arr").reg(rd).reg(r0).reg(rn),
+            Self::Index { r0, r1, rd } => w.mnem("index").reg(rd).reg(r0).reg(r1),
         };
         Ok(())
     }

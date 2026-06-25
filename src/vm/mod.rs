@@ -50,6 +50,12 @@ impl Vm {
                     let elements = self.read_many(r0, rn);
                     self.write(rd, Value::new_array(elements.iter().cloned()));
                 }
+                Instr::Index { r0, r1, rd } => {
+                    let expr = self.read(r0).as_array();
+                    let index = self.read(r1).as_uint();
+                    // FIXME: should throw error on out-of-bounds
+                    self.write(rd, expr.get(index as usize).cloned().unwrap_or(Value::new_null()));
+                }
             }
             pc += 1;
         }

@@ -52,6 +52,7 @@ pub enum ExprKind {
     Call(Box<Expr>, Vec<Expr>),
     Grouped(Box<Expr>),
     Array(Vec<Expr>),
+    Index(Box<Expr>, Box<Expr>),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

@@ -36,6 +36,13 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 let args = self.parse_args(Token::RightParen)?;
                 ExprKind::Call(func.into(), args)
             }
+            Token::LeftBracket => {
+                let array = expr;
+                self.consume();
+                let index = self.parse_expr()?;
+                self.expect(Token::RightBracket)?;
+                ExprKind::Index(array.into(), index.into())
+            }
             _ => return Ok(expr),
         };
 
