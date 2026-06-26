@@ -20,6 +20,7 @@ mod helpers;
 mod lexer;
 mod program;
 mod test;
+mod ty;
 
 #[derive(Copy, Clone)]
 pub struct ParseCtx<'a, 'sym> {

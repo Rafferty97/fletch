@@ -33,8 +33,16 @@ impl<'a> SExprCtx<'a> {
 
     fn write_func(&mut self, node: &Func) {
         self.str.push_str("(func ");
-        self.str.push_str(self.sym_table.get_str(node.name.sym));
-        self.str.push(' ');
+        self.write_sym(node.name.sym);
+        self.str.push_str(" (params");
+        for (name, ty) in &node.params {
+            self.str.push_str(" (");
+            self.write_sym(name.sym);
+            self.str.push(' ');
+            self.write_ty(ty);
+            self.str.push(')');
+        }
+        self.str.push_str(") ");
         self.write_block(&node.body);
         self.str.push(')');
     }
@@ -154,6 +162,22 @@ impl<'a> SExprCtx<'a> {
                 self.str.push_str("\")");
             }
             Lit::Err(_) => self.str.push_str("err"),
+        }
+    }
+
+    fn write_ty(&mut self, node: &Ty) {
+        match &node.node {
+            TyKind::Var(var) => self.write_sym(var.sym),
+            TyKind::Nullable(ty) => {
+                self.str.push_str("(? ");
+                self.write_ty(ty);
+                self.str.push(')');
+            }
+            TyKind::Array(ty) => {
+                self.str.push_str("(array ");
+                self.write_ty(ty);
+                self.str.push(')');
+            }
         }
     }
 

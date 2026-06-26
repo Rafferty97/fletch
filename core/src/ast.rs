@@ -13,6 +13,7 @@ pub struct NodeId(pub u32);
 
 pub type Stmt = Spanned<StmtKind>;
 pub type Expr = Spanned<ExprKind>;
+pub type Ty = Spanned<TyKind>;
 
 #[derive(Clone, Debug)]
 pub struct Program {
@@ -22,6 +23,7 @@ pub struct Program {
 #[derive(Clone, Debug)]
 pub struct Func {
     pub name: Ident,
+    pub params: Vec<(Ident, Ty)>,
     pub body: Block,
 }
 
@@ -69,6 +71,13 @@ pub enum Lit {
 pub enum BinOp {
     Add,
     Sub,
+}
+
+#[derive(Clone, Debug)]
+pub enum TyKind {
+    Var(Ident),
+    Nullable(Box<Ty>),
+    Array(Box<Ty>),
 }
 
 #[derive(Clone, Copy, Debug)]

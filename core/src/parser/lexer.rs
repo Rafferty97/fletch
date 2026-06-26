@@ -49,6 +49,10 @@ pub enum Token<'a> {
     Comma,
     #[token(";")]
     Semi,
+    #[token(":")]
+    Colon,
+    #[token("?")]
+    Question,
     #[token("\n")]
     Newline,
     #[regex(r"//[^\n]*", logos::skip, allow_greedy = true)]
@@ -89,6 +93,8 @@ impl<'a> std::fmt::Display for Token<'a> {
             Self::Eq => "'='",
             Self::Semi => "';'",
             Self::Comma => "','",
+            Self::Colon => "':'",
+            Self::Question => "'?'",
             Self::Newline => "new line",
             Self::Comment => "comment",
             Self::Eof => "end of input",

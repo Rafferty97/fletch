@@ -59,7 +59,7 @@ fn parse_simple_arithmetic_program() {
             fn main() {
                 print(2 + 2);
             }"#;
-        let expected = r#"(func main (block (call (var print) (+ (int 2) (int 2))) none))"#;
+        let expected = r#"(func main (params) (block (call (var print) (+ (int 2) (int 2))) none))"#;
         test_parse(ctx, |p| Ok(p.parse_program()), src, expected);
     });
 }
@@ -71,7 +71,19 @@ fn parse_incomplete_string_lit() {
             fn main() {
                 print("Hello world
             }"#;
-        let expected = r#"(func main (block none))"#;
+        let expected = r#"(func main (params) (block none))"#;
+        test_parse(ctx, |p| Ok(p.parse_program()), src, expected);
+    });
+}
+
+#[test]
+fn parse_func_with_params() {
+    with_parse_ctx(|ctx| {
+        let src = r#"
+        fn foo(x: int32, y: [str?]) {
+            let x = 2
+        }"#;
+        let expected = r#"(func foo (params (x int32) (y (array (? str)))) (block (let x (int 2)) none))"#;
         test_parse(ctx, |p| Ok(p.parse_program()), src, expected);
     });
 }

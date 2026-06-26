@@ -1,5 +1,5 @@
 use crate::ast::span::{Span, Spanned};
-use crate::ast::{Block, Expr, ExprKind, Func, Ident, Lit, Mutability, Program, Stmt, StmtKind, Symbol};
+use crate::ast::{Block, Expr, ExprKind, Func, Ident, Lit, Mutability, Program, Stmt, StmtKind, Symbol, Ty};
 use crate::diagnostics::Diagnostic;
 use crate::parser::SpannedToken;
 
@@ -34,18 +34,35 @@ impl<'a, 'sym> Parser<'a, 'sym> {
 
     fn parse_func(&mut self) -> Result<Func> {
         self.expect(Token::Func)?;
-
-        // Function name
         let name = self.parse_ident()?;
-
-        // Parameter list
         self.expect(Token::LeftParen)?;
-        self.expect(Token::RightParen)?;
-
-        // Body
+        let params = self.parse_params()?;
         let body = self.parse_block();
+        Ok(Func { name, params, body })
+    }
 
-        Ok(Func { name, body })
+    fn parse_params(&mut self) -> Result<Vec<(Ident, Ty)>> {
+        let mut params = vec![];
+
+        loop {
+            if self.peek() == Token::RightParen {
+                self.consume();
+                break;
+            }
+
+            let name = self.parse_ident()?;
+            self.expect(Token::Colon)?;
+            let ty = self.parse_ty()?;
+            params.push((name, ty));
+
+            match self.consume().token {
+                Token::Comma => {}
+                t if t == Token::RightParen => break,
+                _ => Err(self.unexpected_prev())?,
+            }
+        }
+
+        Ok(params)
     }
 
     fn parse_block(&mut self) -> Block {
