@@ -21,6 +21,10 @@ impl<'a> OutputSink for JsSink<'a> {
     fn emit(&mut self, text: &str) {
         let _ = self.0.call1(&JsValue::NULL, &JsValue::from_str(text));
     }
+
+    fn emit_err(&mut self, text: &str) {
+        let _ = self.0.call1(&JsValue::NULL, &JsValue::from_str(text));
+    }
 }
 
 // run(source, printCb) -> JsValue (result/diagnostics)

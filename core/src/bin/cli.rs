@@ -22,6 +22,10 @@ impl OutputSink for StdOut {
     fn emit(&mut self, text: &str) {
         print!("{text}")
     }
+
+    fn emit_err(&mut self, text: &str) {
+        eprintln!("{text}")
+    }
 }
 
 pub fn run() -> Result<(), String> {

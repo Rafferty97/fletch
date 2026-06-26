@@ -14,6 +14,7 @@ pub struct Vm {
 
 pub trait OutputSink {
     fn emit(&mut self, text: &str);
+    fn emit_err(&mut self, text: &str);
 }
 
 impl Vm {

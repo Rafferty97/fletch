@@ -82,13 +82,16 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
 
     if num_errors > 0 {
         let s = if num_errors == 1 { "" } else { "s" };
-        eprintln!("error: could not run `{}` due to {} error{}", filename, num_errors, s);
+        output.emit_err(&format!(
+            "error: could not run `{}` due to {} error{}",
+            filename, num_errors, s
+        ));
         return;
     }
 
     // Extract the main function
     let Some(main) = ast.funcs.iter().find(|f| f.name.sym == main_sym) else {
-        eprintln!("error: no main function defined");
+        output.emit_err("error: no main function defined");
         return;
     };
 
@@ -96,7 +99,7 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
     let chunk = match compile_func(main, sym_table, type_map) {
         Ok(func) => func,
         Err(err) => {
-            eprintln!("compiler error: {err}");
+            output.emit_err(&format!("compiler error: {err}"));
             return;
         }
     };
