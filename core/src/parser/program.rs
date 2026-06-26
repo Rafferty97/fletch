@@ -99,10 +99,15 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                     _ => unreachable!(),
                 };
                 let name = self.parse_ident()?;
+                let ty = self
+                    .consume_if(|t| t == Token::Colon)
+                    .map(|_| self.parse_ty())
+                    .transpose()?
+                    .map(Into::into);
                 self.expect(Token::Eq)?;
                 let value = self.parse_expr()?.into();
                 self.expect(Token::Semi)?;
-                StmtKind::Let(name, value, mutability)
+                StmtKind::Let(name, ty, value, mutability)
             }
             _ => {
                 let expr = self.parse_expr()?;

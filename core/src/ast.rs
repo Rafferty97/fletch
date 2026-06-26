@@ -36,7 +36,7 @@ pub struct Block {
 #[derive(Clone, Debug)]
 pub enum StmtKind {
     Expr(Box<Expr>),
-    Let(Ident, Box<Expr>, Mutability),
+    Let(Ident, Option<Box<Ty>>, Box<Expr>, Mutability),
     Assign(Ident, Box<Expr>),
 }
 
@@ -75,6 +75,7 @@ pub enum BinOp {
 
 #[derive(Clone, Debug)]
 pub enum TyKind {
+    Infer,
     Var(Ident),
     Nullable(Box<Ty>),
     Array(Box<Ty>),

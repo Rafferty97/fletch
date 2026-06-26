@@ -67,11 +67,16 @@ impl<'a> SExprCtx<'a> {
             StmtKind::Expr(expr) => {
                 self.write_expr(expr);
             }
-            StmtKind::Let(name, value, mutability) => {
+            StmtKind::Let(name, ty, value, mutability) => {
                 match mutability {
                     Mutability::Not => self.str.push_str("(let "),
                     Mutability::Mut => self.str.push_str("(var "),
                 };
+                match ty {
+                    Some(ty) => self.write_ty(ty),
+                    None => self.str.push('_'),
+                }
+                self.str.push(' ');
                 self.write_sym(name.sym);
                 self.str.push(' ');
                 self.write_expr(value);
@@ -167,6 +172,7 @@ impl<'a> SExprCtx<'a> {
 
     fn write_ty(&mut self, node: &Ty) {
         match &node.node {
+            TyKind::Infer => self.str.push('_'),
             TyKind::Var(var) => self.write_sym(var.sym),
             TyKind::Nullable(ty) => {
                 self.str.push_str("(? ");

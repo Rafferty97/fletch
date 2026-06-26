@@ -58,7 +58,7 @@ impl<'a> Compiler<'a> {
                 self.stack_pos = sp;
                 Ok(())
             }
-            StmtKind::Let(name, value, _) => {
+            StmtKind::Let(name, _, value, _) => {
                 let (rd, sp) = self.reserve();
                 self.compile_expr(value, Some(rd))?;
                 self.stack_pos = sp;

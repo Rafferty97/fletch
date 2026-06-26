@@ -57,7 +57,7 @@ impl<'a> NameResolution<'a> {
         for stmt in &func.body.stmts {
             match &stmt.node {
                 StmtKind::Expr(expr) => self.resolve_expr(expr),
-                StmtKind::Let(name, expr, mutability) => {
+                StmtKind::Let(name, _, expr, mutability) => {
                     self.resolve_expr(expr);
                     self.define_name(*name, *mutability);
                 }

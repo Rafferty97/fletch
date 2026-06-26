@@ -65,7 +65,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             StmtKind::Expr(expr) => {
                 self.check_expr(&*expr, self.common().infer);
             }
-            StmtKind::Let(name, value, _) => {
+            StmtKind::Let(name, _, value, _) => {
                 let def_id = *self.name_tables.uses.get(&name.id).unwrap(); // FIXME
                 let ty = self.check_expr(&*value, self.common().infer);
                 if let Ok(def_id) = def_id {
