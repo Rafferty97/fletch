@@ -28,6 +28,7 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
     // Create arena and interners
     let arena = Bump::new();
     let sym_interner = IndexedInterner::new();
+    let main_sym = sym_interner.intern_str(&arena, "main");
 
     // Setup error reporting
     let mut files = SimpleFiles::new();
@@ -59,7 +60,7 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
     let ty_interners = TyInterners::new(&arena);
     let ty_ctx = TyCtx::new(&arena, &ty_interners);
     let mut checker = TypeChecker::new(ty_ctx, &name_tables, sym_table, &errors);
-    checker.check_func(&ast.main);
+    checker.check_program(&ast);
     let type_map = checker.finish();
 
     // Report errors and bail if necessary
@@ -85,8 +86,14 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
         return;
     }
 
+    // Extract the main function
+    let Some(main) = ast.funcs.iter().find(|f| f.name.sym == main_sym) else {
+        eprintln!("error: no main function defined");
+        return;
+    };
+
     // Compile
-    let chunk = match compile_func(&ast.main, sym_table, type_map) {
+    let chunk = match compile_func(main, sym_table, type_map) {
         Ok(func) => func,
         Err(err) => {
             eprintln!("compiler error: {err}");
@@ -131,7 +138,7 @@ pub fn check(src: &str) -> Vec<crate::diagnostics::Diagnostic> {
     let ty_interners = TyInterners::new(&arena);
     let ty_ctx = TyCtx::new(&arena, &ty_interners);
     let mut checker = TypeChecker::new(ty_ctx, &name_tables, sym_table, &errors);
-    checker.check_func(&ast.main);
+    checker.check_program(&ast);
     let type_map = checker.finish();
 
     // Return diagnostics

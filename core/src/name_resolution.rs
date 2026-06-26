@@ -47,7 +47,9 @@ impl<'a> NameResolution<'a> {
     }
 
     pub fn resolve_program(&mut self, program: &Program) {
-        self.resolve_func(&program.main);
+        for func in &program.funcs {
+            self.resolve_func(func);
+        }
     }
 
     pub fn resolve_func(&mut self, func: &Func) {

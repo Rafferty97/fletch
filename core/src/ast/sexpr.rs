@@ -25,7 +25,10 @@ impl SExpr for Expr {
 
 impl<'a> SExprCtx<'a> {
     fn write_program(&mut self, node: &Program) {
-        self.write_func(&node.main);
+        for func in &node.funcs {
+            self.write_func(&func);
+            self.str.push('\n');
+        }
     }
 
     fn write_func(&mut self, node: &Func) {

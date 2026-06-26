@@ -9,18 +9,27 @@ use super::lexer::Token;
 
 impl<'a, 'sym> Parser<'a, 'sym> {
     pub fn parse_program(&mut self) -> Program {
-        // Expect a single main function
-        let main = self.parse_func().unwrap_or_else(|_| {
-            // FIXME
-            let name = Ident { id: self.node_ids.next(), sym: self.make_symbol("main"), span: Span::dummy() };
-            let body = Default::default();
-            Func { name, body }
-        });
+        let mut funcs = vec![];
 
-        // Expect EOF
-        self.expect(Token::Eof).ok();
+        while self.peek() != Token::Eof {
+            match self.parse_top_level_item() {
+                Ok(func) => funcs.push(func),
+                _ => loop {
+                    match self.peek() {
+                        Token::Func => break,
+                        Token::Eof => break,
+                        _ => {}
+                    }
+                    self.consume();
+                },
+            }
+        }
 
-        Program { main }
+        Program { funcs }
+    }
+
+    fn parse_top_level_item(&mut self) -> Result<Func> {
+        self.parse_func()
     }
 
     fn parse_func(&mut self) -> Result<Func> {

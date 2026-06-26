@@ -30,7 +30,7 @@ where
     let sym_table = &ctx.sym_interner.snapshot();
     let mut sexpr_ctx = SExprCtx { str: &mut actual, sym_table };
     result.write(&mut sexpr_ctx);
-    assert_eq!(actual, expected);
+    assert_eq!(actual.trim(), expected);
 }
 
 #[test]

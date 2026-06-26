@@ -6,7 +6,7 @@ use itertools::Itertools;
 use thiserror::Error;
 
 use crate::ast::span::Span;
-use crate::ast::{Expr, ExprKind, Func, Lit, NodeId, Stmt, StmtKind, Symbol};
+use crate::ast::{Expr, ExprKind, Func, Lit, NodeId, Program, Stmt, StmtKind, Symbol};
 use crate::diagnostics::{Diagnostic, DiagnosticReporter};
 use crate::interner::IndexTable;
 use crate::name_resolution::{DefId, NameTables};
@@ -45,6 +45,12 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
 
     pub fn finish(self) -> FnvHashMap<NodeId, Ty<'ty>> {
         self.type_map
+    }
+
+    pub fn check_program(&mut self, ast: &Program) {
+        for func in &ast.funcs {
+            self.check_func(func);
+        }
     }
 
     pub fn check_func(&mut self, ast: &Func) {

@@ -16,7 +16,7 @@ pub type Expr = Spanned<ExprKind>;
 
 #[derive(Clone, Debug)]
 pub struct Program {
-    pub main: Func,
+    pub funcs: Vec<Func>,
 }
 
 #[derive(Clone, Debug)]
