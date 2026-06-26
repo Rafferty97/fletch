@@ -35,12 +35,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
         self.current = loop {
             let token = match self.lexer.next() {
                 Some((Ok(token), span)) => SpannedToken { token, span: span.into() },
-                Some((Err(_), span)) => {
-                    let span = span.into();
-                    let diagnostic = Diagnostic::error("unexpected character", span);
-                    let err = self.report_err(diagnostic);
-                    SpannedToken { token: Token::Err(err), span }
-                }
+                Some((Err(_), span)) => SpannedToken { token: Token::Err('\0'), span: span.into() },
                 None => {
                     let pos = self.previous.span.hi();
                     SpannedToken { token: Token::Eof, span: Span::new(pos, pos) }

@@ -53,12 +53,17 @@ pub enum Token<'a> {
     Colon,
     #[token("?")]
     Question,
+    #[token("->")]
+    ThinArrow,
+    #[token("=>")]
+    FatArrow,
     #[token("\n")]
     Newline,
     #[regex(r"//[^\n]*", logos::skip, allow_greedy = true)]
     Comment,
     Eof,
-    Err(ErrGuaranteed),
+    #[regex(r".", |lex| lex.slice().chars().next().unwrap(), priority = 0)]
+    Err(char),
 }
 
 impl<'a> Token<'a> {
@@ -95,10 +100,12 @@ impl<'a> std::fmt::Display for Token<'a> {
             Self::Comma => "','",
             Self::Colon => "':'",
             Self::Question => "'?'",
+            Self::ThinArrow => "'->'",
+            Self::FatArrow => "'=>'",
             Self::Newline => "new line",
             Self::Comment => "comment",
             Self::Eof => "end of input",
-            Self::Err(_) => "unknown character",
+            Self::Err(c) => "'{c}'",
         };
         write!(f, "{}", str)
     }

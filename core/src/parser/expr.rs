@@ -48,8 +48,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 }
                 Token::LeftParen => {
                     let func = expr;
-                    self.consume();
-                    let args = self.parse_args(Token::RightParen)?;
+                    let args = self.parse_list(Token::LeftParen, Token::RightParen)?;
                     ExprKind::Call(func.into(), args)
                 }
                 Token::LeftBracket => {
@@ -114,8 +113,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 ExprKind::Grouped(expr)
             }
             Token::LeftBracket => {
-                self.consume();
-                let exprs = self.parse_args(Token::RightBracket)?;
+                let exprs = self.parse_list(Token::LeftBracket, Token::RightBracket)?;
                 ExprKind::Array(exprs)
             }
             _ => Err(self.unexpected_curr())?,
@@ -124,9 +122,10 @@ impl<'a, 'sym> Parser<'a, 'sym> {
         Ok(self.make_spanned(start, kind))
     }
 
-    fn parse_args(&mut self, terminator: Token) -> Result<Vec<Expr>> {
+    fn parse_list(&mut self, start: Token<'a>, terminator: Token<'a>) -> Result<Vec<Expr>> {
         let mut args = vec![];
 
+        self.expect(start)?;
         loop {
             if self.peek() == terminator {
                 self.consume();

@@ -35,15 +35,15 @@ impl<'a, 'sym> Parser<'a, 'sym> {
     fn parse_func(&mut self) -> Result<Func> {
         self.expect(Token::Func)?;
         let name = self.parse_ident()?;
-        self.expect(Token::LeftParen)?;
         let params = self.parse_params()?;
-        let body = self.parse_block();
+        let body = self.parse_block()?;
         Ok(Func { name, params, body })
     }
 
     fn parse_params(&mut self) -> Result<Vec<(Ident, Ty)>> {
-        let mut params = vec![];
+        self.expect(Token::LeftParen)?;
 
+        let mut params = vec![];
         loop {
             if self.peek() == Token::RightParen {
                 self.consume();
@@ -65,11 +65,8 @@ impl<'a, 'sym> Parser<'a, 'sym> {
         Ok(params)
     }
 
-    fn parse_block(&mut self) -> Block {
-        match self.expect(Token::LeftBrace) {
-            Ok(_) => {}
-            Err(_) => return Block::default(),
-        }
+    fn parse_block(&mut self) -> Result<Block> {
+        self.expect(Token::LeftBrace)?;
 
         let mut stmts = vec![];
         'outer: while !self.check(|t| t == Token::RightBrace) {
@@ -86,7 +83,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
             }
         }
 
-        Block { stmts, tail: None }
+        Ok(Block { stmts, tail: None })
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt> {
