@@ -139,10 +139,8 @@ impl<'a> SExprCtx<'a> {
     }
 
     fn write_binop(&mut self, op: BinOp) {
-        match op {
-            BinOp::Add => self.str.push('+'),
-            BinOp::Sub => self.str.push('-'),
-        }
+        use std::fmt::Write;
+        write!(&mut self.str, "{op}");
     }
 
     fn write_lit(&mut self, lit: &Lit) {

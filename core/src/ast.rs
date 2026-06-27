@@ -72,6 +72,14 @@ pub enum Lit {
 pub enum BinOp {
     Add,
     Sub,
+    Mul,
+    Div,
+    Eq,
+    NotEq,
+    Lt,
+    LtEq,
+    Gt,
+    GtEq,
 }
 
 #[derive(Clone, Debug)]
@@ -107,6 +115,14 @@ impl Display for BinOp {
         match self {
             Self::Add => write!(f, "+"),
             Self::Sub => write!(f, "-"),
+            Self::Mul => write!(f, "*"),
+            Self::Div => write!(f, "/"),
+            Self::Eq => write!(f, "=="),
+            Self::NotEq => write!(f, "!="),
+            Self::Lt => write!(f, "<"),
+            Self::LtEq => write!(f, "<="),
+            Self::Gt => write!(f, ">"),
+            Self::GtEq => write!(f, ">="),
         }
     }
 }

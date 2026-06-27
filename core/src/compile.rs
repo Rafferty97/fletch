@@ -6,10 +6,11 @@ use thiserror::Error;
 use crate::ast::{BinOp, Expr, ExprKind, Func, Ident, Lit, NodeId, Stmt, StmtKind, Symbol};
 use crate::interner::IndexTable;
 use crate::types::infer::TypeError;
+use crate::types::ty::IntTy;
 use crate::types::{Ty, TyKind};
 use crate::vm::chunk::{Chunk, ChunkBuilder};
 use crate::vm::instr::{Instr, Reg};
-use crate::vm::value::Value;
+use crate::vm::value::{ScalarTy, Value};
 
 pub fn compile_func(
     ast: &Func,
@@ -102,6 +103,23 @@ impl<'a> Compiler<'a> {
                 match op {
                     BinOp::Add => self.builder.ins(Instr::Add { r0, r1, rd }),
                     BinOp::Sub => self.builder.ins(Instr::Sub { r0, r1, rd }),
+                    BinOp::Mul => self.builder.ins(Instr::Mul { r0, r1, rd }),
+                    BinOp::Div => self.builder.ins(Instr::UDiv { r0, r1, rd }), // FIXME
+                    BinOp::Eq => self.builder.ins(Instr::Eq { r0, r1, rd }),
+                    BinOp::NotEq => {
+                        self.builder.ins(Instr::Eq { r0, r1, rd });
+                        self.builder.ins(Instr::Not { r0: rd, rd });
+                    }
+                    BinOp::Lt => self.builder.ins(Instr::SLt { r0, r1, rd }), // FIXME
+                    BinOp::LtEq => {
+                        self.builder.ins(Instr::SLt { r0: r1, r1: r0, rd }); // FIXME
+                        self.builder.ins(Instr::Not { r0: rd, rd });
+                    }
+                    BinOp::Gt => self.builder.ins(Instr::SLt { r0: r1, r1: r0, rd }), // FIXME
+                    BinOp::GtEq => {
+                        self.builder.ins(Instr::SLt { r0, r1, rd }); // FIXME
+                        self.builder.ins(Instr::Not { r0: rd, rd });
+                    }
                 }
                 Ok(rd)
             }
@@ -165,7 +183,8 @@ impl<'a> Compiler<'a> {
                     .get_str(sym)
                     .parse()
                     .map_err(|_| CompilerError::InvalidLiteral)?;
-                let imm = self.builder.constant(Value::new_int(value));
+                let ty = ScalarTy::Int(IntTy::Int32);
+                let imm = self.builder.constant(Value::new_sint(value, ty));
                 self.builder.ins(Instr::Load(rd, imm));
                 Ok(())
             }

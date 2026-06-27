@@ -45,6 +45,18 @@ pub enum Token<'a> {
     Solidus,
     #[token("=")]
     Eq,
+    #[token("==")]
+    EqEq,
+    #[token("!=")]
+    BangEq,
+    #[token("<")]
+    Lt,
+    #[token("<=")]
+    LtEq,
+    #[token(">")]
+    Gt,
+    #[token(">=")]
+    GtEq,
     #[token(",")]
     Comma,
     #[token(";")]
@@ -96,6 +108,12 @@ impl<'a> std::fmt::Display for Token<'a> {
             Self::Asterisk => "'*'",
             Self::Solidus => "'/'",
             Self::Eq => "'='",
+            Self::EqEq => "'=='",
+            Self::BangEq => "'!='",
+            Self::Lt => "'<'",
+            Self::LtEq => "'<='",
+            Self::Gt => "'>'",
+            Self::GtEq => "'>='",
             Self::Semi => "';'",
             Self::Comma => "','",
             Self::Colon => "':'",

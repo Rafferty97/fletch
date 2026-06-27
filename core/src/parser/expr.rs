@@ -25,6 +25,10 @@ impl<'a, 'sym> Parser<'a, 'sym> {
             let prec = match self.peek() {
                 Token::Plus => Precedence::Term,
                 Token::Minus => Precedence::Term,
+                Token::Asterisk => Precedence::Factor,
+                Token::Solidus => Precedence::Factor,
+                Token::EqEq | Token::BangEq => Precedence::Equality,
+                Token::Lt | Token::LtEq | Token::Gt | Token::GtEq => Precedence::Comparison,
                 Token::LeftParen => Precedence::Call,
                 Token::LeftBracket => Precedence::Call,
                 _ => break,
@@ -33,41 +37,39 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 break;
             }
 
-            let node = match self.peek() {
-                Token::Plus => {
-                    let lhs = expr;
-                    let op = self.consume();
-                    let rhs = self.parse_prefix()?;
-                    ExprKind::Binary(BinOp::Add, lhs.into(), rhs.into(), op.span)
-                }
-                Token::Minus => {
-                    let lhs = expr;
-                    let op = self.consume();
-                    let rhs = self.parse_prefix()?;
-                    ExprKind::Binary(BinOp::Sub, lhs.into(), rhs.into(), op.span)
-                }
+            expr = match self.peek() {
+                Token::Plus => self.parse_binary(expr, BinOp::Add, Precedence::Term)?,
+                Token::Minus => self.parse_binary(expr, BinOp::Sub, Precedence::Term)?,
+                Token::Asterisk => self.parse_binary(expr, BinOp::Mul, Precedence::Factor)?,
+                Token::Solidus => self.parse_binary(expr, BinOp::Div, Precedence::Factor)?,
+                Token::EqEq => self.parse_binary(expr, BinOp::Eq, Precedence::Equality)?,
+                Token::BangEq => self.parse_binary(expr, BinOp::NotEq, Precedence::Equality)?,
+                Token::Lt => self.parse_binary(expr, BinOp::Lt, Precedence::Comparison)?,
+                Token::LtEq => self.parse_binary(expr, BinOp::LtEq, Precedence::Comparison)?,
+                Token::Gt => self.parse_binary(expr, BinOp::Gt, Precedence::Comparison)?,
+                Token::GtEq => self.parse_binary(expr, BinOp::GtEq, Precedence::Comparison)?,
                 Token::LeftParen => {
                     let func = expr;
                     let args = self.parse_list(Token::LeftParen, Token::RightParen)?;
-                    ExprKind::Call(func.into(), args)
+                    let node = ExprKind::Call(func.into(), args);
+                    self.make_spanned(start, node)
                 }
                 Token::LeftBracket => {
                     let array = expr;
                     self.consume();
                     let index = self.parse_expr()?;
                     self.expect(Token::RightBracket)?;
-                    ExprKind::Index(array.into(), index.into())
+                    let node = ExprKind::Index(array.into(), index.into());
+                    self.make_spanned(start, node)
                 }
                 _ => unreachable!(),
             };
-
-            expr = self.make_spanned(start, node);
         }
 
         Ok(expr)
     }
 
-    pub fn parse_prefix(&mut self) -> Result<Expr> {
+    fn parse_prefix(&mut self) -> Result<Expr> {
         let start = self.curr_pos();
 
         let kind = match self.peek() {
@@ -122,6 +124,15 @@ impl<'a, 'sym> Parser<'a, 'sym> {
         Ok(self.make_spanned(start, kind))
     }
 
+    fn parse_binary(&mut self, lhs: Expr, op: BinOp, prec: Precedence) -> Result<Expr> {
+        let op_token = self.consume();
+        let rhs = self.parse_precedence(prec)?;
+        let id = self.node_ids.next();
+        let span = Span::cover(lhs.span, rhs.span);
+        let node = ExprKind::Binary(op, lhs.into(), rhs.into(), op_token.span);
+        Ok(Expr { id, node, span })
+    }
+
     fn parse_list(&mut self, start: Token<'a>, terminator: Token<'a>) -> Result<Vec<Expr>> {
         let mut args = vec![];
 
@@ -148,6 +159,8 @@ impl<'a, 'sym> Parser<'a, 'sym> {
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 enum Precedence {
     None,
+    Equality,
+    Comparison,
     Term,
     Factor,
     Unary,

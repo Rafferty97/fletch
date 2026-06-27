@@ -83,7 +83,7 @@ fn parse_func_with_params() {
         fn foo(x: int32, y: [str?]) {
             let x = 2
         }"#;
-        let expected = r#"(func foo (params (x int32) (y (array (? str)))) (block (let x (int 2)) none))"#;
+        let expected = r#"(func foo (params (x int32) (y (array (? str)))) (block (let _ x (int 2)) none))"#;
         test_parse(ctx, |p| Ok(p.parse_program()), src, expected);
     });
 }
