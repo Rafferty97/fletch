@@ -24,6 +24,7 @@ pub struct Program {
 pub struct Func {
     pub name: Ident,
     pub params: Vec<(Ident, Ty)>,
+    pub ret: Option<Ty>,
     pub body: Block,
 }
 
