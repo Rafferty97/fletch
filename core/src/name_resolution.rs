@@ -12,13 +12,16 @@ pub struct NameResolution<'a> {
     defs: FnvHashMap<DefId, BindingInfo>,
     uses: FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
     scopes: Vec<FnvHashMap<Symbol, DefId>>,
+    idents: Vec<Ident>,
     def_ids: IdGen<DefId>,
     errors: &'a dyn DiagnosticReporter,
 }
 
+#[derive(Clone, Debug)]
 pub struct NameTables {
     pub defs: FnvHashMap<DefId, BindingInfo>,
     pub uses: FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
+    pub idents: Vec<Ident>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -37,13 +40,14 @@ impl<'a> NameResolution<'a> {
             defs: FnvHashMap::default(),
             uses: FnvHashMap::default(),
             scopes: vec![],
+            idents: vec![],
             def_ids: IdGen::new(DefId),
             errors,
         }
     }
 
     pub fn finish(self) -> NameTables {
-        NameTables { defs: self.defs, uses: self.uses }
+        NameTables { defs: self.defs, uses: self.uses, idents: self.idents }
     }
 
     pub fn resolve_program(&mut self, program: &Program) {
@@ -67,10 +71,12 @@ impl<'a> NameResolution<'a> {
             match &stmt.node {
                 StmtKind::Expr(expr) => self.resolve_expr(expr),
                 StmtKind::Let(name, _, expr, mutability) => {
+                    self.idents.push(*name);
                     self.resolve_expr(expr);
                     self.define_name(*name, *mutability);
                 }
                 StmtKind::Assign(name, rhs) => {
+                    self.idents.push(*name);
                     self.resolve_expr(rhs);
                     let Some(binding_info) = self.resolve_name(*name) else {
                         continue;
@@ -93,6 +99,7 @@ impl<'a> NameResolution<'a> {
         match &expr.node {
             ExprKind::Lit(_) => {}
             ExprKind::Var(name) => {
+                self.idents.push(*name);
                 self.resolve_name(*name);
             }
             ExprKind::Binary(_, lhs, rhs, _) => {

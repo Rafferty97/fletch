@@ -4,7 +4,9 @@ use itertools::Itertools;
 use thiserror::Error;
 
 use crate::ast::{BinOp, Block, Expr, ExprKind, Func, Ident, Lit, NodeId, Stmt, StmtKind, Symbol};
+use crate::diagnostics::ErrGuaranteed;
 use crate::interner::IndexTable;
+use crate::name_resolution::DefId;
 use crate::types::infer::TypeError;
 use crate::types::ty::IntTy;
 use crate::types::{Ty, TyKind};
@@ -16,12 +18,14 @@ use crate::vm::value::{ScalarTy, Value};
 pub fn compile_func(
     ast: &Func,
     sym_table: &IndexTable<'_, Symbol, str>,
+    uses: &FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
     type_map: FnvHashMap<NodeId, Ty<'_>>,
 ) -> Result<Chunk> {
     let builder = ChunkBuilder::new();
     let mut compiler = Compiler {
         builder,
         sym_table,
+        uses,
         type_map,
         locals: vec![],
         stack_pos: StackPos(0),
@@ -35,8 +39,9 @@ pub fn compile_func(
 struct Compiler<'a> {
     builder: ChunkBuilder,
     sym_table: &'a IndexTable<'a, Symbol, str>,
+    uses: &'a FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
     type_map: FnvHashMap<NodeId, Ty<'a>>,
-    locals: Vec<Symbol>,
+    locals: Vec<DefId>,
     stack_pos: StackPos,
     stack_size: StackPos,
     labels: IdGen<String>,
@@ -79,12 +84,13 @@ impl<'a> Compiler<'a> {
                 let (rd, sp) = self.reserve();
                 self.compile_expr(value, Some(rd))?;
                 self.stack_pos = sp;
-                self.locals.push(name.sym);
+                self.locals.push(self.uses[&name.id].unwrap());
                 Ok(())
             }
             StmtKind::Assign(lhs, rhs) => {
                 let sp = self.stack_pos;
-                let rd = self.lookup_var(lhs)?;
+                let def_id = self.uses[&lhs.id].unwrap();
+                let rd = self.lookup_var(def_id)?;
                 self.compile_expr(rhs, Some(rd))?;
                 self.stack_pos = sp;
                 Ok(())
@@ -100,7 +106,8 @@ impl<'a> Compiler<'a> {
                 Ok(rd)
             }
             ExprKind::Var(ident) => {
-                let r0 = self.lookup_var(ident)?;
+                let def_id = self.uses[&ident.id].unwrap();
+                let r0 = self.lookup_var(def_id)?;
                 Ok(match rd {
                     Some(rd) if rd != r0 => {
                         self.builder.ins(Instr::Move { r0, rd });
@@ -253,11 +260,8 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn lookup_var(&self, ident: &Ident) -> Result<Reg> {
-        let index = self.locals.iter().position(|s| *s == ident.sym).ok_or_else(|| {
-            let name = self.sym_table.get_str(ident.sym).into();
-            CompilerError::UndefinedName(name)
-        })?;
+    fn lookup_var(&self, def_id: DefId) -> Result<Reg> {
+        let index = self.locals.iter().position(|s| *s == def_id).unwrap(); // FIXME: unwrap
         Ok(Reg(index as u16))
     }
 

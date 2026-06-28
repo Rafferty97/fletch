@@ -19,7 +19,7 @@ pub struct TypeChecker<'a, 'ty> {
     ty_ctx: TyCtx<'a, 'ty>,
     name_tables: &'a NameTables,
     type_map: FnvHashMap<NodeId, Ty<'ty>>,
-    locals: FnvHashMap<DefId, Ty<'ty>>,
+    def_map: FnvHashMap<DefId, Ty<'ty>>,
     sym_table: &'a IndexTable<'a, Symbol, str>,
     errors: &'a dyn DiagnosticReporter,
 }
@@ -37,14 +37,14 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             ty_ctx,
             name_tables,
             type_map: FnvHashMap::default(),
-            locals: FnvHashMap::default(),
+            def_map: FnvHashMap::default(),
             sym_table,
             errors,
         }
     }
 
-    pub fn finish(self) -> FnvHashMap<NodeId, Ty<'ty>> {
-        self.type_map
+    pub fn finish(self) -> (FnvHashMap<NodeId, Ty<'ty>>, FnvHashMap<DefId, Ty<'ty>>) {
+        (self.type_map, self.def_map)
     }
 
     pub fn check_program(&mut self, ast: &Program) {
@@ -54,12 +54,11 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
     }
 
     pub fn check_func(&mut self, ast: &Func) {
-        self.locals.clear();
         for (name, ty) in &ast.params {
             let def_id = *self.name_tables.uses.get(&name.id).unwrap(); // FIXME
             let ty = self.lower_ty(ty);
             if let Ok(def_id) = def_id {
-                self.locals.insert(def_id, ty);
+                self.def_map.insert(def_id, ty);
             }
         }
         let ret_ty = ast
@@ -91,7 +90,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 let expected = ty.as_ref().map(|ty| self.lower_ty(ty)).unwrap_or(self.common().infer);
                 let ty = self.check_expr(&*value, expected);
                 if let Ok(def_id) = def_id {
-                    self.locals.insert(def_id, ty); // FIXME?
+                    self.def_map.insert(def_id, ty); // FIXME?
                 }
             }
             StmtKind::Assign(lhs, rhs) => {
@@ -100,7 +99,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     .uses
                     .get(&lhs.id)
                     .and_then(|def_id| def_id.ok())
-                    .and_then(|def_id| self.locals.get(&def_id))
+                    .and_then(|def_id| self.def_map.get(&def_id))
                     .unwrap_or(&self.common().infer);
                 self.check_expr(rhs, expected);
             }
@@ -122,7 +121,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     .uses
                     .get(&name.id)
                     .unwrap() // FIXME: unwrap
-                    .map(|def_id| *self.locals.get(&def_id).unwrap()) // FIXME: unwrap
+                    .map(|def_id| *self.def_map.get(&def_id).unwrap()) // FIXME: unwrap
                     .unwrap_or_else(|err| self.ty_ctx.mk_error(err)) // FIXME: unwrap
             }
             ExprKind::Binary(op, lhs, rhs, span) => {

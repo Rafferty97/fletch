@@ -1,19 +1,22 @@
 use std::num;
 
 use bumpalo::Bump;
-use codespan_reporting::diagnostic::{self, Diagnostic, Label};
+use codespan_reporting::diagnostic::{self, Label};
 use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
+use serde::Serialize;
 
 use crate::ast::sexpr::{SExpr, SExprCtx};
+use crate::ast::span::Span;
 use crate::ast::{ExprKind, Lit, StmtKind};
 use crate::compile::compile_func;
-use crate::diagnostics::{DiagnosticReporter, Level, VecReporter};
+use crate::diagnostics::{Diagnostic, DiagnosticReporter, Level, VecReporter};
 use crate::interner::IndexedInterner;
 use crate::name_resolution::{self, NameResolution};
 use crate::parser::{ParseCtx, Parser};
 use crate::typecheck::TypeChecker;
+use crate::types::ty;
 use crate::types::ty_ctx::TyCtx;
 use crate::types::ty_interners::{self, TyInterners};
 use crate::vm::{OutputSink, Vm};
@@ -61,7 +64,7 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
     let ty_ctx = TyCtx::new(&arena, &ty_interners);
     let mut checker = TypeChecker::new(ty_ctx, &name_tables, sym_table, &errors);
     checker.check_program(&ast);
-    let type_map = checker.finish();
+    let (type_map, _) = checker.finish();
 
     // Report errors and bail if necessary
     let num_errors = errors.num_errors();
@@ -73,8 +76,8 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
             .map(|l| Label::secondary(file_id, l.span).with_message(&l.message));
         let labels = std::iter::once(primary).chain(secondary).collect();
         let diagnostic = match err.level {
-            Level::Error => Diagnostic::error(),
-            Level::Warning => Diagnostic::warning(),
+            Level::Error => codespan_reporting::diagnostic::Diagnostic::error(),
+            Level::Warning => codespan_reporting::diagnostic::Diagnostic::warning(),
         };
         let diagnostic = diagnostic.with_message(&err.primary.message).with_labels(labels);
         term::emit_to_write_style(&mut writer.lock(), &config, &files, &diagnostic).unwrap();
@@ -96,7 +99,7 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
     };
 
     // Compile
-    let chunk = match compile_func(main, sym_table, type_map) {
+    let chunk = match compile_func(main, sym_table, &name_tables.uses, type_map) {
         Ok(func) => func,
         Err(err) => {
             output.emit_err(&format!("compiler error: {err}"));
@@ -114,7 +117,13 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
     vm.execute(&chunk, output);
 }
 
-pub fn check(src: &str) -> Vec<crate::diagnostics::Diagnostic> {
+#[derive(Serialize)]
+pub struct CheckResult {
+    diagnostics: Vec<Diagnostic>,
+    types: Vec<(Span, String)>,
+}
+
+pub fn check(src: &str) -> CheckResult {
     // Create arena and interners
     let arena = Bump::new();
     let sym_interner = IndexedInterner::new();
@@ -142,8 +151,19 @@ pub fn check(src: &str) -> Vec<crate::diagnostics::Diagnostic> {
     let ty_ctx = TyCtx::new(&arena, &ty_interners);
     let mut checker = TypeChecker::new(ty_ctx, &name_tables, sym_table, &errors);
     checker.check_program(&ast);
-    let type_map = checker.finish();
+    let (_, def_map) = checker.finish();
 
-    // Return diagnostics
-    errors.into_errors()
+    // Extract types
+    let types = name_tables
+        .idents
+        .into_iter()
+        .flat_map(|ident| {
+            let def_id = name_tables.uses.get(&ident.id)?.ok()?;
+            let ty = def_map.get(&def_id)?;
+            Some((ident.span, ty.to_string()))
+        })
+        .collect();
+
+    // Return info
+    CheckResult { diagnostics: errors.into_errors(), types }
 }

@@ -42,6 +42,23 @@ fn test_basic_if_stmt() {
     assert_eq!(output.out, "2\n");
 }
 
+#[test]
+fn test_shadowing() {
+    let src = r#"
+        fn main() {
+            let x = 2;
+            print(x);
+            let x = false;
+            print(x);
+        }"#;
+
+    let mut output = VecOutput::default();
+    driver::run("anon", src, Default::default(), &mut output);
+
+    assert!(output.err.is_empty());
+    assert_eq!(output.out, "2\nfalse\n");
+}
+
 #[derive(Default)]
 struct VecOutput {
     out: String,
