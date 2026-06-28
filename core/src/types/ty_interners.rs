@@ -109,4 +109,9 @@ impl<'ty> CommonTypes<'ty> {
             pending: TyKind::Pending,
         }
     }
+
+    /// Returns the unit type, which is the value of a block or function that produces no value.
+    pub fn unit(&self) -> Ty<'ty> {
+        self.empty_tuple
+    }
 }

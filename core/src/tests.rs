@@ -15,7 +15,7 @@ use crate::{FletchOpts, OutputSink, driver};
 fn test_undefined_var() {
     let src = r#"
         fn main() {
-            let x = y
+            let x = y;
         }"#;
 
     let errors = run_frontend(src);
@@ -28,11 +28,11 @@ fn test_undefined_var() {
 fn test_basic_if_stmt() {
     let src = r#"
         fn main() {
-            var x = 1
+            var x = 1;
             if x < 10 {
-                x = 2
+                x = 2;
             }
-            print(x)
+            print(x);
         }"#;
 
     let mut output = VecOutput::default();

@@ -200,6 +200,14 @@ impl<'a> SExprCtx<'a> {
                 self.write_ty(ty);
                 self.str.push(')');
             }
+            TyKind::Tuple(tys) => {
+                self.str.push_str("(tuple");
+                for ty in tys {
+                    self.str.push(' ');
+                    self.write_ty(ty);
+                }
+                self.str.push(')');
+            }
         }
     }
 

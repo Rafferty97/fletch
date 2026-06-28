@@ -13,24 +13,33 @@ use super::lexer::Token;
 
 impl<'a, 'sym> Parser<'a, 'sym> {
     pub(super) fn parse_ty(&mut self) -> Result<Ty> {
-        let id = self.node_ids.next();
+        let start = self.curr_pos();
         let mut ty = match self.peek() {
             Token::Ident(_) => {
                 let ident = self.parse_ident()?;
                 let span = ident.span;
-                Ty { id, node: TyKind::Var(ident), span }
+                self.make_spanned(start, TyKind::Var(ident))
             }
             Token::LeftBracket => {
-                let start = self.consume().span;
                 let inner = self.parse_ty()?.into();
-                let end = self.expect(Token::RightBracket)?.span;
-                let span = Span::cover(start, end);
-                Ty { id, node: TyKind::Array(inner), span }
+                self.expect(Token::RightBracket)?.span;
+                self.make_spanned(start, TyKind::Array(inner))
             }
             Token::LeftParen => {
-                let ty = self.parse_ty()?;
+                self.consume();
+
+                let mut elements = vec![];
+                let mut trailing_comma = false;
+                while self.peek() != Token::RightParen {
+                    elements.push(self.parse_ty()?);
+                    trailing_comma = self.consume_if(|t| t == Token::Comma).is_some();
+                }
                 self.expect(Token::RightParen)?;
-                ty
+
+                match (elements.len(), trailing_comma) {
+                    (1, true) => elements.pop().unwrap(),
+                    _ => self.make_spanned(start, TyKind::Tuple(elements)),
+                }
             }
             _ => Err(self.unexpected_prev())?,
         };

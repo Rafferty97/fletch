@@ -75,7 +75,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
 
         let mut stmts = vec![];
         let tail = loop {
-            if self.peek() == Token::RightBrace {
+            if matches!(self.peek(), Token::RightBrace | Token::Eof) {
                 break None;
             }
             match self.parse_stmt() {
@@ -130,6 +130,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 StmtKind::Let(name, ty, value, mutability)
             }
             _ => {
+                let has_block = matches!(self.peek(), Token::If);
                 let expr = self.parse_expr()?;
                 match self.peek() {
                     Token::Eq => {
@@ -146,6 +147,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                     Token::RightBrace => {
                         return Ok(StmtOrTail::Tail(expr));
                     }
+                    _ if has_block => StmtKind::Expr(expr.into()),
                     _ => Err(self.unexpected_prev())?,
                 }
             }

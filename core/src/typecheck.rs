@@ -66,7 +66,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             .ret
             .as_ref()
             .map(|ty| self.lower_ty(ty))
-            .unwrap_or(self.common().opt_never);
+            .unwrap_or(self.common().unit());
         self.check_block(&ast.body, ret_ty);
     }
 
@@ -77,7 +77,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
         if let Some(tail) = &ast.tail {
             self.check_expr(tail, expected)
         } else {
-            self.common().opt_never
+            self.common().unit()
         }
     }
 
@@ -154,7 +154,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 for arg in args {
                     self.check_expr(arg, self.common().infer);
                 }
-                self.common().opt_never // FIXME
+                self.common().unit() // FIXME
             }
             ExprKind::Grouped(expr) => self.check_expr(expr, expected),
             ExprKind::Array(exprs) => {
@@ -185,7 +185,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 let then_ty = self.check_expr(then, expected);
                 let else_ty = match r#else {
                     Some(r#else) => self.check_expr(r#else, expected),
-                    None => self.common().opt_never,
+                    None => self.common().unit(),
                 };
                 self.ty_ctx.join(then_ty, else_ty)
             }
@@ -214,14 +214,14 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             ast::TyKind::Infer => self.common().infer,
             ast::TyKind::Var(ident) => match self.sym_table.get_str(ident.sym) {
                 "bool" => self.common().bool,
-                "u8" => self.common().uint8,
-                "u16" => self.common().uint16,
-                "u32" => self.common().uint32,
-                "u64" => self.common().uint64,
-                "i8" => self.common().int8,
-                "i16" => self.common().int16,
-                "i32" => self.common().int32,
-                "i64" => self.common().int64,
+                "uint8" => self.common().uint8,
+                "uint16" => self.common().uint16,
+                "uint32" => self.common().uint32,
+                "uint64" => self.common().uint64,
+                "int8" => self.common().int8,
+                "int16" => self.common().int16,
+                "int32" => self.common().int32,
+                "int64" => self.common().int64,
                 "str" => self.common().str,
                 name => {
                     let msg = format!("cannot find type '{name}' in scope");
@@ -236,6 +236,10 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             ast::TyKind::Array(inner) => {
                 let inner = self.lower_ty(inner);
                 self.ty_ctx.mk_array(inner)
+            }
+            ast::TyKind::Tuple(tys) => {
+                let tys = tys.into_iter().map(|ty| self.lower_ty(ty)).collect_vec();
+                self.ty_ctx.mk_tuple(&tys)
             }
         }
     }

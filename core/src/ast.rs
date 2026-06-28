@@ -94,6 +94,7 @@ pub enum TyKind {
     Var(Ident),
     Nullable(Box<Ty>),
     Array(Box<Ty>),
+    Tuple(Vec<Ty>),
 }
 
 #[derive(Clone, Copy, Debug)]
