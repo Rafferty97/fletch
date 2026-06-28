@@ -122,7 +122,7 @@ impl<'ty> Display for Ty<'ty> {
                     write!(f, "{inner}?")
                 }
             }
-            TyKind::Array(inner) => write!(f, "{inner}[]"),
+            TyKind::Array(inner) => write!(f, "[{inner}]"),
             TyKind::Tuple(tys) => match &tys[..] {
                 [] => write!(f, "()"),
                 [first, rest @ ..] => {
