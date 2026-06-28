@@ -6,7 +6,7 @@ use itertools::Itertools;
 use thiserror::Error;
 
 use crate::ast::span::Span;
-use crate::ast::{BinOp, Block, Expr, ExprKind, Func, Lit, NodeId, Program, Stmt, StmtKind, Symbol};
+use crate::ast::{self, BinOp, Block, Expr, ExprKind, Func, Lit, NodeId, Program, Stmt, StmtKind, Symbol};
 use crate::diagnostics::{Diagnostic, DiagnosticReporter};
 use crate::interner::IndexTable;
 use crate::name_resolution::{DefId, NameTables};
@@ -55,7 +55,18 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
 
     pub fn check_func(&mut self, ast: &Func) {
         self.locals.clear();
-        let ret_ty = self.common().opt_never; // FIXME
+        for (name, ty) in &ast.params {
+            let def_id = *self.name_tables.uses.get(&name.id).unwrap(); // FIXME
+            let ty = self.lower_ty(ty);
+            if let Ok(def_id) = def_id {
+                self.locals.insert(def_id, ty);
+            }
+        }
+        let ret_ty = ast
+            .ret
+            .as_ref()
+            .map(|ty| self.lower_ty(ty))
+            .unwrap_or(self.common().opt_never);
         self.check_block(&ast.body, ret_ty);
     }
 
@@ -187,6 +198,37 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
         self.type_map.insert(ast.id, ty);
 
         ty
+    }
+
+    fn lower_ty(&mut self, ast: &ast::Ty) -> Ty<'ty> {
+        match &ast.node {
+            ast::TyKind::Infer => self.common().infer,
+            ast::TyKind::Var(ident) => match self.sym_table.get_str(ident.sym) {
+                "bool" => self.common().bool,
+                "u8" => self.common().uint8,
+                "u16" => self.common().uint16,
+                "u32" => self.common().uint32,
+                "u64" => self.common().uint64,
+                "i8" => self.common().int8,
+                "i16" => self.common().int16,
+                "i32" => self.common().int32,
+                "i64" => self.common().int64,
+                "str" => self.common().str,
+                name => {
+                    let msg = format!("cannot find type '{name}' in scope");
+                    let diagnostic = Diagnostic::error(msg, ident.span);
+                    self.ty_ctx.mk_error(self.errors.report_err(diagnostic))
+                }
+            },
+            ast::TyKind::Nullable(inner) => {
+                let inner = self.lower_ty(inner);
+                self.ty_ctx.mk_nullable(inner)
+            }
+            ast::TyKind::Array(inner) => {
+                let inner = self.lower_ty(inner);
+                self.ty_ctx.mk_array(inner)
+            }
+        }
     }
 
     fn common(&self) -> &CommonTypes<'ty> {

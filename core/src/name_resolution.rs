@@ -53,7 +53,12 @@ impl<'a> NameResolution<'a> {
     }
 
     pub fn resolve_func(&mut self, func: &Func) {
+        self.push_scope();
+        for (name, _) in &func.params {
+            self.define_name(*name, Mutability::Not);
+        }
         self.resolve_block(&func.body);
+        self.pop_scope();
     }
 
     pub fn resolve_block(&mut self, block: &Block) {
