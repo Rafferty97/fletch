@@ -95,7 +95,6 @@ impl<'a> Compiler<'a> {
     fn compile_expr(&mut self, expr: &Expr, rd: Option<Reg>) -> Result<Reg> {
         match &expr.node {
             ExprKind::Lit(lit) => {
-                let imm = self.builder.constant(Value::new_null());
                 let rd = rd.unwrap_or_else(|| self.push());
                 self.compile_lit(lit, rd)?;
                 Ok(rd)
@@ -149,7 +148,10 @@ impl<'a> Compiler<'a> {
                         };
                         let r0 = self.compile_expr(arg, rd)?;
                         self.builder.ins(Instr::Print { r0 });
-                        Ok(r0) // FIXME
+
+                        let rd = rd.unwrap_or_else(|| self.push());
+                        self.compile_lit(&Lit::Null, rd)?;
+                        Ok(rd)
                     }
                     name => Err(CompilerError::UndefinedName(name.into()))?,
                 }
@@ -184,12 +186,23 @@ impl<'a> Compiler<'a> {
                 let r0 = self.compile_expr(cond, rd)?;
                 self.stack_pos = sp;
 
-                let rd = rd.unwrap_or_else(|| self.push());
+                let (rd, sp) = match rd {
+                    Some(rd) => (rd, self.stack_pos),
+                    None => self.reserve(),
+                };
 
-                let label = self.labels.next();
-                self.builder.ins_jump_if_false(r0, &label);
+                let else_label = self.labels.next();
+                let end_label = self.labels.next();
+
+                self.builder.ins_jump_if_false(r0, &else_label);
                 self.compile_expr(then, Some(rd))?;
-                self.builder.ins_label(label);
+                self.builder.ins_jump(&end_label);
+                self.builder.ins_label(else_label);
+                match r#else {
+                    Some(r#else) => self.compile_expr(r#else, Some(rd)).map(|_| ())?,
+                    None => self.compile_lit(&Lit::Null, rd)?,
+                }
+                self.builder.ins_label(end_label);
 
                 Ok(rd)
             }

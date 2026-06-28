@@ -84,6 +84,7 @@ impl Instr {
 
     pub fn patch_addr(self, addr: Addr) -> Self {
         match self {
+            Self::Jump { .. } => Self::Jump { addr },
             Self::JumpIfTrue { r0, .. } => Self::JumpIfTrue { r0, addr },
             Self::JumpIfFalse { r0, .. } => Self::JumpIfFalse { r0, addr },
             _ => panic!("cannot backpatch this instruction"),
