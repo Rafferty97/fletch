@@ -77,6 +77,15 @@ fn parse_incomplete_string_lit() {
 }
 
 #[test]
+fn parse_array_type() {
+    with_parse_ctx(|ctx| {
+        let src = r#"[str?]"#;
+        let expected = r#"(array (? str))"#;
+        test_parse(ctx, |p| p.parse_ty(), src, expected);
+    });
+}
+
+#[test]
 fn parse_func_with_params() {
     with_parse_ctx(|ctx| {
         let src = r#"

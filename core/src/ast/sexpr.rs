@@ -23,6 +23,12 @@ impl SExpr for Expr {
     }
 }
 
+impl SExpr for Ty {
+    fn write(&self, ctx: &mut SExprCtx) {
+        ctx.write_ty(self)
+    }
+}
+
 impl<'a> SExprCtx<'a> {
     fn write_program(&mut self, node: &Program) {
         for func in &node.funcs {

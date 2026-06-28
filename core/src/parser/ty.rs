@@ -21,6 +21,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 self.make_spanned(start, TyKind::Var(ident))
             }
             Token::LeftBracket => {
+                self.consume();
                 let inner = self.parse_ty()?.into();
                 self.expect(Token::RightBracket)?.span;
                 self.make_spanned(start, TyKind::Array(inner))
