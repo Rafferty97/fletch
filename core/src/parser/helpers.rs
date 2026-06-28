@@ -41,11 +41,12 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                     SpannedToken { token: Token::Eof, span: Span::new(pos, pos) }
                 }
             };
-            if token.token == Token::Newline {
+            if matches!(token.token, Token::Newline | Token::Eof) {
                 if self.should_insert_semi() {
                     break SpannedToken { token: Token::Semi, ..token };
                 }
-            } else {
+            }
+            if token.token != Token::Newline {
                 break token;
             }
         };
@@ -61,7 +62,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
             Token::Str(_) => true,
             Token::RightParen => true,
             Token::RightBracket => true,
-            // Token::RightBrace => true,
+            Token::RightBrace => true,
             _ => false,
         }
     }

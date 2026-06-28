@@ -23,6 +23,10 @@ pub enum Token<'a> {
     Let,
     #[token("var")]
     Var,
+    #[token("if")]
+    If,
+    #[token("else")]
+    Else,
     #[token("(")]
     LeftParen,
     #[token(")")]
@@ -97,6 +101,8 @@ impl<'a> std::fmt::Display for Token<'a> {
             Self::Func => "'fn'",
             Self::Let => "'let'",
             Self::Var => "'var'",
+            Self::If => "'if'",
+            Self::Else => "'else'",
             Self::LeftParen => "'('",
             Self::RightParen => "')'",
             Self::LeftBrace => "'{'",

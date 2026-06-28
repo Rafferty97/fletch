@@ -29,13 +29,14 @@ impl Vm {
         let mut pc = 0;
 
         loop {
+            // println!("{}: {}", pc, Instr::decode(code[pc]));
             match Instr::decode(code[pc]) {
-                Instr::Return => return,
-                Instr::Load(dst, imm) => {
-                    self.write(dst, chunk.get_const(imm).clone());
+                Instr::Return { .. } => return, // FIXME
+                Instr::Load { rd, imm } => {
+                    self.write(rd, chunk.get_const(imm).clone());
                 }
-                Instr::Print(src) => {
-                    let value = self.read(src);
+                Instr::Print { r0 } => {
+                    let value = self.read(r0);
                     output.emit(&format!("{value}\n"));
                 }
                 Instr::Add { r0, r1, rd } => {
@@ -94,6 +95,22 @@ impl Vm {
                     let (index, _) = self.read(r1).as_uint();
                     // FIXME: should throw error on out-of-bounds
                     self.write(rd, expr.get(index as usize).cloned().unwrap_or(Value::new_null()));
+                }
+                Instr::Jump { addr } => {
+                    pc = addr.0 as usize;
+                    continue;
+                }
+                Instr::JumpIfTrue { r0, addr } => {
+                    if self.read(r0).as_bool() {
+                        pc = addr.0 as usize;
+                        continue;
+                    }
+                }
+                Instr::JumpIfFalse { r0, addr } => {
+                    if !self.read(r0).as_bool() {
+                        pc = addr.0 as usize;
+                        continue;
+                    }
                 }
             }
             pc += 1;

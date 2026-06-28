@@ -42,6 +42,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
             None
         };
         let body = self.parse_block()?;
+        self.expect(Token::Semi)?;
         Ok(Func { name, params, ret, body })
     }
 
@@ -70,25 +71,38 @@ impl<'a, 'sym> Parser<'a, 'sym> {
         Ok(params)
     }
 
-    fn parse_block(&mut self) -> Result<Block> {
+    pub(super) fn parse_block(&mut self) -> Result<Block> {
         self.expect(Token::LeftBrace)?;
 
         let mut stmts = vec![];
-        'outer: while !self.check(|t| t == Token::RightBrace) {
+        while !self.check(|t| t == Token::RightBrace) {
             match self.parse_stmt() {
                 Ok(stmt) => stmts.push(stmt),
-                Err(err) => loop {
-                    match self.consume().token {
-                        Token::Semi => break,
-                        Token::RightBrace => break 'outer,
-                        Token::Eof => break 'outer,
-                        _ => {}
-                    }
-                },
+                Err(err) => self.sync_block(),
             }
         }
 
         Ok(Block { stmts, tail: None })
+    }
+
+    fn sync_block(&mut self) {
+        let mut level = 0;
+        loop {
+            if self.peek() == Token::RightBrace && level == 0 {
+                return;
+            }
+            match self.consume().token {
+                Token::LeftBrace => {
+                    level += 1;
+                }
+                Token::RightBrace => {
+                    level -= 1;
+                }
+                Token::Semi if level == 0 => return,
+                Token::Eof => return,
+                _ => {}
+            }
+        }
     }
 
     fn parse_stmt(&mut self) -> Result<Stmt> {

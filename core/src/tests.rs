@@ -9,6 +9,7 @@ use crate::parser::{ParseCtx, Parser};
 use crate::typecheck::TypeChecker;
 use crate::types::ty_ctx::TyCtx;
 use crate::types::ty_interners::TyInterners;
+use crate::{FletchOpts, OutputSink, driver};
 
 #[test]
 fn test_undefined_var() {
@@ -21,6 +22,40 @@ fn test_undefined_var() {
     assert_eq!(errors.len(), 1);
     assert_eq!(errors[0].level, Level::Error);
     assert!(errors[0].primary.message.contains("cannot find"));
+}
+
+#[test]
+fn test_basic_if_stmt() {
+    let src = r#"
+        fn main() {
+            var x = 1
+            if x < 10 {
+                x = 2
+            }
+            print(x)
+        }"#;
+
+    let mut output = VecOutput::default();
+    driver::run("anon", src, Default::default(), &mut output);
+
+    assert!(output.err.is_empty());
+    assert_eq!(output.out, "2\n");
+}
+
+#[derive(Default)]
+struct VecOutput {
+    out: String,
+    err: String,
+}
+
+impl OutputSink for VecOutput {
+    fn emit(&mut self, text: &str) {
+        self.out.push_str(text);
+    }
+
+    fn emit_err(&mut self, text: &str) {
+        self.err.push_str(text);
+    }
 }
 
 fn run_frontend(src: &str) -> Vec<Diagnostic> {

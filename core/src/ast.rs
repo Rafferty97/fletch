@@ -31,7 +31,7 @@ pub struct Func {
 #[derive(Clone, Debug, Default)]
 pub struct Block {
     pub stmts: Vec<Stmt>,
-    pub tail: Option<Expr>,
+    pub tail: Option<Box<Expr>>,
 }
 
 #[derive(Clone, Debug)]
@@ -56,6 +56,12 @@ pub enum ExprKind {
     Grouped(Box<Expr>),
     Array(Vec<Expr>),
     Index(Box<Expr>, Box<Expr>),
+    If {
+        cond: Box<Expr>,
+        then: Box<Expr>,
+        r#else: Option<Box<Expr>>,
+    },
+    Block(Block),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]

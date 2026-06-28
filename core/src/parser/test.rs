@@ -57,7 +57,7 @@ fn parse_simple_arithmetic_program() {
     with_parse_ctx(|ctx| {
         let src = r#"
             fn main() {
-                print(2 + 2);
+                print(2 + 2)
             }"#;
         let expected = r#"(func main (params) (block (call (var print) (+ (int 2) (int 2))) none))"#;
         test_parse(ctx, |p| Ok(p.parse_program()), src, expected);

@@ -118,6 +118,18 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 let exprs = self.parse_list(Token::LeftBracket, Token::RightBracket)?;
                 ExprKind::Array(exprs)
             }
+            Token::If => {
+                self.consume();
+                let cond = self.parse_expr()?.into();
+                let then = self.parse_block_expr()?.into();
+                let r#else = if self.check(|t| t == Token::Else) {
+                    Some(self.parse_block_expr()?.into())
+                } else {
+                    None
+                };
+                ExprKind::If { cond, then, r#else }
+            }
+            Token::LeftBrace => return self.parse_block_expr(),
             _ => Err(self.unexpected_curr())?,
         };
 
@@ -153,6 +165,13 @@ impl<'a, 'sym> Parser<'a, 'sym> {
         }
 
         Ok(args)
+    }
+
+    fn parse_block_expr(&mut self) -> Result<Expr> {
+        let start = self.curr_pos();
+        let block = self.parse_block()?;
+        let node = ExprKind::Block(block);
+        Ok(self.make_spanned(start, node))
     }
 }
 

@@ -6,7 +6,7 @@ use itertools::Itertools;
 use thiserror::Error;
 
 use crate::ast::span::Span;
-use crate::ast::{Expr, ExprKind, Func, Lit, NodeId, Program, Stmt, StmtKind, Symbol};
+use crate::ast::{BinOp, Block, Expr, ExprKind, Func, Lit, NodeId, Program, Stmt, StmtKind, Symbol};
 use crate::diagnostics::{Diagnostic, DiagnosticReporter};
 use crate::interner::IndexTable;
 use crate::name_resolution::{DefId, NameTables};
@@ -55,8 +55,18 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
 
     pub fn check_func(&mut self, ast: &Func) {
         self.locals.clear();
-        for stmt in &ast.body.stmts {
+        let ret_ty = self.common().opt_never; // FIXME
+        self.check_block(&ast.body, ret_ty);
+    }
+
+    pub fn check_block(&mut self, ast: &Block, expected: Ty<'ty>) -> Ty<'ty> {
+        for stmt in &ast.stmts {
             self.check_stmt(stmt);
+        }
+        if let Some(tail) = &ast.tail {
+            self.check_expr(tail, expected)
+        } else {
+            self.common().opt_never
         }
     }
 
@@ -106,12 +116,18 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             ExprKind::Binary(op, lhs, rhs, span) => {
                 let lhs = self.check_expr(lhs, self.common().infer);
                 let rhs = self.check_expr(rhs, self.common().infer);
-                if lhs == rhs {
-                    lhs
-                } else {
-                    let msg = format!("no implementation for '{lhs}' {op} '{rhs}'");
-                    let err = self.errors.report_err(Diagnostic::error(msg, *span));
-                    self.ty_ctx.mk_error(err)
+                let result = match op {
+                    BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => (lhs == rhs).then_some(lhs),
+                    BinOp::Eq | BinOp::NotEq => Some(self.common().bool),
+                    BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq => Some(self.common().bool),
+                };
+                match result {
+                    Some(ty) => ty,
+                    None => {
+                        let msg = format!("no implementation for '{lhs}' {op} '{rhs}'");
+                        let err = self.errors.report_err(Diagnostic::error(msg, *span));
+                        self.ty_ctx.mk_error(err)
+                    }
                 }
             }
             ExprKind::Call(func, args) => {
@@ -144,6 +160,16 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     }
                 }
             }
+            ExprKind::If { cond, then, r#else } => {
+                self.check_expr(cond, self.common().bool);
+                let then_ty = self.check_expr(then, expected);
+                let else_ty = match r#else {
+                    Some(r#else) => self.check_expr(r#else, expected),
+                    None => self.common().opt_never,
+                };
+                self.ty_ctx.join(then_ty, else_ty)
+            }
+            ExprKind::Block(block) => self.check_block(block, expected),
         };
 
         let ty = if expected.is_final() {

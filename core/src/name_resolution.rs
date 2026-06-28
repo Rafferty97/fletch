@@ -2,7 +2,7 @@ use fnv::FnvHashMap;
 
 use crate::ast::ExprKind::Binary;
 use crate::ast::span::Span;
-use crate::ast::{Expr, ExprKind, Func, Ident, Mutability, NodeId, Program, StmtKind, Symbol};
+use crate::ast::{Block, Expr, ExprKind, Func, Ident, Mutability, NodeId, Program, StmtKind, Symbol};
 use crate::diagnostics::{Diagnostic, DiagnosticReporter, ErrGuaranteed};
 use crate::interner::IndexTable;
 use crate::util::IdGen;
@@ -53,8 +53,12 @@ impl<'a> NameResolution<'a> {
     }
 
     pub fn resolve_func(&mut self, func: &Func) {
+        self.resolve_block(&func.body);
+    }
+
+    pub fn resolve_block(&mut self, block: &Block) {
         self.push_scope();
-        for stmt in &func.body.stmts {
+        for stmt in &block.stmts {
             match &stmt.node {
                 StmtKind::Expr(expr) => self.resolve_expr(expr),
                 StmtKind::Let(name, _, expr, mutability) => {
@@ -99,6 +103,16 @@ impl<'a> NameResolution<'a> {
             ExprKind::Index(expr, index) => {
                 self.resolve_expr(expr);
                 self.resolve_expr(index);
+            }
+            ExprKind::If { cond, then, r#else } => {
+                self.resolve_expr(cond);
+                self.resolve_expr(then);
+                if let Some(r#else) = r#else {
+                    self.resolve_expr(r#else);
+                }
+            }
+            ExprKind::Block(block) => {
+                self.resolve_block(block);
             }
         }
     }

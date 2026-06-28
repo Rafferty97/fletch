@@ -129,12 +129,30 @@ impl<'a> SExprCtx<'a> {
             }
             ExprKind::Index(expr, index) => {
                 self.str.push_str("(index ");
-                self.str.push(' ');
                 self.write_expr(expr);
                 self.str.push(' ');
                 self.write_expr(index);
                 self.str.push(')');
             }
+            ExprKind::If { cond, then, r#else } => {
+                self.str.push_str("(if ");
+                self.write_expr(cond);
+                self.str.push(' ');
+                self.write_expr(then);
+                self.str.push(' ');
+                self.write_opt_expr(r#else.as_deref());
+                self.str.push(')');
+            }
+            ExprKind::Block(block) => {
+                self.write_block(block);
+            }
+        }
+    }
+
+    fn write_opt_expr(&mut self, expr: Option<&Expr>) {
+        match expr {
+            Some(expr) => self.write_expr(expr),
+            None => self.str.push_str("none"),
         }
     }
 

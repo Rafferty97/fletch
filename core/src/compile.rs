@@ -3,13 +3,14 @@ use fnv::FnvHashMap;
 use itertools::Itertools;
 use thiserror::Error;
 
-use crate::ast::{BinOp, Expr, ExprKind, Func, Ident, Lit, NodeId, Stmt, StmtKind, Symbol};
+use crate::ast::{BinOp, Block, Expr, ExprKind, Func, Ident, Lit, NodeId, Stmt, StmtKind, Symbol};
 use crate::interner::IndexTable;
 use crate::types::infer::TypeError;
 use crate::types::ty::IntTy;
 use crate::types::{Ty, TyKind};
+use crate::util::IdGen;
 use crate::vm::chunk::{Chunk, ChunkBuilder};
-use crate::vm::instr::{Instr, Reg};
+use crate::vm::instr::{Addr, Instr, Reg};
 use crate::vm::value::{ScalarTy, Value};
 
 pub fn compile_func(
@@ -25,6 +26,7 @@ pub fn compile_func(
         locals: vec![],
         stack_pos: StackPos(0),
         stack_size: StackPos(0),
+        labels: IdGen::new(|id| format!("L{id}")),
     };
     compiler.compile_func(ast)?;
     Ok(compiler.builder.build(compiler.stack_size.0 as usize))
@@ -37,6 +39,7 @@ struct Compiler<'a> {
     locals: Vec<Symbol>,
     stack_pos: StackPos,
     stack_size: StackPos,
+    labels: IdGen<String>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -44,11 +47,24 @@ struct StackPos(u16);
 
 impl<'a> Compiler<'a> {
     fn compile_func(&mut self, ast: &Func) -> Result<()> {
-        for stmt in &ast.body.stmts {
+        self.builder.ins_label("start");
+        let r0 = self.compile_block(&ast.body, None)?;
+        self.builder.ins(Instr::Return { r0 });
+        Ok(())
+    }
+
+    fn compile_block(&mut self, ast: &Block, rd: Option<Reg>) -> Result<Reg> {
+        for stmt in &ast.stmts {
             self.compile_stmt(stmt)?;
         }
-        self.builder.ins(Instr::Return);
-        Ok(())
+        if let Some(expr) = &ast.tail {
+            self.compile_expr(expr, rd)
+        } else {
+            let rd = rd.unwrap_or_else(|| self.push());
+            let imm = self.builder.constant(Value::new_null());
+            self.builder.ins(Instr::Load { rd, imm });
+            Ok(rd)
+        }
     }
 
     fn compile_stmt(&mut self, stmt: &Stmt) -> Result<()> {
@@ -79,6 +95,7 @@ impl<'a> Compiler<'a> {
     fn compile_expr(&mut self, expr: &Expr, rd: Option<Reg>) -> Result<Reg> {
         match &expr.node {
             ExprKind::Lit(lit) => {
+                let imm = self.builder.constant(Value::new_null());
                 let rd = rd.unwrap_or_else(|| self.push());
                 self.compile_lit(lit, rd)?;
                 Ok(rd)
@@ -130,9 +147,9 @@ impl<'a> Compiler<'a> {
                         let [arg] = &args[..] else {
                             Err(CompilerError::Arity { exp: 1, act: args.len() })?
                         };
-                        let value = self.compile_expr(arg, rd)?;
-                        self.builder.ins(Instr::Print(value));
-                        Ok(value)
+                        let r0 = self.compile_expr(arg, rd)?;
+                        self.builder.ins(Instr::Print { r0 });
+                        Ok(r0) // FIXME
                     }
                     name => Err(CompilerError::UndefinedName(name.into()))?,
                 }
@@ -162,6 +179,21 @@ impl<'a> Compiler<'a> {
                 self.builder.ins(Instr::Index { r0, r1, rd });
                 Ok(rd)
             }
+            ExprKind::If { cond, then, r#else } => {
+                let sp = self.stack_pos;
+                let r0 = self.compile_expr(cond, rd)?;
+                self.stack_pos = sp;
+
+                let rd = rd.unwrap_or_else(|| self.push());
+
+                let label = self.labels.next();
+                self.builder.ins_jump_if_false(r0, &label);
+                self.compile_expr(then, Some(rd))?;
+                self.builder.ins_label(label);
+
+                Ok(rd)
+            }
+            ExprKind::Block(block) => self.compile_block(block, rd),
         }
     }
 
@@ -169,12 +201,12 @@ impl<'a> Compiler<'a> {
         match lit {
             &Lit::Null => {
                 let imm = self.builder.constant(Value::new_null());
-                self.builder.ins(Instr::Load(rd, imm));
+                self.builder.ins(Instr::Load { rd, imm });
                 Ok(())
             }
             &Lit::Bool(value) => {
                 let imm = self.builder.constant(Value::new_bool(value));
-                self.builder.ins(Instr::Load(rd, imm));
+                self.builder.ins(Instr::Load { rd, imm });
                 Ok(())
             }
             &Lit::Int(sym) => {
@@ -185,7 +217,7 @@ impl<'a> Compiler<'a> {
                     .map_err(|_| CompilerError::InvalidLiteral)?;
                 let ty = ScalarTy::Int(IntTy::Int32);
                 let imm = self.builder.constant(Value::new_sint(value, ty));
-                self.builder.ins(Instr::Load(rd, imm));
+                self.builder.ins(Instr::Load { rd, imm });
                 Ok(())
             }
             &Lit::Float(sym) => {
@@ -195,13 +227,13 @@ impl<'a> Compiler<'a> {
                     .parse()
                     .map_err(|_| CompilerError::InvalidLiteral)?;
                 let imm = self.builder.constant(Value::new_f64(value));
-                self.builder.ins(Instr::Load(rd, imm));
+                self.builder.ins(Instr::Load { rd, imm });
                 Ok(())
             }
             &Lit::Str(str) => {
                 let str = self.sym_table.get_str(str);
                 let imm = self.builder.constant(Value::new_str(str));
-                self.builder.ins(Instr::Load(rd, imm));
+                self.builder.ins(Instr::Load { rd, imm });
                 Ok(())
             }
             _ => todo!(),
