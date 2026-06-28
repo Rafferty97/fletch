@@ -102,7 +102,7 @@ impl<'ty> Ty<'ty> {
 impl<'ty> Display for Ty<'ty> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.kind() {
-            TyKind::Never => write!(f, "!"),
+            TyKind::Never => write!(f, "never"),
             TyKind::Bool => write!(f, "bool"),
             TyKind::Int(IntTy::Int8) => write!(f, "int8"),
             TyKind::Int(IntTy::Int16) => write!(f, "int16"),

@@ -212,15 +212,22 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
         match &ast.node {
             ast::TyKind::Infer => self.common().infer,
             ast::TyKind::Var(ident) => match self.sym_table.get_str(ident.sym) {
+                "never" => self.common().never,
+                "null" => self.common().opt_never,
                 "bool" => self.common().bool,
                 "uint8" => self.common().uint8,
                 "uint16" => self.common().uint16,
                 "uint32" => self.common().uint32,
                 "uint64" => self.common().uint64,
+                "uint" => self.common().uint64,
                 "int8" => self.common().int8,
                 "int16" => self.common().int16,
                 "int32" => self.common().int32,
                 "int64" => self.common().int64,
+                "int" => self.common().int64,
+                "float32" => self.common().float32,
+                "float64" => self.common().float64,
+                "float" => self.common().float64,
                 "str" => self.common().str,
                 name => {
                     let msg = format!("cannot find type '{name}' in scope");
