@@ -86,9 +86,10 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             StmtKind::Expr(expr) => {
                 self.check_expr(&*expr, self.common().infer);
             }
-            StmtKind::Let(name, _, value, _) => {
+            StmtKind::Let(name, ty, value, _) => {
                 let def_id = *self.name_tables.uses.get(&name.id).unwrap(); // FIXME
-                let ty = self.check_expr(&*value, self.common().infer);
+                let expected = ty.as_ref().map(|ty| self.lower_ty(ty)).unwrap_or(self.common().infer);
+                let ty = self.check_expr(&*value, expected);
                 if let Ok(def_id) = def_id {
                     self.locals.insert(def_id, ty); // FIXME?
                 }
@@ -120,7 +121,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 self.name_tables
                     .uses
                     .get(&name.id)
-                    .unwrap()
+                    .unwrap() // FIXME: unwrap
                     .map(|def_id| *self.locals.get(&def_id).unwrap()) // FIXME: unwrap
                     .unwrap_or_else(|err| self.ty_ctx.mk_error(err)) // FIXME: unwrap
             }
@@ -129,7 +130,15 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 let rhs = self.check_expr(rhs, self.common().infer);
                 let result = match op {
                     BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => (lhs == rhs).then_some(lhs),
-                    BinOp::Eq | BinOp::NotEq => Some(self.common().bool),
+                    BinOp::Eq | BinOp::NotEq => {
+                        if self.ty_ctx.meet(lhs, rhs).is_never() {
+                            let msg =
+                                format!("this comparison can never be true as '{lhs}' and '{rhs}' have no overlap");
+                            let diagnostic = Diagnostic::warning(msg, *span);
+                            self.errors.report(diagnostic);
+                        }
+                        Some(self.common().bool)
+                    }
                     BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq => Some(self.common().bool),
                 };
                 match result {

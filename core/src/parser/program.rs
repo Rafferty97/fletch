@@ -1,7 +1,7 @@
 use crate::ast::span::{Span, Spanned};
 use crate::ast::{Block, Expr, ExprKind, Func, Ident, Lit, Mutability, Program, Stmt, StmtKind, Symbol, Ty};
 use crate::diagnostics::Diagnostic;
-use crate::parser::SpannedToken;
+use crate::parser::{SpannedToken, expr};
 
 use super::Parser;
 use super::error::Result;
@@ -42,7 +42,6 @@ impl<'a, 'sym> Parser<'a, 'sym> {
             None
         };
         let body = self.parse_block()?;
-        self.expect(Token::Semi)?;
         Ok(Func { name, params, ret, body })
     }
 
@@ -75,14 +74,19 @@ impl<'a, 'sym> Parser<'a, 'sym> {
         self.expect(Token::LeftBrace)?;
 
         let mut stmts = vec![];
-        while !self.check(|t| t == Token::RightBrace) {
+        let tail = loop {
+            if self.peek() == Token::RightBrace {
+                break None;
+            }
             match self.parse_stmt() {
-                Ok(stmt) => stmts.push(stmt),
+                Ok(StmtOrTail::Stmt(stmt)) => stmts.push(stmt),
+                Ok(StmtOrTail::Tail(expr)) => break Some(expr.into()),
                 Err(err) => self.sync_block(),
             }
-        }
+        };
+        self.expect(Token::RightBrace).ok();
 
-        Ok(Block { stmts, tail: None })
+        Ok(Block { stmts, tail })
     }
 
     fn sync_block(&mut self) {
@@ -105,7 +109,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
         }
     }
 
-    fn parse_stmt(&mut self) -> Result<Stmt> {
+    fn parse_stmt(&mut self) -> Result<StmtOrTail> {
         let start = self.curr_pos();
         let kind = match self.peek() {
             Token::Let | Token::Var => {
@@ -127,19 +131,26 @@ impl<'a, 'sym> Parser<'a, 'sym> {
             }
             _ => {
                 let expr = self.parse_expr()?;
-                match self.consume().token {
+                match self.peek() {
                     Token::Eq => {
+                        self.consume();
                         let lhs = self.convert_expr_to_place(expr)?;
                         let rhs = self.parse_expr()?.into();
                         self.expect(Token::Semi)?;
                         StmtKind::Assign(lhs, rhs)
                     }
-                    Token::Semi => StmtKind::Expr(expr.into()),
+                    Token::Semi => {
+                        self.consume();
+                        StmtKind::Expr(expr.into())
+                    }
+                    Token::RightBrace => {
+                        return Ok(StmtOrTail::Tail(expr));
+                    }
                     _ => Err(self.unexpected_prev())?,
                 }
             }
         };
-        Ok(self.make_spanned(start, kind))
+        Ok(StmtOrTail::Stmt(self.make_spanned(start, kind)))
     }
 
     pub(crate) fn parse_ident(&mut self) -> Result<Ident> {
@@ -163,4 +174,9 @@ impl<'a, 'sym> Parser<'a, 'sym> {
             }
         }
     }
+}
+
+enum StmtOrTail {
+    Stmt(Stmt),
+    Tail(Expr),
 }

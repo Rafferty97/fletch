@@ -41,11 +41,11 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                     SpannedToken { token: Token::Eof, span: Span::new(pos, pos) }
                 }
             };
-            if matches!(token.token, Token::Newline | Token::Eof) {
-                if self.should_insert_semi() {
-                    break SpannedToken { token: Token::Semi, ..token };
-                }
-            }
+            // if matches!(token.token, Token::Newline | Token::Eof) {
+            //     if self.should_insert_semi() {
+            //         break SpannedToken { token: Token::Semi, ..token };
+            //     }
+            // }
             if token.token != Token::Newline {
                 break token;
             }

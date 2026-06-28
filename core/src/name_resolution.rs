@@ -83,6 +83,9 @@ impl<'a> NameResolution<'a> {
                 }
             }
         }
+        if let Some(expr) = &block.tail {
+            self.resolve_expr(expr);
+        }
         self.pop_scope();
     }
 
