@@ -1,12 +1,13 @@
+use std::ops::Deref;
+
 use arcstr::ArcStr;
 use triomphe::{Arc, ThinArc};
 
-use crate::{
-    ast::Symbol,
-    parser::escape,
-    types::ty::{FloatTy, IntTy, UIntTy},
-    vm::instr::Width,
-};
+use crate::ast::Symbol;
+use crate::parser::escape;
+use crate::types::ty::{FloatTy, IntTy, UIntTy};
+use crate::vm::chunk::Chunk;
+use crate::vm::instr::Width;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Value {
@@ -14,6 +15,7 @@ pub enum Value {
     Scalar { ty: ScalarTy, value: u64 },
     Str(ArcStr),
     Array(ThinArc<(), Value>),
+    Func(FuncObjRef),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -22,6 +24,37 @@ pub enum ScalarTy {
     Int(IntTy),
     UInt(UIntTy),
     Float(FloatTy),
+}
+
+#[derive(Clone, Debug)]
+pub struct FuncObjRef(Arc<FuncObj>);
+
+#[derive(Debug)]
+pub struct FuncObj {
+    pub name: String,
+    pub chunk: Chunk,
+}
+
+impl PartialEq for FuncObjRef {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for FuncObjRef {}
+
+impl From<FuncObj> for FuncObjRef {
+    fn from(value: FuncObj) -> Self {
+        Self(value.into())
+    }
+}
+
+impl Deref for FuncObjRef {
+    type Target = FuncObj;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
 }
 
 impl Value {
@@ -159,6 +192,7 @@ impl std::fmt::Display for Value {
                     write!(f, "]")
                 }
             },
+            Self::Func(value) => write!(f, "<func {}>", value.0.name),
         }
     }
 }

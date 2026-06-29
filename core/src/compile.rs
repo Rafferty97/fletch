@@ -3,7 +3,7 @@ use fnv::FnvHashMap;
 use itertools::Itertools;
 use thiserror::Error;
 
-use crate::ast::{BinOp, Block, Expr, ExprKind, Func, Ident, Lit, NodeId, Stmt, StmtKind, Symbol};
+use crate::ast::{BinOp, Block, Expr, ExprKind, Func, Ident, Lit, NodeId, Program, Stmt, StmtKind, Symbol};
 use crate::diagnostics::ErrGuaranteed;
 use crate::interner::IndexTable;
 use crate::name_resolution::DefId;
@@ -13,13 +13,42 @@ use crate::types::{Ty, TyKind};
 use crate::util::IdGen;
 use crate::vm::chunk::{Chunk, ChunkBuilder};
 use crate::vm::instr::{Addr, Instr, Reg, Width};
-use crate::vm::value::{ScalarTy, Value};
+use crate::vm::module::{FuncId, Module};
+use crate::vm::value::{FuncObj, ScalarTy, Value};
+
+pub fn compile_program(
+    ast: &Program,
+    sym_table: &IndexTable<'_, Symbol, str>,
+    uses: &FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
+    type_map: &FnvHashMap<NodeId, Ty<'_>>,
+) -> Result<Module> {
+    let mut main = Option::<FuncId>::None;
+    let mut func_ids = IdGen::new(FuncId);
+    let mut funcs = FnvHashMap::default();
+
+    for func in &ast.funcs {
+        let func_id = func_ids.next();
+        let chunk = compile_func(func, sym_table, uses, type_map)?;
+        let name = sym_table.get_str(func.name.sym).into();
+        if name == "main" {
+            main = Some(func_id);
+        }
+        let func = FuncObj { name, chunk };
+        funcs.insert(func_id, func.into());
+    }
+
+    let Some(main) = main else {
+        Err(CompilerError::NoMainFunc)?
+    };
+
+    Ok(Module { funcs, main })
+}
 
 pub fn compile_func(
     ast: &Func,
     sym_table: &IndexTable<'_, Symbol, str>,
     uses: &FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
-    type_map: FnvHashMap<NodeId, Ty<'_>>,
+    type_map: &FnvHashMap<NodeId, Ty<'_>>,
 ) -> Result<Chunk> {
     let builder = ChunkBuilder::new();
     let mut compiler = Compiler {
@@ -40,7 +69,7 @@ struct Compiler<'a> {
     builder: ChunkBuilder,
     sym_table: &'a IndexTable<'a, Symbol, str>,
     uses: &'a FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
-    type_map: FnvHashMap<NodeId, Ty<'a>>,
+    type_map: &'a FnvHashMap<NodeId, Ty<'a>>,
     locals: Vec<DefId>,
     stack_pos: StackPos,
     stack_size: StackPos,
@@ -53,8 +82,17 @@ struct StackPos(u16);
 impl<'a> Compiler<'a> {
     fn compile_func(&mut self, ast: &Func) -> Result<()> {
         self.builder.ins_label("start");
+
+        for (name, _) in &ast.params {
+            let def_id = self.uses[&name.id].unwrap();
+            self.locals.push(def_id);
+        }
+        self.stack_pos = StackPos(ast.params.len() as u16);
+        self.stack_size = self.stack_pos;
+
         let r0 = self.compile_block(&ast.body, None)?;
         self.builder.ins(Instr::Return { r0 });
+
         Ok(())
     }
 
@@ -321,6 +359,8 @@ impl<'a> Compiler<'a> {
 
 #[derive(Error, Debug)]
 pub enum CompilerError {
+    #[error("no main function defined")]
+    NoMainFunc,
     #[error("invalid literal")]
     InvalidLiteral,
     #[error("cannot find name `{0}`")]

@@ -10,7 +10,7 @@ use serde::Serialize;
 use crate::ast::sexpr::{SExpr, SExprCtx};
 use crate::ast::span::Span;
 use crate::ast::{ExprKind, Lit, StmtKind};
-use crate::compile::compile_func;
+use crate::compile::{compile_func, compile_program};
 use crate::diagnostics::{Diagnostic, DiagnosticReporter, Level, VecReporter};
 use crate::interner::IndexedInterner;
 use crate::name_resolution::{self, NameResolution};
@@ -93,14 +93,8 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
         return;
     }
 
-    // Extract the main function
-    let Some(main) = ast.funcs.iter().find(|f| f.name.sym == main_sym) else {
-        output.emit_err("error: no main function defined");
-        return;
-    };
-
     // Compile
-    let chunk = match compile_func(main, sym_table, &name_tables.uses, type_map) {
+    let module = match compile_program(&ast, sym_table, &name_tables.uses, &type_map) {
         Ok(func) => func,
         Err(err) => {
             output.emit_err(&format!("compiler error: {err}"));
@@ -108,15 +102,15 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
         }
     };
 
-    // Print chunk
+    // Print chunks
     if opts.disassemble {
-        output.emit(&chunk.disassemble());
+        output.emit(&module.disassemble());
         output.emit("\n");
     }
 
     // Execute
     let mut vm = Vm::new();
-    vm.execute(&chunk, output);
+    vm.execute(module.main(), output);
 }
 
 #[derive(Serialize)]

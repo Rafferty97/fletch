@@ -6,6 +6,7 @@ use self::instr::Instr;
 
 pub mod chunk;
 pub mod instr;
+pub mod module;
 pub mod value;
 
 pub struct Vm {
