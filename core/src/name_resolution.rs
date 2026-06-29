@@ -51,9 +51,15 @@ impl<'a> NameResolution<'a> {
     }
 
     pub fn resolve_program(&mut self, program: &Program) {
+        self.push_scope();
+        for func in &program.funcs {
+            let def_id = self.def_ids.next();
+            self.define_name(func.name, Mutability::Not);
+        }
         for func in &program.funcs {
             self.resolve_func(func);
         }
+        self.pop_scope();
     }
 
     pub fn resolve_func(&mut self, func: &Func) {
@@ -107,8 +113,7 @@ impl<'a> NameResolution<'a> {
                 self.resolve_expr(rhs);
             }
             ExprKind::Call(func, args) => {
-                // FIXME
-                // self.resolve_expr(func);
+                self.resolve_expr(func);
                 args.iter().for_each(|arg| self.resolve_expr(arg));
             }
             ExprKind::Grouped(expr) => self.resolve_expr(expr),
@@ -150,6 +155,12 @@ impl<'a> NameResolution<'a> {
     }
 
     fn resolve_name(&mut self, ident: Ident) -> Option<&BindingInfo> {
+        // FIXME: remove
+        if self.sym_table.get_str(ident.sym) == "print" {
+            static PRINT: BindingInfo = BindingInfo { mutability: Mutability::Not, span: Span::dummy() };
+            return Some(&PRINT);
+        }
+
         let def_id = self.find_name(ident.sym).ok_or_else(|| {
             let msg = format!("cannot find `{}` in this scope", self.sym_table.get_str(ident.sym));
             self.errors.report_err(Diagnostic::error(msg, ident.span))

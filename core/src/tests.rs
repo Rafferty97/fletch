@@ -98,7 +98,7 @@ fn run_frontend(src: &str) -> Vec<Diagnostic> {
     let ty_interners = TyInterners::new(&arena);
     let ty_ctx = TyCtx::new(&arena, &ty_interners);
     let mut checker = TypeChecker::new(ty_ctx, &name_tables, sym_table, &errors);
-    checker.check_func(&ast.funcs[0]);
+    checker.check_func_body(&ast.funcs[0]);
 
     // Return diagnostics
     errors.into_errors()

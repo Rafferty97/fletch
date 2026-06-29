@@ -134,6 +134,7 @@ impl<'a, S: Index> IndexedInterner<'a, S, str> {
     }
 }
 
+#[derive(Debug)]
 #[repr(transparent)]
 pub struct IndexTable<'a, S, T: ?Sized> {
     _symbol: PhantomData<S>,

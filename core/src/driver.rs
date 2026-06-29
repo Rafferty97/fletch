@@ -109,8 +109,8 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
     }
 
     // Execute
-    let mut vm = Vm::new();
-    vm.execute(module.main(), output);
+    let mut vm = Vm::new(&module);
+    vm.execute(output);
 }
 
 #[derive(Serialize)]

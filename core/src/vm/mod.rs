@@ -1,4 +1,5 @@
-use crate::vm::instr::{Reg, Width};
+use crate::vm::instr::{EncodedInstr, Reg, Width};
+use crate::vm::module::{FuncId, Module};
 use crate::vm::value::Value;
 
 use self::chunk::Chunk;
@@ -9,8 +10,12 @@ pub mod instr;
 pub mod module;
 pub mod value;
 
-pub struct Vm {
-    registers: Vec<Value>,
+pub struct Vm<'a> {
+    module: &'a Module,
+    frames: Vec<CallFrame<'a>>,
+    stack: Vec<Value>,
+    current: CallFrame<'a>,
+    ret: Value,
 }
 
 pub trait OutputSink {
@@ -18,23 +23,40 @@ pub trait OutputSink {
     fn emit_err(&mut self, text: &str);
 }
 
-impl Vm {
-    pub fn new() -> Self {
-        Self { registers: vec![] }
+struct CallFrame<'a> {
+    code: &'a [EncodedInstr],
+    constants: &'a [Value],
+    base_idx: usize,
+    pc: usize,
+    rd: Reg,
+}
+
+impl<'a> Vm<'a> {
+    pub fn new(module: &'a Module) -> Self {
+        let current = CallFrame { code: &[], constants: &[], base_idx: 0, pc: 0, rd: Reg(0) };
+        Self { module, stack: vec![], frames: vec![], current, ret: Value::new_null() }
     }
 
-    pub fn execute(&mut self, chunk: &Chunk, output: &mut dyn OutputSink) {
-        self.registers.resize(chunk.stack_size(), Value::new_null());
-
-        let code = chunk.code();
-        let mut pc = 0;
+    pub fn execute(&mut self, output: &mut dyn OutputSink) {
+        self.push_frame(self.module.main, 0, Reg(0));
 
         loop {
-            // println!("{}: {}", pc, Instr::decode(code[pc]));
-            match Instr::decode(code[pc]) {
-                Instr::Return { .. } => return, // FIXME
+            // println!(
+            //     "{}: {}",
+            //     self.current.pc,
+            //     Instr::decode(self.current.code[self.current.pc])
+            // );
+            match Instr::decode(self.current.code[self.current.pc]) {
+                Instr::Return { r0 } => {
+                    let value = self.read(r0).clone();
+                    self.pop_frame(value);
+                    if self.frames.is_empty() {
+                        return;
+                    }
+                }
                 Instr::Load { rd, imm } => {
-                    self.write(rd, chunk.get_const(imm).clone());
+                    let value = self.current.constants[imm.0 as usize].clone();
+                    self.write(rd, value);
                 }
                 Instr::Print { r0 } => {
                     let value = self.read(r0);
@@ -98,18 +120,18 @@ impl Vm {
                     self.write(rd, expr.get(index as usize).cloned().unwrap_or(Value::new_null()));
                 }
                 Instr::Jump { addr } => {
-                    pc = addr.0 as usize;
+                    self.current.pc = addr.0 as usize;
                     continue;
                 }
                 Instr::JumpIfTrue { r0, addr } => {
                     if self.read(r0).as_bool() {
-                        pc = addr.0 as usize;
+                        self.current.pc = addr.0 as usize;
                         continue;
                     }
                 }
                 Instr::JumpIfFalse { r0, addr } => {
                     if !self.read(r0).as_bool() {
-                        pc = addr.0 as usize;
+                        self.current.pc = addr.0 as usize;
                         continue;
                     }
                 }
@@ -143,20 +165,47 @@ impl Vm {
                 | Instr::FMul { .. }
                 | Instr::FDiv { .. }
                 | Instr::FLt { .. } => unreachable!(),
+                Instr::Call { func, rd } => {
+                    let func_id = self.read(func).as_func();
+                    self.push_frame(func_id, func.0 as usize + 1, rd);
+                    continue;
+                }
             }
-            pc += 1;
+            self.current.pc += 1;
         }
     }
 
+    fn push_frame(&mut self, func_id: FuncId, offset: usize, rd: Reg) {
+        let func = &self.module.funcs[&func_id];
+
+        let code = func.chunk.code();
+        let constants = func.chunk.constants();
+        let base_idx = self.current.base_idx + offset;
+        let pc = 0;
+        let frame = CallFrame { code, constants, base_idx, pc, rd };
+
+        self.frames.push(std::mem::replace(&mut self.current, frame));
+        self.stack.resize(base_idx + func.chunk.stack_size(), Value::new_null());
+    }
+
+    fn pop_frame(&mut self, ret: Value) {
+        let rd = self.current.rd;
+        self.current = self.frames.pop().expect("call stack underflow");
+        self.write(rd, ret);
+    }
+
     fn read(&self, reg: Reg) -> &Value {
-        &self.registers[reg.0 as usize]
+        let base = self.current.base_idx;
+        &self.stack[base + reg.0 as usize]
     }
 
     fn read_many(&self, start: Reg, end: Reg) -> &[Value] {
-        &self.registers[start.0 as usize..end.0 as usize]
+        let base = self.current.base_idx;
+        &self.stack[(base + start.0 as usize)..(base + end.0 as usize)]
     }
 
     fn write(&mut self, reg: Reg, value: Value) {
-        self.registers[reg.0 as usize] = value;
+        let base = self.current.base_idx;
+        self.stack[base + reg.0 as usize] = value;
     }
 }

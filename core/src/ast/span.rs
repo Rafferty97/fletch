@@ -24,7 +24,7 @@ impl Span {
         Self { lo, hi: lo + 1 }
     }
 
-    pub fn dummy() -> Self {
+    pub const fn dummy() -> Self {
         Self { lo: 0, hi: 0 }
     }
 

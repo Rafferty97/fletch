@@ -8,6 +8,7 @@ use crate::parser::escape;
 use crate::types::ty::{FloatTy, IntTy, UIntTy};
 use crate::vm::chunk::Chunk;
 use crate::vm::instr::Width;
+use crate::vm::module::FuncId;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Value {
@@ -15,7 +16,7 @@ pub enum Value {
     Scalar { ty: ScalarTy, value: u64 },
     Str(ArcStr),
     Array(ThinArc<(), Value>),
-    Func(FuncObjRef),
+    Func(FuncId),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -102,6 +103,10 @@ impl Value {
         Self::Array(ThinArc::from_header_and_iter((), values.into_iter()))
     }
 
+    pub fn new_func(value: FuncId) -> Self {
+        Self::Func(value)
+    }
+
     fn new_scalar(ty: ScalarTy, value: u64) -> Self {
         Self::Scalar { ty, value }
     }
@@ -144,6 +149,13 @@ impl Value {
         match self {
             Self::Array(value) => &value.slice,
             _ => panic!("expected array value"),
+        }
+    }
+
+    pub fn as_func(&self) -> FuncId {
+        match self {
+            Self::Func(value) => *value,
+            _ => panic!("expected function value"),
         }
     }
 
@@ -192,7 +204,7 @@ impl std::fmt::Display for Value {
                     write!(f, "]")
                 }
             },
-            Self::Func(value) => write!(f, "<func {}>", value.0.name),
+            Self::Func(value) => write!(f, "<function>"), // FIXME: function name
         }
     }
 }

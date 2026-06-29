@@ -25,10 +25,18 @@ pub fn compile_program(
     let mut main = Option::<FuncId>::None;
     let mut func_ids = IdGen::new(FuncId);
     let mut funcs = FnvHashMap::default();
+    let mut func_defs = FnvHashMap::default();
 
     for func in &ast.funcs {
+        let def_id = uses[&func.name.id].unwrap();
         let func_id = func_ids.next();
-        let chunk = compile_func(func, sym_table, uses, type_map)?;
+        func_defs.insert(def_id, func_id);
+    }
+
+    for func in &ast.funcs {
+        let def_id = uses[&func.name.id].unwrap();
+        let func_id = func_defs[&def_id];
+        let chunk = compile_func(func, func_id, sym_table, uses, type_map, &func_defs)?;
         let name = sym_table.get_str(func.name.sym).into();
         if name == "main" {
             main = Some(func_id);
@@ -46,9 +54,11 @@ pub fn compile_program(
 
 pub fn compile_func(
     ast: &Func,
+    func_id: FuncId,
     sym_table: &IndexTable<'_, Symbol, str>,
     uses: &FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
     type_map: &FnvHashMap<NodeId, Ty<'_>>,
+    funcs: &FnvHashMap<DefId, FuncId>,
 ) -> Result<Chunk> {
     let builder = ChunkBuilder::new();
     let mut compiler = Compiler {
@@ -57,12 +67,13 @@ pub fn compile_func(
         uses,
         type_map,
         locals: vec![],
+        funcs,
         stack_pos: StackPos(0),
         stack_size: StackPos(0),
         labels: IdGen::new(|id| format!("L{id}")),
     };
     compiler.compile_func(ast)?;
-    Ok(compiler.builder.build(compiler.stack_size.0 as usize))
+    Ok(compiler.builder.build(func_id, compiler.stack_size.0 as usize))
 }
 
 struct Compiler<'a> {
@@ -71,6 +82,7 @@ struct Compiler<'a> {
     uses: &'a FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
     type_map: &'a FnvHashMap<NodeId, Ty<'a>>,
     locals: Vec<DefId>,
+    funcs: &'a FnvHashMap<DefId, FuncId>,
     stack_pos: StackPos,
     stack_size: StackPos,
     labels: IdGen<String>,
@@ -103,10 +115,7 @@ impl<'a> Compiler<'a> {
         if let Some(expr) = &ast.tail {
             self.compile_expr(expr, rd)
         } else {
-            let rd = rd.unwrap_or_else(|| self.push());
-            let imm = self.builder.constant(Value::new_null());
-            self.builder.ins(Instr::Load { rd, imm });
-            Ok(rd)
+            Ok(rd.unwrap_or_else(|| self.push()))
         }
     }
 
@@ -145,6 +154,16 @@ impl<'a> Compiler<'a> {
             }
             ExprKind::Var(ident) => {
                 let def_id = self.uses[&ident.id].unwrap();
+
+                // Top-level functions
+                if let Some(&func_id) = self.funcs.get(&def_id) {
+                    let rd = rd.unwrap_or_else(|| self.push());
+                    let imm = self.builder.constant(Value::new_func(func_id));
+                    self.builder.ins(Instr::Load { rd, imm });
+                    return Ok(rd);
+                }
+
+                // Local vars
                 let r0 = self.lookup_var(def_id)?;
                 Ok(match rd {
                     Some(rd) if rd != r0 => {
@@ -213,26 +232,35 @@ impl<'a> Compiler<'a> {
                 Ok(rd)
             }
             ExprKind::Call(func, args) => {
-                let ExprKind::Var(func) = func.node else { todo!() };
-                match self.sym_table.get_str(func.sym) {
-                    "print" => {
-                        let [arg] = &args[..] else {
-                            Err(CompilerError::Arity { exp: 1, act: args.len() })?
-                        };
-                        let r0 = self.compile_expr(arg, rd)?;
-                        self.builder.ins(Instr::Print { r0 });
-
-                        let rd = rd.unwrap_or_else(|| self.push());
-                        self.compile_lit(&Lit::Null, rd)?;
-                        Ok(rd)
-                    }
-                    name => Err(CompilerError::UndefinedName(name.into()))?,
+                // FIXME: remove
+                if let ExprKind::Var(func) = func.node
+                    && self.sym_table.get_str(func.sym) == "print"
+                {
+                    let [arg] = &args[..] else {
+                        Err(CompilerError::Arity { exp: 1, act: args.len() })?
+                    };
+                    let r0 = self.compile_expr(arg, rd)?;
+                    self.builder.ins(Instr::Print { r0 });
+                    return Ok(rd.unwrap_or_else(|| self.push()));
                 }
+
+                let sp = self.stack_pos;
+                for expr in std::iter::once(&**func).chain(args.iter()) {
+                    let (rd, sp) = self.reserve();
+                    self.compile_expr(expr, Some(rd))?;
+                    self.stack_pos = sp;
+                }
+                self.stack_pos = sp;
+                let func = self.top();
+
+                let rd = rd.unwrap_or_else(|| self.push());
+                self.builder.ins(Instr::Call { func, rd });
+                Ok(rd)
             }
             ExprKind::Grouped(expr) => self.compile_expr(expr, rd),
             ExprKind::Array(exprs) => {
                 let sp = self.stack_pos;
-                for (idx, expr) in exprs.iter().enumerate() {
+                for expr in exprs.iter() {
                     let (rd, sp) = self.reserve();
                     self.compile_expr(expr, Some(rd))?;
                     self.stack_pos = sp;

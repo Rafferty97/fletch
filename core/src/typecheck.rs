@@ -49,11 +49,27 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
 
     pub fn check_program(&mut self, ast: &Program) {
         for func in &ast.funcs {
-            self.check_func(func);
+            self.check_func_signature(func);
+        }
+        for func in &ast.funcs {
+            self.check_func_body(func);
         }
     }
 
-    pub fn check_func(&mut self, ast: &Func) {
+    pub fn check_func_signature(&mut self, ast: &Func) {
+        // FIXME: dedupe logic with `check_func_body`
+        let def_id = self.name_tables.uses[&ast.name.id].unwrap();
+        let param_tys = ast.params.iter().map(|(_, ty)| self.lower_ty(ty)).collect_vec();
+        let ret_ty = ast
+            .ret
+            .as_ref()
+            .map(|ty| self.lower_ty(ty))
+            .unwrap_or(self.common().unit());
+        let ty = self.ty_ctx.mk_func(&param_tys, ret_ty);
+        self.def_map.insert(def_id, ty);
+    }
+
+    pub fn check_func_body(&mut self, ast: &Func) {
         for (name, ty) in &ast.params {
             let def_id = *self.name_tables.uses.get(&name.id).unwrap(); // FIXME
             let ty = self.lower_ty(ty);

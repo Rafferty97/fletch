@@ -27,6 +27,7 @@ pub enum Instr {
     FMul { w: Width, r0: Reg, r1: Reg, rd: Reg },
     FDiv { w: Width, r0: Reg, r1: Reg, rd: Reg },
     FLt { w: Width, r0: Reg, r1: Reg, rd: Reg },
+    Call { func: Reg, rd: Reg },
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -103,6 +104,7 @@ impl Instr {
             Self::FMul { w, r0, r1, rd } => EncodedInstr::opcode(42).width(w).reg0(r0).reg1(r1).reg2(rd),
             Self::FDiv { w, r0, r1, rd } => EncodedInstr::opcode(43).width(w).reg0(r0).reg1(r1).reg2(rd),
             Self::FLt { w, r0, r1, rd } => EncodedInstr::opcode(44).width(w).reg0(r0).reg1(r1).reg2(rd),
+            Self::Call { func, rd } => EncodedInstr::opcode(50).reg0(func).reg2(rd),
         }
     }
 
@@ -130,6 +132,7 @@ impl Instr {
             41 => Self::FSub { w: enc.get_width(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
             42 => Self::FMul { w: enc.get_width(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
             43 => Self::FDiv { w: enc.get_width(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
+            50 => Self::Call { func: enc.get_reg0(), rd: enc.get_reg2() },
             i => panic!("illegal instruction: {i}"),
         }
     }
@@ -293,6 +296,7 @@ impl Display for Instr {
             Self::FMul { w, r0, r1, rd } => iw.mnem("fmul").width(w).reg(rd).reg(r0).reg(r1),
             Self::FDiv { w, r0, r1, rd } => iw.mnem("fdiv").width(w).reg(rd).reg(r0).reg(r1),
             Self::FLt { w, r0, r1, rd } => iw.mnem("flt").width(w).reg(rd).reg(r0).reg(r1),
+            Self::Call { func, rd } => iw.mnem("call").reg(rd).reg(func),
         };
         Ok(())
     }
