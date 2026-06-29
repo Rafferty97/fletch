@@ -5,6 +5,7 @@ use crate::{
     ast::Symbol,
     parser::escape,
     types::ty::{FloatTy, IntTy, UIntTy},
+    vm::instr::Width,
 };
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -32,11 +33,13 @@ impl Value {
         Self::new_scalar(ScalarTy::Bool, value as u64)
     }
 
-    pub fn new_sint(value: i64, ty: ScalarTy) -> Self {
+    pub fn new_sint(value: i64, width: Width) -> Self {
+        let ty = ScalarTy::Int(width.as_int());
         Self::new_scalar(ty, u64::from_ne_bytes(i64::to_ne_bytes(value)))
     }
 
-    pub fn new_uint(value: u64, ty: ScalarTy) -> Self {
+    pub fn new_uint(value: u64, width: Width) -> Self {
+        let ty = ScalarTy::UInt(width.as_uint());
         Self::new_scalar(ty, value)
     }
 
@@ -75,25 +78,25 @@ impl Value {
     }
 
     pub fn as_bool(&self) -> bool {
-        self.as_scalar().0 != 0
+        self.as_scalar() != 0
     }
 
-    pub fn as_sint(&self) -> (i64, ScalarTy) {
-        let (value, ty) = self.as_scalar();
-        (i64::from_ne_bytes(u64::to_ne_bytes(value)), ty)
+    pub fn as_sint(&self) -> i64 {
+        let value = self.as_scalar();
+        i64::from_ne_bytes(u64::to_ne_bytes(value))
     }
 
-    pub fn as_uint(&self) -> (u64, ScalarTy) {
+    pub fn as_uint(&self) -> u64 {
         self.as_scalar()
     }
 
     pub fn as_f32(&self) -> f32 {
-        let (value, _) = self.as_scalar();
+        let value = self.as_scalar();
         f32::from_ne_bytes(u32::to_ne_bytes(value as _))
     }
 
     pub fn as_f64(&self) -> f64 {
-        let (value, _) = self.as_scalar();
+        let value = self.as_scalar();
         f64::from_ne_bytes(u64::to_ne_bytes(value))
     }
 
@@ -111,9 +114,9 @@ impl Value {
         }
     }
 
-    fn as_scalar(&self) -> (u64, ScalarTy) {
+    fn as_scalar(&self) -> u64 {
         match self {
-            Self::Scalar { value, ty } => (*value, *ty),
+            Self::Scalar { value, .. } => *value,
             _ => panic!("expected scalar value"),
         }
     }
@@ -165,8 +168,11 @@ mod test {
     use super::*;
 
     pub fn test_display_array() {
-        let ty = ScalarTy::Int(IntTy::Int32);
-        let value = Value::new_array([Value::new_null(), Value::new_bool(true), Value::new_sint(123, ty)]);
+        let value = Value::new_array([
+            Value::new_null(),
+            Value::new_bool(true),
+            Value::new_sint(123, Width::_32),
+        ]);
         assert_eq!(format!("{value}"), "[null, true, 123]");
     }
 }

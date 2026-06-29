@@ -1,2 +1,1 @@
-- Fix binary operators by consuming typechecker output
 - Trap on integer underflow/overflow

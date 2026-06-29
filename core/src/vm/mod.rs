@@ -1,4 +1,4 @@
-use crate::vm::instr::Reg;
+use crate::vm::instr::{Reg, Width};
 use crate::vm::value::Value;
 
 use self::chunk::Chunk;
@@ -39,44 +39,44 @@ impl Vm {
                     let value = self.read(r0);
                     output.emit(&format!("{value}\n"));
                 }
-                Instr::Add { r0, r1, rd } => {
-                    let (lhs, ty) = self.read(r0).as_sint();
-                    let (rhs, _) = self.read(r1).as_sint();
-                    self.write(rd, Value::new_sint(lhs + rhs, ty));
+                Instr::Add { w, r0, r1, rd } => {
+                    let lhs = self.read(r0).as_sint();
+                    let rhs = self.read(r1).as_sint();
+                    self.write(rd, Value::new_sint(lhs + rhs, w));
                 }
-                Instr::Sub { r0, r1, rd } => {
-                    let (lhs, ty) = self.read(r0).as_sint();
-                    let (rhs, _) = self.read(r1).as_sint();
-                    self.write(rd, Value::new_sint(lhs - rhs, ty));
+                Instr::Sub { w, r0, r1, rd } => {
+                    let lhs = self.read(r0).as_sint();
+                    let rhs = self.read(r1).as_sint();
+                    self.write(rd, Value::new_sint(lhs - rhs, w));
                 }
-                Instr::Mul { r0, r1, rd } => {
-                    let (lhs, ty) = self.read(r0).as_sint();
-                    let (rhs, _) = self.read(r1).as_sint();
-                    self.write(rd, Value::new_sint(lhs * rhs, ty));
+                Instr::Mul { w, r0, r1, rd } => {
+                    let lhs = self.read(r0).as_sint();
+                    let rhs = self.read(r1).as_sint();
+                    self.write(rd, Value::new_sint(lhs * rhs, w));
                 }
-                Instr::UDiv { r0, r1, rd } => {
-                    let (lhs, ty) = self.read(r0).as_uint();
-                    let (rhs, _) = self.read(r1).as_uint();
-                    self.write(rd, Value::new_uint(lhs / rhs, ty));
+                Instr::UDiv { w, r0, r1, rd } => {
+                    let lhs = self.read(r0).as_uint();
+                    let rhs = self.read(r1).as_uint();
+                    self.write(rd, Value::new_uint(lhs / rhs, w));
                 }
-                Instr::SDiv { r0, r1, rd } => {
-                    let (lhs, ty) = self.read(r0).as_sint();
-                    let (rhs, _) = self.read(r1).as_sint();
-                    self.write(rd, Value::new_sint(lhs / rhs, ty));
+                Instr::SDiv { w, r0, r1, rd } => {
+                    let lhs = self.read(r0).as_sint();
+                    let rhs = self.read(r1).as_sint();
+                    self.write(rd, Value::new_sint(lhs / rhs, w));
                 }
                 Instr::Eq { r0, r1, rd } => {
-                    let (lhs, _) = self.read(r0).as_sint();
-                    let (rhs, _) = self.read(r1).as_sint();
+                    let lhs = self.read(r0).as_sint();
+                    let rhs = self.read(r1).as_sint();
                     self.write(rd, Value::new_bool(lhs == rhs));
                 }
                 Instr::ULt { r0, r1, rd } => {
-                    let (lhs, _) = self.read(r0).as_uint();
-                    let (rhs, _) = self.read(r1).as_uint();
+                    let lhs = self.read(r0).as_uint();
+                    let rhs = self.read(r1).as_uint();
                     self.write(rd, Value::new_bool(lhs < rhs));
                 }
                 Instr::SLt { r0, r1, rd } => {
-                    let (lhs, _) = self.read(r0).as_sint();
-                    let (rhs, _) = self.read(r1).as_sint();
+                    let lhs = self.read(r0).as_sint();
+                    let rhs = self.read(r1).as_sint();
                     self.write(rd, Value::new_bool(lhs < rhs));
                 }
                 Instr::Not { r0, rd } => {
@@ -92,7 +92,7 @@ impl Vm {
                 }
                 Instr::Index { r0, r1, rd } => {
                     let expr = self.read(r0).as_array();
-                    let (index, _) = self.read(r1).as_uint();
+                    let index = self.read(r1).as_uint();
                     // FIXME: should throw error on out-of-bounds
                     self.write(rd, expr.get(index as usize).cloned().unwrap_or(Value::new_null()));
                 }
@@ -112,6 +112,36 @@ impl Vm {
                         continue;
                     }
                 }
+                Instr::FAdd { w: Width::_64, r0, r1, rd } => {
+                    let lhs = self.read(r0).as_f64();
+                    let rhs = self.read(r1).as_f64();
+                    self.write(rd, Value::new_f64(lhs + rhs));
+                }
+                Instr::FSub { w: Width::_64, r0, r1, rd } => {
+                    let lhs = self.read(r0).as_f64();
+                    let rhs = self.read(r1).as_f64();
+                    self.write(rd, Value::new_f64(lhs - rhs));
+                }
+                Instr::FMul { w: Width::_64, r0, r1, rd } => {
+                    let lhs = self.read(r0).as_f64();
+                    let rhs = self.read(r1).as_f64();
+                    self.write(rd, Value::new_f64(lhs * rhs));
+                }
+                Instr::FDiv { w: Width::_64, r0, r1, rd } => {
+                    let lhs = self.read(r0).as_f64();
+                    let rhs = self.read(r1).as_f64();
+                    self.write(rd, Value::new_f64(lhs / rhs));
+                }
+                Instr::FLt { w: Width::_64, r0, r1, rd } => {
+                    let lhs = self.read(r0).as_f64();
+                    let rhs = self.read(r1).as_f64();
+                    self.write(rd, Value::new_f64(lhs / rhs));
+                }
+                Instr::FAdd { .. }
+                | Instr::FSub { .. }
+                | Instr::FMul { .. }
+                | Instr::FDiv { .. }
+                | Instr::FLt { .. } => unreachable!(),
             }
             pc += 1;
         }

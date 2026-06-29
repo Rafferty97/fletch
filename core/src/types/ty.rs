@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display};
 
-use crate::{diagnostics::ErrGuaranteed, interner::Interned, types::ty_ctx::Variance};
+use crate::{diagnostics::ErrGuaranteed, interner::Interned, types::ty_ctx::Variance, vm::instr::Width};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Ty<'ty>(pub(super) Interned<'ty, TyKind<'ty>>);
@@ -47,6 +47,37 @@ pub enum UIntTy {
 pub enum FloatTy {
     Float32,
     Float64,
+}
+
+impl IntTy {
+    pub fn width(self) -> Width {
+        match self {
+            Self::Int8 => Width::_8,
+            Self::Int16 => Width::_16,
+            Self::Int32 => Width::_32,
+            Self::Int64 => Width::_64,
+        }
+    }
+}
+
+impl UIntTy {
+    pub fn width(self) -> Width {
+        match self {
+            Self::UInt8 => Width::_8,
+            Self::UInt16 => Width::_16,
+            Self::UInt32 => Width::_32,
+            Self::UInt64 => Width::_64,
+        }
+    }
+}
+
+impl FloatTy {
+    pub fn width(self) -> Width {
+        match self {
+            Self::Float32 => Width::_32,
+            Self::Float64 => Width::_64,
+        }
+    }
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]

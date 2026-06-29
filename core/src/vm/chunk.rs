@@ -168,7 +168,7 @@ mod test {
         assert_eq!(lines.next(), Some(""));
         assert_eq!(lines.next(), Some("[code]"));
         assert_eq!(lines.next(), Some("start:"));
-        assert_eq!(lines.next(), Some("    ret     r0"));
+        assert_eq!(lines.next(), Some("    ret       r0"));
         assert_eq!(lines.next(), Some(""));
         assert_eq!(lines.next(), Some("[constants]"));
         assert_eq!(lines.next(), None);

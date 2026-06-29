@@ -12,7 +12,7 @@ use crate::types::ty::IntTy;
 use crate::types::{Ty, TyKind};
 use crate::util::IdGen;
 use crate::vm::chunk::{Chunk, ChunkBuilder};
-use crate::vm::instr::{Addr, Instr, Reg};
+use crate::vm::instr::{Addr, Instr, Reg, Width};
 use crate::vm::value::{ScalarTy, Value};
 
 pub fn compile_func(
@@ -122,26 +122,54 @@ impl<'a> Compiler<'a> {
                 let r1 = self.compile_expr(rhs, None)?;
                 self.stack_pos = sp;
 
+                let ty = *self.type_map.get(&lhs.id).unwrap();
+
                 let rd = rd.unwrap_or_else(|| self.push());
-                match op {
-                    BinOp::Add => self.builder.ins(Instr::Add { r0, r1, rd }),
-                    BinOp::Sub => self.builder.ins(Instr::Sub { r0, r1, rd }),
-                    BinOp::Mul => self.builder.ins(Instr::Mul { r0, r1, rd }),
-                    BinOp::Div => self.builder.ins(Instr::UDiv { r0, r1, rd }), // FIXME
-                    BinOp::Eq => self.builder.ins(Instr::Eq { r0, r1, rd }),
-                    BinOp::NotEq => {
+                match (op, ty.kind()) {
+                    (BinOp::Add, TyKind::Int(ty)) => self.builder.ins(Instr::Add { w: ty.width(), r0, r1, rd }),
+                    (BinOp::Add, TyKind::UInt(ty)) => self.builder.ins(Instr::Add { w: ty.width(), r0, r1, rd }),
+                    (BinOp::Add, TyKind::Float(ty)) => self.builder.ins(Instr::FAdd { w: ty.width(), r0, r1, rd }),
+
+                    (BinOp::Sub, TyKind::Int(ty)) => self.builder.ins(Instr::Sub { w: ty.width(), r0, r1, rd }),
+                    (BinOp::Sub, TyKind::UInt(ty)) => self.builder.ins(Instr::Sub { w: ty.width(), r0, r1, rd }),
+                    (BinOp::Sub, TyKind::Float(ty)) => self.builder.ins(Instr::FSub { w: ty.width(), r0, r1, rd }),
+
+                    (BinOp::Mul, TyKind::Int(ty)) => self.builder.ins(Instr::Mul { w: ty.width(), r0, r1, rd }),
+                    (BinOp::Mul, TyKind::UInt(ty)) => self.builder.ins(Instr::Mul { w: ty.width(), r0, r1, rd }),
+                    (BinOp::Mul, TyKind::Float(ty)) => self.builder.ins(Instr::FMul { w: ty.width(), r0, r1, rd }),
+
+                    (BinOp::Div, TyKind::Int(ty)) => self.builder.ins(Instr::SDiv { w: ty.width(), r0, r1, rd }),
+                    (BinOp::Div, TyKind::UInt(ty)) => self.builder.ins(Instr::UDiv { w: ty.width(), r0, r1, rd }),
+                    (BinOp::Div, TyKind::Float(ty)) => self.builder.ins(Instr::FDiv { w: ty.width(), r0, r1, rd }),
+
+                    (BinOp::Eq, _) => self.builder.ins(Instr::Eq { r0, r1, rd }),
+                    (BinOp::NotEq, _) => {
                         self.builder.ins(Instr::Eq { r0, r1, rd });
                         self.builder.ins(Instr::Not { r0: rd, rd });
                     }
-                    BinOp::Lt => self.builder.ins(Instr::SLt { r0, r1, rd }), // FIXME
-                    BinOp::LtEq => {
-                        self.builder.ins(Instr::SLt { r0: r1, r1: r0, rd }); // FIXME
-                        self.builder.ins(Instr::Not { r0: rd, rd });
+
+                    (BinOp::Lt | BinOp::LtEq | BinOp::Gt | BinOp::GtEq, _) => {
+                        let (r0, r1) = match op {
+                            BinOp::Lt | BinOp::GtEq => (r0, r1),
+                            BinOp::Gt | BinOp::LtEq => (r1, r0),
+                            _ => unreachable!(),
+                        };
+                        match ty.kind() {
+                            TyKind::Int(_) => self.builder.ins(Instr::SLt { r0, r1, rd }),
+                            TyKind::UInt(_) => self.builder.ins(Instr::ULt { r0, r1, rd }),
+                            TyKind::Float(ty) => self.builder.ins(Instr::FLt { w: ty.width(), r0, r1, rd }),
+                            _ => unreachable!(),
+                        }
+                        match op {
+                            BinOp::Lt | BinOp::Gt => {}
+                            BinOp::LtEq | BinOp::GtEq => self.builder.ins(Instr::Not { r0: rd, rd }),
+                            _ => unreachable!(),
+                        }
                     }
-                    BinOp::Gt => self.builder.ins(Instr::SLt { r0: r1, r1: r0, rd }), // FIXME
-                    BinOp::GtEq => {
-                        self.builder.ins(Instr::SLt { r0, r1, rd }); // FIXME
-                        self.builder.ins(Instr::Not { r0: rd, rd });
+
+                    _ => {
+                        println!("{op:?}, {ty:?}");
+                        todo!()
                     }
                 }
                 Ok(rd)
@@ -235,8 +263,7 @@ impl<'a> Compiler<'a> {
                     .get_str(sym)
                     .parse()
                     .map_err(|_| CompilerError::InvalidLiteral)?;
-                let ty = ScalarTy::Int(IntTy::Int32);
-                let imm = self.builder.constant(Value::new_sint(value, ty));
+                let imm = self.builder.constant(Value::new_sint(value, Width::_32)); // FIXME
                 self.builder.ins(Instr::Load { rd, imm });
                 Ok(())
             }
