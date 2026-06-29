@@ -1,4 +1,4 @@
-use fletch::OutputSink;
+use fletch::{FletchOpts, OutputSink};
 use wasm_bindgen::prelude::*;
 
 // Better panic messages in the browser console. Optional but worth it.
@@ -31,6 +31,7 @@ impl<'a> OutputSink for JsSink<'a> {
 #[wasm_bindgen]
 pub fn run(source: &str, print_cb: &js_sys::Function) -> Result<JsValue, JsValue> {
     let mut sink = JsSink(print_cb);
-    let result = fletch::run("<anon>", source, Default::default(), &mut sink);
+    let opts = FletchOpts { sexpr: false, disassemble: true };
+    let result = fletch::run("<anon>", source, opts, &mut sink);
     serde_wasm_bindgen::to_value(&result).map_err(|e| JsValue::from_str(&e.to_string()))
 }

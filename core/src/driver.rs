@@ -48,10 +48,11 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
 
     // Print s-expr
     if opts.sexpr {
-        let mut output = String::new();
-        let mut sexpr_ctx = SExprCtx { str: &mut output, sym_table };
+        let mut buf = String::new();
+        let mut sexpr_ctx = SExprCtx { str: &mut buf, sym_table };
         SExpr::write(&ast, &mut sexpr_ctx);
-        println!("{output}\n");
+        buf.push('\n');
+        output.emit(&buf);
     }
 
     // Name resolution
@@ -109,7 +110,8 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
 
     // Print chunk
     if opts.disassemble {
-        println!("{}", chunk.disassemble());
+        output.emit(&chunk.disassemble());
+        output.emit("\n");
     }
 
     // Execute
