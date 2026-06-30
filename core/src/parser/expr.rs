@@ -50,8 +50,10 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 Token::GtEq => self.parse_binary(expr, BinOp::GtEq, Precedence::Comparison)?,
                 Token::LeftParen => {
                     let func = expr;
+                    let arg_start = self.curr_pos();
                     let args = self.parse_list(Token::LeftParen, Token::RightParen)?;
-                    let node = ExprKind::Call(func.into(), args);
+                    let arg_span = self.make_span(arg_start);
+                    let node = ExprKind::Call(func.into(), args, arg_span);
                     self.make_spanned(start, node)
                 }
                 Token::LeftBracket => {

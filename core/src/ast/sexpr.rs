@@ -115,7 +115,7 @@ impl<'a> SExprCtx<'a> {
                 self.write_expr(rhs);
                 self.str.push(')');
             }
-            ExprKind::Call(func, args) => {
+            ExprKind::Call(func, args, _) => {
                 self.str.push_str("(call ");
                 self.write_expr(func);
                 for arg in args {

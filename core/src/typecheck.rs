@@ -14,6 +14,7 @@ use crate::types::infer::TypeError;
 use crate::types::ty_ctx::TyCtx;
 use crate::types::ty_interners::{CommonTypes, TyInterners};
 use crate::types::{Ty, TyKind};
+use crate::util::Args;
 
 pub struct TypeChecker<'a, 'ty> {
     ty_ctx: TyCtx<'a, 'ty>,
@@ -48,6 +49,11 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
     }
 
     pub fn check_program(&mut self, ast: &Program) {
+        if let Some(def_id) = self.name_tables.print_def_id {
+            self.def_map
+                .insert(def_id, self.ty_ctx.mk_func(&[self.common().any], self.common().unit()));
+        }
+
         for func in &ast.funcs {
             self.check_func_signature(func);
         }
@@ -122,6 +128,10 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
         }
     }
 
+    fn infer_expr(&mut self, ast: &Expr) -> Ty<'ty> {
+        self.check_expr(ast, self.common().infer)
+    }
+
     fn check_expr(&mut self, ast: &Expr, expected: Ty<'ty>) -> Ty<'ty> {
         let actual = match &ast.node {
             ExprKind::Lit(lit) => match lit {
@@ -133,6 +143,9 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 Lit::Err(err) => self.ty_ctx.mk_error(*err),
             },
             ExprKind::Var(name) => {
+                // if self.sym_table.get_str(name.sym) == "print" {
+                //     return self.ty_ctx.mk_func(&[self.common().any], self.common().unit());
+                // }
                 self.name_tables
                     .uses
                     .get(&name.id)
@@ -165,11 +178,39 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     }
                 }
             }
-            ExprKind::Call(func, args) => {
-                for arg in args {
-                    self.check_expr(arg, self.common().infer);
+            ExprKind::Call(func, args, span) => {
+                let func_ty = self.infer_expr(func);
+                match func_ty.kind() {
+                    TyKind::Func(func) => {
+                        if func.params.len() != args.len() {
+                            let msg = format!("expected {}, found {}", Args(func.params.len()), args.len());
+                            let diagnostic = Diagnostic::error(msg, *span);
+                            let err = self.errors.report_err(diagnostic);
+                        }
+
+                        let infer = self.common().infer;
+                        for (idx, arg) in args.iter().enumerate() {
+                            let expected = func.params.get(idx).copied().unwrap_or(infer);
+                            self.check_expr(arg, expected);
+                        }
+                        func.ret
+                    }
+                    TyKind::Error(err) => {
+                        for arg in args {
+                            self.infer_expr(arg);
+                        }
+                        self.ty_ctx.mk_error(err)
+                    }
+                    _ => {
+                        let msg = format!("expected a function, found '{func_ty}'");
+                        let diagnostic = Diagnostic::error(msg, func.span);
+                        let err = self.errors.report_err(diagnostic);
+                        for arg in args {
+                            self.infer_expr(arg);
+                        }
+                        self.ty_ctx.mk_error(err)
+                    }
                 }
-                self.common().unit() // FIXME
             }
             ExprKind::Grouped(expr) => self.check_expr(expr, expected),
             ExprKind::Array(exprs) => {

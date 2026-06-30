@@ -12,6 +12,7 @@ use crate::vm::module::FuncId;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Value {
+    Unit,
     Null,
     Scalar { ty: ScalarTy, value: u64 },
     Str(ArcStr),
@@ -59,6 +60,10 @@ impl Deref for FuncObjRef {
 }
 
 impl Value {
+    pub fn new_unit() -> Self {
+        Self::Unit
+    }
+
     pub fn new_null() -> Self {
         Self::Null
     }
@@ -170,6 +175,7 @@ impl Value {
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Unit => write!(f, "()"),
             Self::Null => write!(f, "null"),
             Self::Scalar { ty: ScalarTy::Bool, value: 0 } => write!(f, "false"),
             Self::Scalar { ty: ScalarTy::Bool, value: 1.. } => write!(f, "true"),

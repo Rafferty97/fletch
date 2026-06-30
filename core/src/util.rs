@@ -1,7 +1,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Args(pub u32);
+pub struct Args(pub usize);
 
 impl std::fmt::Display for Args {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -14,7 +14,7 @@ impl std::fmt::Display for Args {
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub struct Elements(pub u32);
+pub struct Elements(pub usize);
 
 impl std::fmt::Display for Elements {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -33,7 +33,7 @@ pub struct IdGen<T> {
 
 impl<T> IdGen<T> {
     pub fn new(make: fn(u32) -> T) -> Self {
-        Self { next_id: AtomicU32::new(0), make }
+        Self { next_id: AtomicU32::new(1), make }
     }
 
     pub fn next(&self) -> T {

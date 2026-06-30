@@ -5,6 +5,7 @@ use crate::types::ty::{FloatTy, IntTy, UIntTy};
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Instr {
     Return { r0: Reg },
+    LoadUnit { rd: Reg },
     Load { rd: Reg, imm: Imm },
     Print { r0: Reg },
     Add { w: Width, r0: Reg, r1: Reg, rd: Reg },
@@ -82,8 +83,9 @@ impl Instr {
     pub fn encode(self) -> EncodedInstr {
         match self {
             Self::Return { r0 } => EncodedInstr::opcode(0).reg0(r0),
-            Self::Load { rd, imm } => EncodedInstr::opcode(1).reg0(rd).imm1(imm),
-            Self::Print { r0 } => EncodedInstr::opcode(2).reg0(r0),
+            Self::LoadUnit { rd } => EncodedInstr::opcode(1).reg0(rd),
+            Self::Load { rd, imm } => EncodedInstr::opcode(2).reg0(rd).imm1(imm),
+            Self::Print { r0 } => EncodedInstr::opcode(3).reg0(r0),
             Self::Add { w, r0, r1, rd } => EncodedInstr::opcode(10).width(w).reg0(r0).reg1(r1).reg2(rd),
             Self::Sub { w, r0, r1, rd } => EncodedInstr::opcode(11).width(w).reg0(r0).reg1(r1).reg2(rd),
             Self::Mul { w, r0, r1, rd } => EncodedInstr::opcode(12).width(w).reg0(r0).reg1(r1).reg2(rd),
@@ -111,8 +113,9 @@ impl Instr {
     pub fn decode(enc: EncodedInstr) -> Self {
         match enc.get_opcode() {
             0 => Self::Return { r0: enc.get_reg0() },
-            1 => Self::Load { rd: enc.get_reg0(), imm: enc.get_imm1() },
-            2 => Self::Print { r0: enc.get_reg0() },
+            1 => Self::LoadUnit { rd: enc.get_reg0() },
+            2 => Self::Load { rd: enc.get_reg0(), imm: enc.get_imm1() },
+            3 => Self::Print { r0: enc.get_reg0() },
             10 => Self::Add { w: enc.get_width(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
             11 => Self::Sub { w: enc.get_width(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
             12 => Self::Mul { w: enc.get_width(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
@@ -274,7 +277,8 @@ impl Display for Instr {
         let iw = InstrWriter::new(f);
         match *self {
             Self::Return { r0 } => iw.mnem("ret").reg(r0),
-            Self::Load { rd, imm } => iw.mnem("load").reg(rd).imm(imm),
+            Self::LoadUnit { rd } => iw.mnem("ld.unit").reg(rd),
+            Self::Load { rd, imm } => iw.mnem("ld").reg(rd).imm(imm),
             Self::Print { r0 } => iw.mnem("print").reg(r0),
             Self::Add { w, r0, r1, rd } => iw.mnem("add").width(w).reg(rd).reg(r0).reg(r1),
             Self::Sub { w, r0, r1, rd } => iw.mnem("sub").width(w).reg(rd).reg(r0).reg(r1),

@@ -52,7 +52,7 @@ pub enum ExprKind {
     Lit(Lit),
     Var(Ident),
     Binary(BinOp, Box<Expr>, Box<Expr>, Span),
-    Call(Box<Expr>, Vec<Expr>),
+    Call(Box<Expr>, Vec<Expr>, Span),
     Grouped(Box<Expr>),
     Array(Vec<Expr>),
     Index(Box<Expr>, Box<Expr>),

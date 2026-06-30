@@ -115,7 +115,9 @@ impl<'a> Compiler<'a> {
         if let Some(expr) = &ast.tail {
             self.compile_expr(expr, rd)
         } else {
-            Ok(rd.unwrap_or_else(|| self.push()))
+            let rd = rd.unwrap_or_else(|| self.push());
+            self.builder.ins(Instr::LoadUnit { rd });
+            Ok(rd)
         }
     }
 
@@ -231,7 +233,7 @@ impl<'a> Compiler<'a> {
                 }
                 Ok(rd)
             }
-            ExprKind::Call(func, args) => {
+            ExprKind::Call(func, args, _) => {
                 // FIXME: remove
                 if let ExprKind::Var(func) = func.node
                     && self.sym_table.get_str(func.sym) == "print"
@@ -241,7 +243,9 @@ impl<'a> Compiler<'a> {
                     };
                     let r0 = self.compile_expr(arg, rd)?;
                     self.builder.ins(Instr::Print { r0 });
-                    return Ok(rd.unwrap_or_else(|| self.push()));
+                    let rd = rd.unwrap_or_else(|| self.push());
+                    self.builder.ins(Instr::LoadUnit { rd });
+                    return Ok(rd);
                 }
 
                 let sp = self.stack_pos;
@@ -339,7 +343,7 @@ impl<'a> Compiler<'a> {
                     .get_str(sym)
                     .parse()
                     .map_err(|_| CompilerError::InvalidLiteral)?;
-                let imm = self.builder.constant(Value::new_f64(value));
+                let imm = self.builder.constant(Value::new_f64(value)); // FIXME
                 self.builder.ins(Instr::Load { rd, imm });
                 Ok(())
             }

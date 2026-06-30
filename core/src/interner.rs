@@ -5,6 +5,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use bumpalo::Bump;
 use hashbrown::HashTable;
+use itertools::Itertools;
 
 #[derive(Hash, Debug)]
 pub struct Interned<'a, T: ?Sized>(&'a T);
@@ -153,6 +154,10 @@ impl<'a, S, T: ?Sized> IndexTable<'a, S, T> {
 impl<'a, S: Index> IndexTable<'a, S, str> {
     pub fn get_str(&self, symbol: S) -> &'a str {
         self.values[symbol.into_usize()]
+    }
+
+    pub fn find_str(&self, str: &str) -> Option<S> {
+        self.values.iter().position(|s| *s == str).map(S::from_usize)
     }
 }
 

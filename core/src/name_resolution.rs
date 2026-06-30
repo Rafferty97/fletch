@@ -15,6 +15,7 @@ pub struct NameResolution<'a> {
     idents: Vec<Ident>,
     def_ids: IdGen<DefId>,
     errors: &'a dyn DiagnosticReporter,
+    print_def_id: Option<DefId>,
 }
 
 #[derive(Clone, Debug)]
@@ -22,6 +23,7 @@ pub struct NameTables {
     pub defs: FnvHashMap<DefId, BindingInfo>,
     pub uses: FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
     pub idents: Vec<Ident>,
+    pub print_def_id: Option<DefId>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -43,15 +45,32 @@ impl<'a> NameResolution<'a> {
             idents: vec![],
             def_ids: IdGen::new(DefId),
             errors,
+            print_def_id: None,
         }
     }
 
     pub fn finish(self) -> NameTables {
-        NameTables { defs: self.defs, uses: self.uses, idents: self.idents }
+        NameTables {
+            defs: self.defs,
+            uses: self.uses,
+            idents: self.idents,
+            print_def_id: self.print_def_id,
+        }
     }
 
     pub fn resolve_program(&mut self, program: &Program) {
         self.push_scope();
+
+        // FIXME: remove
+        if let Some(sym) = self.sym_table.find_str("print") {
+            let def_id = self.def_ids.next();
+            let binding_info = BindingInfo { mutability: Mutability::Not, span: Span::dummy() };
+            self.defs.insert(def_id, binding_info);
+            self.scopes.last_mut().unwrap().insert(sym, def_id);
+            self.print_def_id = Some(def_id);
+            println!("print_def_id = {def_id:?}");
+        }
+
         for func in &program.funcs {
             let def_id = self.def_ids.next();
             self.define_name(func.name, Mutability::Not);
@@ -112,7 +131,7 @@ impl<'a> NameResolution<'a> {
                 self.resolve_expr(lhs);
                 self.resolve_expr(rhs);
             }
-            ExprKind::Call(func, args) => {
+            ExprKind::Call(func, args, _) => {
                 self.resolve_expr(func);
                 args.iter().for_each(|arg| self.resolve_expr(arg));
             }
@@ -155,12 +174,6 @@ impl<'a> NameResolution<'a> {
     }
 
     fn resolve_name(&mut self, ident: Ident) -> Option<&BindingInfo> {
-        // FIXME: remove
-        if self.sym_table.get_str(ident.sym) == "print" {
-            static PRINT: BindingInfo = BindingInfo { mutability: Mutability::Not, span: Span::dummy() };
-            return Some(&PRINT);
-        }
-
         let def_id = self.find_name(ident.sym).ok_or_else(|| {
             let msg = format!("cannot find `{}` in this scope", self.sym_table.get_str(ident.sym));
             self.errors.report_err(Diagnostic::error(msg, ident.span))

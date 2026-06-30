@@ -54,6 +54,9 @@ impl<'a> Vm<'a> {
                         return;
                     }
                 }
+                Instr::LoadUnit { rd } => {
+                    self.write(rd, Value::new_unit());
+                }
                 Instr::Load { rd, imm } => {
                     let value = self.current.constants[imm.0 as usize].clone();
                     self.write(rd, value);

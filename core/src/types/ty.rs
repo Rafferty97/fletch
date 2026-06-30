@@ -101,6 +101,10 @@ impl<'ty> Ty<'ty> {
         self.kind() == TyKind::Never
     }
 
+    pub fn is_err(self) -> bool {
+        matches!(self.kind(), TyKind::Error(_))
+    }
+
     /// Returns `true` if no constituents of the type are `Pending`
     pub fn is_final(self) -> bool {
         self.fold(true, &mut |acc, ty| acc && ty.kind() != TyKind::Pending)
