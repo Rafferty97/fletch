@@ -127,6 +127,9 @@ impl<'a> NameResolution<'a> {
                 self.idents.push(*name);
                 self.resolve_name(*name);
             }
+            ExprKind::Unary(_, rhs, _) => {
+                self.resolve_expr(rhs);
+            }
             ExprKind::Binary(_, lhs, rhs, _) => {
                 self.resolve_expr(lhs);
                 self.resolve_expr(rhs);

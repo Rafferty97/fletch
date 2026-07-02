@@ -1,7 +1,7 @@
 use codespan_reporting::diagnostic;
 
 use crate::ast::span::{Span, Spanned};
-use crate::ast::{BinOp, Block, Expr, ExprKind, Func, Ident, Lit, Program, Stmt, StmtKind, Symbol};
+use crate::ast::{BinOp, Block, Expr, ExprKind, Func, Ident, Lit, Program, Stmt, StmtKind, Symbol, UnaryOp};
 use crate::diagnostics::Diagnostic;
 use crate::parser::SpannedToken;
 use crate::parser::escape::unescape;
@@ -110,6 +110,16 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 ExprKind::Lit(Lit::Str(unescaped))
             }
             Token::Ident(raw) => ExprKind::Var(self.parse_ident()?),
+            Token::Bang => {
+                let span = self.consume().span;
+                let expr = self.parse_precedence(Precedence::Unary)?.into();
+                ExprKind::Unary(UnaryOp::Not, expr, span)
+            }
+            Token::Minus => {
+                let span = self.consume().span;
+                let expr = self.parse_precedence(Precedence::Unary)?.into();
+                ExprKind::Unary(UnaryOp::Negate, expr, span)
+            }
             Token::LeftParen => {
                 self.consume();
                 let expr = self.parse_expr()?.into();

@@ -51,6 +51,7 @@ pub enum Mutability {
 pub enum ExprKind {
     Lit(Lit),
     Var(Ident),
+    Unary(UnaryOp, Box<Expr>, Span),
     Binary(BinOp, Box<Expr>, Box<Expr>, Span),
     Call(Box<Expr>, Vec<Expr>, Span),
     Grouped(Box<Expr>),
@@ -72,6 +73,12 @@ pub enum Lit {
     Float(Symbol),
     Str(Symbol),
     Err(ErrGuaranteed),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum UnaryOp {
+    Not,
+    Negate,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -114,6 +121,15 @@ impl Index for Symbol {
 
     fn into_usize(self) -> usize {
         self.0 as usize
+    }
+}
+
+impl Display for UnaryOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Not => write!(f, "!"),
+            Self::Negate => write!(f, "-"),
+        }
     }
 }
 

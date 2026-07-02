@@ -3,7 +3,7 @@ use fnv::FnvHashMap;
 use itertools::Itertools;
 use thiserror::Error;
 
-use crate::ast::{BinOp, Block, Expr, ExprKind, Func, Ident, Lit, NodeId, Program, Stmt, StmtKind, Symbol};
+use crate::ast::{BinOp, Block, Expr, ExprKind, Func, Ident, Lit, NodeId, Program, Stmt, StmtKind, Symbol, UnaryOp};
 use crate::diagnostics::{DiagnosticReporter, ErrGuaranteed};
 use crate::interner::IndexTable;
 use crate::name_resolution::DefId;
@@ -169,6 +169,24 @@ impl<'a> Compiler<'a> {
                     }
                     _ => r0,
                 }
+            }
+            ExprKind::Unary(op, rhs, _) => {
+                let sp = self.stack_pos;
+                let r0 = self.compile_expr(rhs, None);
+                self.stack_pos = sp;
+
+                let ty = *self.type_map.get(&rhs.id).unwrap();
+
+                let rd = rd.unwrap_or_else(|| self.push());
+                match (op, ty.kind()) {
+                    (UnaryOp::Not, TyKind::Bool) => self.builder.ins(Instr::Not { r0, rd }),
+                    (UnaryOp::Not, _) => unreachable!(),
+
+                    (UnaryOp::Negate, TyKind::Int(ty)) => self.builder.ins(Instr::Neg { w: ty.width(), r0, rd }),
+                    (UnaryOp::Negate, TyKind::Float(ty)) => self.builder.ins(Instr::FNeg { w: ty.width(), r0, rd }),
+                    (UnaryOp::Negate, _) => unreachable!(),
+                }
+                rd
             }
             ExprKind::Binary(op, lhs, rhs, _) => {
                 let sp = self.stack_pos;

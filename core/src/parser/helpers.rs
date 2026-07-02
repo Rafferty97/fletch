@@ -15,7 +15,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
     }
 
     pub(super) fn make_span(&self, start: u32) -> Span {
-        Span::new(start, self.curr_pos())
+        Span::new(start, self.previous.span.hi())
     }
 
     pub(super) fn make_spanned<T>(&mut self, start: u32, node: T) -> Spanned<T> {

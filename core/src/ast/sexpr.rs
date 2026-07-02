@@ -106,6 +106,13 @@ impl<'a> SExprCtx<'a> {
                 self.write_sym(var.sym);
                 self.str.push(')');
             }
+            ExprKind::Unary(op, rhs, _) => {
+                self.str.push('(');
+                self.write_unaryop(*op);
+                self.str.push(' ');
+                self.write_expr(rhs);
+                self.str.push(')');
+            }
             ExprKind::Binary(op, lhs, rhs, _) => {
                 self.str.push('(');
                 self.write_binop(*op);
@@ -160,6 +167,11 @@ impl<'a> SExprCtx<'a> {
             Some(expr) => self.write_expr(expr),
             None => self.str.push_str("none"),
         }
+    }
+
+    fn write_unaryop(&mut self, op: UnaryOp) {
+        use std::fmt::Write;
+        write!(&mut self.str, "{op}");
     }
 
     fn write_binop(&mut self, op: BinOp) {

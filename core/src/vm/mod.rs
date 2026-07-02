@@ -58,6 +58,10 @@ impl<'a> Vm<'a> {
                 Instr::LoadNull { rd } => self.write(rd, Value::new_null()),
                 Instr::LoadFalse { rd } => self.write(rd, Value::new_bool(false)),
                 Instr::LoadTrue { rd } => self.write(rd, Value::new_bool(true)),
+                Instr::LoadZero { w, rd } => self.write(rd, Value::new_sint(0, w)),
+                Instr::LoadFZero { w: Width::_32, rd } => self.write(rd, Value::new_f32(0.0)),
+                Instr::LoadFZero { w: Width::_64, rd } => self.write(rd, Value::new_f64(0.0)),
+                Instr::LoadFZero { .. } => unreachable!(),
                 Instr::Load { rd, imm } => {
                     let value = self.current.constants[imm.0 as usize].clone();
                     self.write(rd, value);
@@ -110,6 +114,19 @@ impl<'a> Vm<'a> {
                     let operand = self.read(r0).as_bool();
                     self.write(rd, Value::new_bool(!operand));
                 }
+                Instr::Neg { w, r0, rd } => {
+                    let operand = self.read(r0).as_sint();
+                    self.write(rd, Value::new_sint(-operand, w));
+                }
+                Instr::FNeg { w: Width::_32, r0, rd } => {
+                    let operand = self.read(r0).as_f32();
+                    self.write(rd, Value::new_f32(-operand));
+                }
+                Instr::FNeg { w: Width::_64, r0, rd } => {
+                    let operand = self.read(r0).as_f64();
+                    self.write(rd, Value::new_f64(-operand));
+                }
+                Instr::FNeg { .. } => unreachable!(),
                 Instr::Move { r0, rd } => {
                     self.write(rd, self.read(r0).clone());
                 }

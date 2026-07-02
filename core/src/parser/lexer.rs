@@ -47,6 +47,8 @@ pub enum Token<'a> {
     Asterisk,
     #[token("/")]
     Solidus,
+    #[token("!")]
+    Bang,
     #[token("=")]
     Eq,
     #[token("==")]
@@ -113,6 +115,7 @@ impl<'a> std::fmt::Display for Token<'a> {
             Self::Minus => "'-'",
             Self::Asterisk => "'*'",
             Self::Solidus => "'/'",
+            Self::Bang => "'!'",
             Self::Eq => "'='",
             Self::EqEq => "'=='",
             Self::BangEq => "'!='",

@@ -6,7 +6,7 @@ use itertools::Itertools;
 use thiserror::Error;
 
 use crate::ast::span::Span;
-use crate::ast::{self, BinOp, Block, Expr, ExprKind, Func, Lit, NodeId, Program, Stmt, StmtKind, Symbol};
+use crate::ast::{self, BinOp, Block, Expr, ExprKind, Func, Lit, NodeId, Program, Stmt, StmtKind, Symbol, UnaryOp};
 use crate::diagnostics::{Diagnostic, DiagnosticReporter};
 use crate::interner::IndexTable;
 use crate::name_resolution::{DefId, NameTables};
@@ -143,15 +143,24 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 Lit::Err(err) => self.ty_ctx.mk_error(*err),
             },
             ExprKind::Var(name) => {
-                // if self.sym_table.get_str(name.sym) == "print" {
-                //     return self.ty_ctx.mk_func(&[self.common().any], self.common().unit());
-                // }
                 self.name_tables
                     .uses
                     .get(&name.id)
                     .unwrap() // FIXME: unwrap
                     .map(|def_id| *self.def_map.get(&def_id).unwrap()) // FIXME: unwrap
                     .unwrap_or_else(|err| self.ty_ctx.mk_error(err)) // FIXME: unwrap
+            }
+            ExprKind::Unary(op, rhs, span) => {
+                let rhs = self.check_expr(rhs, self.common().infer);
+                match (op, rhs.kind()) {
+                    (UnaryOp::Not, TyKind::Bool) => rhs,
+                    (UnaryOp::Negate, TyKind::Int(_) | TyKind::UInt(_) | TyKind::Float(_)) => rhs,
+                    (_, _) => {
+                        let msg = format!("cannot apply unary operator '{op}' to '{rhs}'");
+                        let err = self.errors.report_err(Diagnostic::error(msg, *span));
+                        self.ty_ctx.mk_error(err)
+                    }
+                }
             }
             ExprKind::Binary(op, lhs, rhs, span) => {
                 let lhs = self.check_expr(lhs, self.common().infer);
