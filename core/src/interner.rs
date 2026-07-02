@@ -40,6 +40,12 @@ impl<'a, T> AsRef<T> for Interned<'a, T> {
     }
 }
 
+impl<'a, T: ?Sized> Interned<'a, T> {
+    pub fn as_ref(self) -> &'a T {
+        self.0
+    }
+}
+
 /// An interner that interns values and returns references to them
 #[derive(Debug)]
 pub struct Interner<'a, T: ?Sized> {

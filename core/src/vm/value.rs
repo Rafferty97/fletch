@@ -17,6 +17,7 @@ pub enum Value {
     Scalar { ty: ScalarTy, value: u64 },
     Str(ArcStr),
     Array(ThinArc<(), Value>),
+    Tuple(ThinArc<(), Value>),
     Func(FuncId),
 }
 
@@ -108,6 +109,14 @@ impl Value {
         Self::Array(ThinArc::from_header_and_iter((), values.into_iter()))
     }
 
+    pub fn new_tuple<I>(values: I) -> Self
+    where
+        I: IntoIterator<Item = Value>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        Self::Tuple(ThinArc::from_header_and_iter((), values.into_iter()))
+    }
+
     pub fn new_func(value: FuncId) -> Self {
         Self::Func(value)
     }
@@ -154,6 +163,13 @@ impl Value {
         match self {
             Self::Array(value) => &value.slice,
             _ => panic!("expected array value"),
+        }
+    }
+
+    pub fn as_tuple(&self) -> &[Value] {
+        match self {
+            Self::Tuple(value) => &value.slice,
+            _ => panic!("expected tuple value"),
         }
     }
 
@@ -208,6 +224,15 @@ impl std::fmt::Display for Value {
                     write!(f, "[{first}")?;
                     rest.iter().try_for_each(|v| write!(f, ", {v}"))?;
                     write!(f, "]")
+                }
+            },
+            Self::Tuple(value) => match &value.slice {
+                [] => write!(f, "()"),
+                [first] => write!(f, "({first},)"),
+                [first, rest @ ..] => {
+                    write!(f, "({first}")?;
+                    rest.iter().try_for_each(|v| write!(f, ", {v}"))?;
+                    write!(f, ")")
                 }
             },
             Self::Func(value) => write!(f, "<function>"), // FIXME: function name

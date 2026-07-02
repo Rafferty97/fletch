@@ -273,7 +273,6 @@ impl<'a> Compiler<'a> {
                 self.builder.ins(Instr::Call { func, rd });
                 rd
             }
-            ExprKind::Grouped(expr) => self.compile_expr(expr, rd),
             ExprKind::Array(exprs) => {
                 let sp = self.stack_pos;
                 for expr in exprs.iter() {
@@ -296,6 +295,25 @@ impl<'a> Compiler<'a> {
 
                 let rd = rd.unwrap_or_else(|| self.push());
                 self.builder.ins(Instr::Index { r0, r1, rd });
+                rd
+            }
+            ExprKind::Tuple(exprs) if exprs.is_empty() => {
+                let rd = rd.unwrap_or_else(|| self.push());
+                self.builder.ins(Instr::LoadUnit { rd });
+                rd
+            }
+            ExprKind::Tuple(exprs) => {
+                let sp = self.stack_pos;
+                for expr in exprs.iter() {
+                    let (rd, sp) = self.reserve();
+                    self.compile_expr(expr, Some(rd));
+                    self.stack_pos = sp;
+                }
+                self.stack_pos = sp;
+                let (r0, rn) = self.top_n(exprs.len());
+
+                let rd = rd.unwrap_or_else(|| self.push());
+                self.builder.ins(Instr::MakeTuple { r0, rn, rd });
                 rd
             }
             ExprKind::If { cond, then, r#else } => {

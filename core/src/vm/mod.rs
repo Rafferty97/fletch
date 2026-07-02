@@ -140,6 +140,10 @@ impl<'a> Vm<'a> {
                     // FIXME: should throw error on out-of-bounds
                     self.write(rd, expr.get(index as usize).cloned().unwrap_or(Value::new_null()));
                 }
+                Instr::MakeTuple { r0, rn, rd } => {
+                    let elements = self.read_many(r0, rn);
+                    self.write(rd, Value::new_tuple(elements.iter().cloned()));
+                }
                 Instr::Jump { addr } => {
                     self.current.pc = addr.0 as usize;
                     continue;

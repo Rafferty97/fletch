@@ -116,10 +116,19 @@ impl<'ty> Ty<'ty> {
     }
 
     /// If the type is an array, returns its element type, otherwise `None`
-    pub fn element_ty(self) -> Option<Self> {
+    pub fn array_elem(self) -> Option<Self> {
         match self.kind() {
             TyKind::Array(inner) => Some(inner),
-            TyKind::Nullable(inner) => inner.element_ty(),
+            TyKind::Nullable(inner) => inner.array_elem(),
+            _ => None,
+        }
+    }
+
+    /// If the type is a tuple, returns its element types, otherwise `None`
+    pub fn tuple_elems(self) -> Option<&'ty [Ty<'ty>]> {
+        match self.kind() {
+            TyKind::Tuple(inner) => Some(inner.as_ref()),
+            TyKind::Nullable(inner) => inner.tuple_elems(),
             _ => None,
         }
     }

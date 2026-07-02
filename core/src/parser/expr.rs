@@ -122,9 +122,19 @@ impl<'a, 'sym> Parser<'a, 'sym> {
             }
             Token::LeftParen => {
                 self.consume();
-                let expr = self.parse_expr()?.into();
+
+                let mut elements = vec![];
+                let mut trailing_comma = false;
+                while self.peek() != Token::RightParen {
+                    elements.push(self.parse_expr()?);
+                    trailing_comma = self.consume_if(|t| t == Token::Comma).is_some();
+                }
                 self.expect(Token::RightParen)?;
-                ExprKind::Grouped(expr)
+
+                match (elements.len(), trailing_comma) {
+                    (1, false) => return Ok(elements.pop().unwrap()),
+                    _ => ExprKind::Tuple(elements),
+                }
             }
             Token::LeftBracket => {
                 let exprs = self.parse_list(Token::LeftBracket, Token::RightBracket)?;

@@ -38,7 +38,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 self.expect(Token::RightParen)?;
 
                 match (elements.len(), trailing_comma) {
-                    (1, true) => elements.pop().unwrap(),
+                    (1, false) => elements.pop().unwrap(),
                     _ => self.make_spanned(start, TyKind::Tuple(elements)),
                 }
             }

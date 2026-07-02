@@ -221,9 +221,8 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     }
                 }
             }
-            ExprKind::Grouped(expr) => self.check_expr(expr, expected),
             ExprKind::Array(exprs) => {
-                let expected = expected.element_ty().unwrap_or(self.common().infer);
+                let expected = expected.array_elem().unwrap_or(self.common().infer);
                 let never = self.common().never;
                 let expr_tys = exprs.iter().map(|expr| self.check_expr(expr, expected)).collect_vec();
                 let element_ty = expr_tys.into_iter().fold(never, |a, b| self.ty_ctx.join(a, b));
@@ -241,6 +240,17 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                         self.ty_ctx.mk_error(self.errors.report_err(diagnostic))
                     }
                 }
+            }
+            ExprKind::Tuple(exprs) => {
+                let expected = expected.tuple_elems().unwrap_or(&[]);
+                let infer = self.common().infer;
+                let never = self.common().never;
+                let expr_tys = exprs
+                    .iter()
+                    .enumerate()
+                    .map(|(index, expr)| self.check_expr(expr, expected.get(index).copied().unwrap_or(infer)))
+                    .collect_vec();
+                self.ty_ctx.mk_tuple(&expr_tys)
             }
             ExprKind::If { cond, then, r#else } => {
                 self.check_expr(cond, self.common().bool);
