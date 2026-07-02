@@ -336,11 +336,21 @@ impl<'a> Compiler<'a> {
             &Lit::Bool(true) => self.builder.ins(Instr::LoadTrue { rd }),
             &Lit::Int(sym) => {
                 let value = self.sym_table.get_str(sym).parse().unwrap(); // FIXME: unwrap
-                let imm = self.builder.constant(Value::new_sint(value, Width::_32)); // FIXME
+                let width = Width::_32; // FIXME
+                if value == 0 {
+                    self.builder.ins(Instr::LoadZero { w: width, rd });
+                    return;
+                }
+                let imm = self.builder.constant(Value::new_sint(value, width));
                 self.builder.ins(Instr::Load { rd, imm });
             }
             &Lit::Float(sym) => {
                 let value = self.sym_table.get_str(sym).parse().unwrap(); // FIXME: unwrap
+                let width = Width::_64; // FIXME
+                if value == 0.0 {
+                    self.builder.ins(Instr::LoadFZero { w: width, rd });
+                    return;
+                }
                 let imm = self.builder.constant(Value::new_f64(value)); // FIXME
                 self.builder.ins(Instr::Load { rd, imm });
             }

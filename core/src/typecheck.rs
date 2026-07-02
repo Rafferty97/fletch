@@ -223,10 +223,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             }
             ExprKind::Grouped(expr) => self.check_expr(expr, expected),
             ExprKind::Array(exprs) => {
-                let expected = match expected.kind() {
-                    TyKind::Array(ty) => ty,
-                    _ => self.common().infer,
-                };
+                let expected = expected.element_ty().unwrap_or(self.common().infer);
                 let never = self.common().never;
                 let expr_tys = exprs.iter().map(|expr| self.check_expr(expr, expected)).collect_vec();
                 let element_ty = expr_tys.into_iter().fold(never, |a, b| self.ty_ctx.join(a, b));

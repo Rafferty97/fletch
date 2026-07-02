@@ -115,6 +115,15 @@ impl<'ty> Ty<'ty> {
         self.fold(false, &mut |acc, ty| acc || ty.kind() == TyKind::Infer)
     }
 
+    /// If the type is an array, returns its element type, otherwise `None`
+    pub fn element_ty(self) -> Option<Self> {
+        match self.kind() {
+            TyKind::Array(inner) => Some(inner),
+            TyKind::Nullable(inner) => inner.element_ty(),
+            _ => None,
+        }
+    }
+
     pub fn visit(self, mut visit: impl FnMut(Self)) {
         self.fold((), &mut |_, ty| visit(ty))
     }
