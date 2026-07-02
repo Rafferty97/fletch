@@ -1,1 +1,2 @@
 - Trap on integer underflow/overflow
+- Sign gets lost on some instructions (add, etc.)
