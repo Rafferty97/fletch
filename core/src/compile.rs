@@ -183,18 +183,22 @@ impl<'a> Compiler<'a> {
                     (BinOp::Add, TyKind::Int(ty)) => self.builder.ins(Instr::Add { w: ty.width(), r0, r1, rd }),
                     (BinOp::Add, TyKind::UInt(ty)) => self.builder.ins(Instr::Add { w: ty.width(), r0, r1, rd }),
                     (BinOp::Add, TyKind::Float(ty)) => self.builder.ins(Instr::FAdd { w: ty.width(), r0, r1, rd }),
+                    (BinOp::Add, _) => unreachable!(),
 
                     (BinOp::Sub, TyKind::Int(ty)) => self.builder.ins(Instr::Sub { w: ty.width(), r0, r1, rd }),
                     (BinOp::Sub, TyKind::UInt(ty)) => self.builder.ins(Instr::Sub { w: ty.width(), r0, r1, rd }),
                     (BinOp::Sub, TyKind::Float(ty)) => self.builder.ins(Instr::FSub { w: ty.width(), r0, r1, rd }),
+                    (BinOp::Sub, _) => unreachable!(),
 
                     (BinOp::Mul, TyKind::Int(ty)) => self.builder.ins(Instr::Mul { w: ty.width(), r0, r1, rd }),
                     (BinOp::Mul, TyKind::UInt(ty)) => self.builder.ins(Instr::Mul { w: ty.width(), r0, r1, rd }),
                     (BinOp::Mul, TyKind::Float(ty)) => self.builder.ins(Instr::FMul { w: ty.width(), r0, r1, rd }),
+                    (BinOp::Mul, _) => unreachable!(),
 
                     (BinOp::Div, TyKind::Int(ty)) => self.builder.ins(Instr::SDiv { w: ty.width(), r0, r1, rd }),
                     (BinOp::Div, TyKind::UInt(ty)) => self.builder.ins(Instr::UDiv { w: ty.width(), r0, r1, rd }),
                     (BinOp::Div, TyKind::Float(ty)) => self.builder.ins(Instr::FDiv { w: ty.width(), r0, r1, rd }),
+                    (BinOp::Div, _) => unreachable!(),
 
                     (BinOp::Eq, _) => self.builder.ins(Instr::Eq { r0, r1, rd }),
                     (BinOp::NotEq, _) => {
@@ -219,11 +223,6 @@ impl<'a> Compiler<'a> {
                             BinOp::LtEq | BinOp::GtEq => self.builder.ins(Instr::Not { r0: rd, rd }),
                             _ => unreachable!(),
                         }
-                    }
-
-                    _ => {
-                        println!("{op:?}, {ty:?}");
-                        todo!()
                     }
                 }
                 rd
@@ -314,14 +313,9 @@ impl<'a> Compiler<'a> {
 
     fn compile_lit(&mut self, lit: &Lit, rd: Reg) -> () {
         match lit {
-            &Lit::Null => {
-                let imm = self.builder.constant(Value::new_null());
-                self.builder.ins(Instr::Load { rd, imm });
-            }
-            &Lit::Bool(value) => {
-                let imm = self.builder.constant(Value::new_bool(value));
-                self.builder.ins(Instr::Load { rd, imm });
-            }
+            &Lit::Null => self.builder.ins(Instr::LoadNull { rd }),
+            &Lit::Bool(false) => self.builder.ins(Instr::LoadFalse { rd }),
+            &Lit::Bool(true) => self.builder.ins(Instr::LoadTrue { rd }),
             &Lit::Int(sym) => {
                 let value = self.sym_table.get_str(sym).parse().unwrap(); // FIXME: unwrap
                 let imm = self.builder.constant(Value::new_sint(value, Width::_32)); // FIXME
@@ -337,7 +331,7 @@ impl<'a> Compiler<'a> {
                 let imm = self.builder.constant(Value::new_str(str));
                 self.builder.ins(Instr::Load { rd, imm });
             }
-            _ => todo!(),
+            &Lit::Err(_) => unreachable!(),
         }
     }
 
