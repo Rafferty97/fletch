@@ -59,6 +59,25 @@ fn test_shadowing() {
     assert_eq!(output.out, "2\nfalse\n");
 }
 
+#[test]
+fn test_misc1() {
+    let src = r#"
+        fn main() {
+            print(inv(5.0, false));
+            print(inv(5.0, true));
+        }
+
+        fn inv(a: float, b: bool) -> float {
+            if !b { -a } else { a }
+        }"#;
+
+    let mut output = VecOutput::default();
+    driver::run("anon", src, Default::default(), &mut output);
+
+    assert!(output.err.is_empty());
+    assert_eq!(output.out, "-5\n5\n");
+}
+
 #[derive(Default)]
 struct VecOutput {
     out: String,

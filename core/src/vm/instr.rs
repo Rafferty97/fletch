@@ -255,20 +255,23 @@ impl Display for Instr {
             }
 
             fn width(mut self, width: Width) -> Self {
-                let width = match width {
-                    Width::_8 => ".8",
-                    Width::_16 => ".16",
-                    Width::_32 => ".32",
-                    Width::_64 => ".64",
+                self.instr_len += match width {
+                    Width::_8 => 2,
+                    _ => 3,
                 };
-                self.instr_len += width.len();
-                write!(self.f, "{}", width);
+                write!(self.f, ".{}", width);
                 self
             }
 
             fn reg(mut self, reg: Reg) -> Self {
                 self.start_arg();
                 write!(self.f, "{}", reg);
+                self
+            }
+
+            fn val(mut self, val: impl Display) -> Self {
+                self.start_arg();
+                write!(self.f, "{}", val);
                 self
             }
 
@@ -298,13 +301,13 @@ impl Display for Instr {
         let iw = InstrWriter::new(f);
         match *self {
             Self::Return { r0 } => iw.mnem("ret").reg(r0),
-            Self::LoadUnit { rd } => iw.mnem("ld.unit").reg(rd),
-            Self::LoadNull { rd } => iw.mnem("ld.null").reg(rd),
-            Self::LoadFalse { rd } => iw.mnem("ld.false").reg(rd),
-            Self::LoadTrue { rd } => iw.mnem("ld.true").reg(rd),
-            Self::LoadZero { w, rd } => iw.mnem("ld.zero").reg(rd),
-            Self::LoadFZero { w, rd } => iw.mnem("ld.fzero").reg(rd),
-            Self::Load { rd, imm } => iw.mnem("ld").reg(rd).imm(imm),
+            Self::LoadUnit { rd } => iw.mnem("load").reg(rd).val("unit"),
+            Self::LoadNull { rd } => iw.mnem("load").reg(rd).val("null"),
+            Self::LoadFalse { rd } => iw.mnem("load").reg(rd).val("false"),
+            Self::LoadTrue { rd } => iw.mnem("load").reg(rd).val("true"),
+            Self::LoadZero { w, rd } => iw.mnem("load").reg(rd).val(format!("0.i{w}")),
+            Self::LoadFZero { w, rd } => iw.mnem("load").reg(rd).val(format!("0.f{w}")),
+            Self::Load { rd, imm } => iw.mnem("load").reg(rd).imm(imm),
             Self::Print { r0 } => iw.mnem("print").reg(r0),
             Self::Add { w, r0, r1, rd } => iw.mnem("add").width(w).reg(rd).reg(r0).reg(r1),
             Self::Sub { w, r0, r1, rd } => iw.mnem("sub").width(w).reg(rd).reg(r0).reg(r1),
@@ -331,6 +334,18 @@ impl Display for Instr {
             Self::Call { func, rd } => iw.mnem("call").reg(rd).reg(func),
         };
         Ok(())
+    }
+}
+
+impl Display for Width {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let width = match self {
+            Width::_8 => "8",
+            Width::_16 => "16",
+            Width::_32 => "32",
+            Width::_64 => "64",
+        };
+        write!(f, "{}", width)
     }
 }
 
