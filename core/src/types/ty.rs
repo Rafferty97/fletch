@@ -97,6 +97,13 @@ impl<'ty> Ty<'ty> {
         *self.0
     }
 
+    pub fn is_unit(self) -> bool {
+        match self.kind() {
+            TyKind::Tuple(elems) => elems.is_empty(),
+            _ => false,
+        }
+    }
+
     pub fn is_never(self) -> bool {
         self.kind() == TyKind::Never
     }
@@ -186,11 +193,20 @@ impl<'ty> Display for Ty<'ty> {
                     write!(f, ")")
                 }
             },
-            TyKind::Func(FuncTy { params, ret }) => match &params[..] {
-                [] => write!(f, "() -> {ret}"),
-                [arg] => write!(f, "{arg} -> {ret}"),
+            TyKind::Func(FuncTy { params, ret }) if ret.is_unit() => match &params[..] {
+                [] => write!(f, "fn()"),
                 [first, rest @ ..] => {
-                    write!(f, "({first}")?;
+                    write!(f, "fn({first}")?;
+                    for ty in rest {
+                        write!(f, ", {ty}")?;
+                    }
+                    write!(f, ")")
+                }
+            },
+            TyKind::Func(FuncTy { params, ret }) => match &params[..] {
+                [] => write!(f, "fn() -> {ret}"),
+                [first, rest @ ..] => {
+                    write!(f, "fn({first}")?;
                     for ty in rest {
                         write!(f, ", {ty}")?;
                     }

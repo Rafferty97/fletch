@@ -44,8 +44,8 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
         }
     }
 
-    pub fn finish(self) -> (FnvHashMap<NodeId, Ty<'ty>>, FnvHashMap<DefId, Ty<'ty>>) {
-        (self.type_map, self.def_map)
+    pub fn finish(self) -> FnvHashMap<NodeId, Ty<'ty>> {
+        self.type_map
     }
 
     pub fn check_program(&mut self, ast: &Program) {

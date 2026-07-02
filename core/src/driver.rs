@@ -65,7 +65,7 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
     let ty_ctx = TyCtx::new(&arena, &ty_interners);
     let mut checker = TypeChecker::new(ty_ctx, &name_tables, sym_table, &errors);
     checker.check_program(&ast);
-    let (type_map, _) = checker.finish();
+    let type_map = checker.finish();
 
     // Report errors and bail if necessary
     let num_errors = errors.num_errors();
@@ -141,15 +141,14 @@ pub fn check(src: &str) -> CheckResult {
     let ty_ctx = TyCtx::new(&arena, &ty_interners);
     let mut checker = TypeChecker::new(ty_ctx, &name_tables, sym_table, &errors);
     checker.check_program(&ast);
-    let (_, def_map) = checker.finish();
+    let type_map = checker.finish();
 
     // Extract types
     let types = name_tables
         .idents
         .into_iter()
         .flat_map(|ident| {
-            let def_id = name_tables.uses.get(&ident.id)?.ok()?;
-            let ty = def_map.get(&def_id)?;
+            let ty = type_map.get(&ident.id)?;
             Some((ident.span, ty.to_string()))
         })
         .collect();

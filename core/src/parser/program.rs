@@ -35,6 +35,11 @@ impl<'a, 'sym> Parser<'a, 'sym> {
     fn parse_func(&mut self) -> Result<Func> {
         self.expect(Token::Func)?;
         let name = self.parse_ident()?;
+        let ty_params = if self.peek() == Token::Lt {
+            self.parse_ty_params()?
+        } else {
+            vec![]
+        };
         let params = self.parse_params()?;
         let ret = if self.check(|t| t == Token::ThinArrow) {
             Some(self.parse_ty()?)
@@ -42,7 +47,29 @@ impl<'a, 'sym> Parser<'a, 'sym> {
             None
         };
         let body = self.parse_block()?;
-        Ok(Func { name, params, ret, body })
+        Ok(Func { name, ty_params, params, ret, body })
+    }
+
+    fn parse_ty_params(&mut self) -> Result<Vec<Ident>> {
+        self.expect(Token::Lt)?;
+
+        let mut params = vec![];
+        loop {
+            if self.peek() == Token::Gt {
+                self.consume();
+                break;
+            }
+
+            params.push(self.parse_ident()?);
+
+            match self.consume().token {
+                Token::Comma => {}
+                t if t == Token::Gt => break,
+                _ => Err(self.unexpected_prev())?,
+            }
+        }
+
+        Ok(params)
     }
 
     fn parse_params(&mut self) -> Result<Vec<(Ident, Ty)>> {

@@ -23,6 +23,7 @@ pub struct Program {
 #[derive(Clone, Debug)]
 pub struct Func {
     pub name: Ident,
+    pub ty_params: Vec<Ident>,
     pub params: Vec<(Ident, Ty)>,
     pub ret: Option<Ty>,
     pub body: Block,
