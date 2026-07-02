@@ -94,13 +94,7 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
     }
 
     // Compile
-    let module = match compile_program(&ast, sym_table, &name_tables.uses, &type_map) {
-        Ok(func) => func,
-        Err(err) => {
-            output.emit_err(&format!("compiler error: {err}"));
-            return;
-        }
-    };
+    let module = compile_program(&ast, sym_table, &name_tables.uses, &type_map);
 
     // Print chunks
     if opts.disassemble {

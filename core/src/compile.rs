@@ -4,7 +4,7 @@ use itertools::Itertools;
 use thiserror::Error;
 
 use crate::ast::{BinOp, Block, Expr, ExprKind, Func, Ident, Lit, NodeId, Program, Stmt, StmtKind, Symbol};
-use crate::diagnostics::ErrGuaranteed;
+use crate::diagnostics::{DiagnosticReporter, ErrGuaranteed};
 use crate::interner::IndexTable;
 use crate::name_resolution::DefId;
 use crate::types::infer::TypeError;
@@ -21,7 +21,7 @@ pub fn compile_program(
     sym_table: &IndexTable<'_, Symbol, str>,
     uses: &FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
     type_map: &FnvHashMap<NodeId, Ty<'_>>,
-) -> Result<Module> {
+) -> Module {
     let mut main = Option::<FuncId>::None;
     let mut func_ids = IdGen::new(FuncId);
     let mut funcs = FnvHashMap::default();
@@ -36,7 +36,7 @@ pub fn compile_program(
     for func in &ast.funcs {
         let def_id = uses[&func.name.id].unwrap();
         let func_id = func_defs[&def_id];
-        let chunk = compile_func(func, func_id, sym_table, uses, type_map, &func_defs)?;
+        let chunk = compile_func(func, func_id, sym_table, uses, type_map, &func_defs);
         let name = sym_table.get_str(func.name.sym).into();
         if name == "main" {
             main = Some(func_id);
@@ -46,10 +46,10 @@ pub fn compile_program(
     }
 
     let Some(main) = main else {
-        Err(CompilerError::NoMainFunc)?
+        panic!("no main function");
     };
 
-    Ok(Module { funcs, main })
+    Module { funcs, main }
 }
 
 pub fn compile_func(
@@ -59,7 +59,7 @@ pub fn compile_func(
     uses: &FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
     type_map: &FnvHashMap<NodeId, Ty<'_>>,
     funcs: &FnvHashMap<DefId, FuncId>,
-) -> Result<Chunk> {
+) -> Chunk {
     let builder = ChunkBuilder::new();
     let mut compiler = Compiler {
         builder,
@@ -72,8 +72,8 @@ pub fn compile_func(
         stack_size: StackPos(0),
         labels: IdGen::new(|id| format!("L{id}")),
     };
-    compiler.compile_func(ast)?;
-    Ok(compiler.builder.build(func_id, compiler.stack_size.0 as usize))
+    compiler.compile_func(ast);
+    compiler.builder.build(func_id, compiler.stack_size.0 as usize)
 }
 
 struct Compiler<'a> {
@@ -92,7 +92,7 @@ struct Compiler<'a> {
 struct StackPos(u16);
 
 impl<'a> Compiler<'a> {
-    fn compile_func(&mut self, ast: &Func) -> Result<()> {
+    fn compile_func(&mut self, ast: &Func) -> () {
         self.builder.ins_label("start");
 
         for (name, _) in &ast.params {
@@ -102,57 +102,52 @@ impl<'a> Compiler<'a> {
         self.stack_pos = StackPos(ast.params.len() as u16);
         self.stack_size = self.stack_pos;
 
-        let r0 = self.compile_block(&ast.body, None)?;
+        let r0 = self.compile_block(&ast.body, None);
         self.builder.ins(Instr::Return { r0 });
-
-        Ok(())
     }
 
-    fn compile_block(&mut self, ast: &Block, rd: Option<Reg>) -> Result<Reg> {
+    fn compile_block(&mut self, ast: &Block, rd: Option<Reg>) -> Reg {
         for stmt in &ast.stmts {
-            self.compile_stmt(stmt)?;
+            self.compile_stmt(stmt);
         }
         if let Some(expr) = &ast.tail {
             self.compile_expr(expr, rd)
         } else {
             let rd = rd.unwrap_or_else(|| self.push());
             self.builder.ins(Instr::LoadUnit { rd });
-            Ok(rd)
+            rd
         }
     }
 
-    fn compile_stmt(&mut self, stmt: &Stmt) -> Result<()> {
+    fn compile_stmt(&mut self, stmt: &Stmt) -> () {
         match &stmt.node {
             StmtKind::Expr(expr) => {
                 let sp = self.stack_pos;
-                let value = self.compile_expr(expr, None)?;
+                let value = self.compile_expr(expr, None);
                 self.stack_pos = sp;
-                Ok(())
             }
             StmtKind::Let(name, _, value, _) => {
                 let (rd, sp) = self.reserve();
-                self.compile_expr(value, Some(rd))?;
+                self.compile_expr(value, Some(rd));
                 self.stack_pos = sp;
                 self.locals.push(self.uses[&name.id].unwrap());
-                Ok(())
             }
             StmtKind::Assign(lhs, rhs) => {
                 let sp = self.stack_pos;
                 let def_id = self.uses[&lhs.id].unwrap();
-                let rd = self.lookup_var(def_id)?;
-                self.compile_expr(rhs, Some(rd))?;
+                let rd = self.lookup_var(def_id);
+                self.compile_expr(rhs, Some(rd));
                 self.stack_pos = sp;
-                Ok(())
             }
         }
     }
 
-    fn compile_expr(&mut self, expr: &Expr, rd: Option<Reg>) -> Result<Reg> {
+    fn compile_expr(&mut self, expr: &Expr, rd: Option<Reg>) -> Reg {
         match &expr.node {
             ExprKind::Lit(lit) => {
                 let rd = rd.unwrap_or_else(|| self.push());
-                self.compile_lit(lit, rd)?;
-                Ok(rd)
+                self.compile_lit(lit, rd);
+                rd
             }
             ExprKind::Var(ident) => {
                 let def_id = self.uses[&ident.id].unwrap();
@@ -162,23 +157,23 @@ impl<'a> Compiler<'a> {
                     let rd = rd.unwrap_or_else(|| self.push());
                     let imm = self.builder.constant(Value::new_func(func_id));
                     self.builder.ins(Instr::Load { rd, imm });
-                    return Ok(rd);
+                    return rd;
                 }
 
                 // Local vars
-                let r0 = self.lookup_var(def_id)?;
-                Ok(match rd {
+                let r0 = self.lookup_var(def_id);
+                match rd {
                     Some(rd) if rd != r0 => {
                         self.builder.ins(Instr::Move { r0, rd });
                         rd
                     }
                     _ => r0,
-                })
+                }
             }
             ExprKind::Binary(op, lhs, rhs, _) => {
                 let sp = self.stack_pos;
-                let r0 = self.compile_expr(lhs, None)?;
-                let r1 = self.compile_expr(rhs, None)?;
+                let r0 = self.compile_expr(lhs, None);
+                let r1 = self.compile_expr(rhs, None);
                 self.stack_pos = sp;
 
                 let ty = *self.type_map.get(&lhs.id).unwrap();
@@ -231,7 +226,7 @@ impl<'a> Compiler<'a> {
                         todo!()
                     }
                 }
-                Ok(rd)
+                rd
             }
             ExprKind::Call(func, args, _) => {
                 // FIXME: remove
@@ -239,19 +234,19 @@ impl<'a> Compiler<'a> {
                     && self.sym_table.get_str(func.sym) == "print"
                 {
                     let [arg] = &args[..] else {
-                        Err(CompilerError::Arity { exp: 1, act: args.len() })?
+                        panic!("expected one argument");
                     };
-                    let r0 = self.compile_expr(arg, rd)?;
+                    let r0 = self.compile_expr(arg, rd);
                     self.builder.ins(Instr::Print { r0 });
                     let rd = rd.unwrap_or_else(|| self.push());
                     self.builder.ins(Instr::LoadUnit { rd });
-                    return Ok(rd);
+                    return rd;
                 }
 
                 let sp = self.stack_pos;
                 for expr in std::iter::once(&**func).chain(args.iter()) {
                     let (rd, sp) = self.reserve();
-                    self.compile_expr(expr, Some(rd))?;
+                    self.compile_expr(expr, Some(rd));
                     self.stack_pos = sp;
                 }
                 self.stack_pos = sp;
@@ -259,14 +254,14 @@ impl<'a> Compiler<'a> {
 
                 let rd = rd.unwrap_or_else(|| self.push());
                 self.builder.ins(Instr::Call { func, rd });
-                Ok(rd)
+                rd
             }
             ExprKind::Grouped(expr) => self.compile_expr(expr, rd),
             ExprKind::Array(exprs) => {
                 let sp = self.stack_pos;
                 for expr in exprs.iter() {
                     let (rd, sp) = self.reserve();
-                    self.compile_expr(expr, Some(rd))?;
+                    self.compile_expr(expr, Some(rd));
                     self.stack_pos = sp;
                 }
                 self.stack_pos = sp;
@@ -274,21 +269,21 @@ impl<'a> Compiler<'a> {
 
                 let rd = rd.unwrap_or_else(|| self.push());
                 self.builder.ins(Instr::MakeArray { r0, rn, rd });
-                Ok(rd)
+                rd
             }
             ExprKind::Index(expr, index) => {
                 let sp = self.stack_pos;
-                let r0 = self.compile_expr(expr, None)?;
-                let r1 = self.compile_expr(index, None)?;
+                let r0 = self.compile_expr(expr, None);
+                let r1 = self.compile_expr(index, None);
                 self.stack_pos = sp;
 
                 let rd = rd.unwrap_or_else(|| self.push());
                 self.builder.ins(Instr::Index { r0, r1, rd });
-                Ok(rd)
+                rd
             }
             ExprKind::If { cond, then, r#else } => {
                 let sp = self.stack_pos;
-                let r0 = self.compile_expr(cond, rd)?;
+                let r0 = self.compile_expr(cond, rd);
                 self.stack_pos = sp;
 
                 let (rd, sp) = match rd {
@@ -300,66 +295,55 @@ impl<'a> Compiler<'a> {
                 let end_label = self.labels.next();
 
                 self.builder.ins_jump_if_false(r0, &else_label);
-                self.compile_expr(then, Some(rd))?;
+                self.compile_expr(then, Some(rd));
                 self.builder.ins_jump(&end_label);
                 self.builder.ins_label(else_label);
                 match r#else {
-                    Some(r#else) => self.compile_expr(r#else, Some(rd)).map(|_| ())?,
-                    None => self.compile_lit(&Lit::Null, rd)?,
+                    Some(r#else) => {
+                        self.compile_expr(r#else, Some(rd));
+                    }
+                    None => self.compile_lit(&Lit::Null, rd),
                 }
                 self.builder.ins_label(end_label);
 
-                Ok(rd)
+                rd
             }
             ExprKind::Block(block) => self.compile_block(block, rd),
         }
     }
 
-    fn compile_lit(&mut self, lit: &Lit, rd: Reg) -> Result<()> {
+    fn compile_lit(&mut self, lit: &Lit, rd: Reg) -> () {
         match lit {
             &Lit::Null => {
                 let imm = self.builder.constant(Value::new_null());
                 self.builder.ins(Instr::Load { rd, imm });
-                Ok(())
             }
             &Lit::Bool(value) => {
                 let imm = self.builder.constant(Value::new_bool(value));
                 self.builder.ins(Instr::Load { rd, imm });
-                Ok(())
             }
             &Lit::Int(sym) => {
-                let value = self
-                    .sym_table
-                    .get_str(sym)
-                    .parse()
-                    .map_err(|_| CompilerError::InvalidLiteral)?;
+                let value = self.sym_table.get_str(sym).parse().unwrap(); // FIXME: unwrap
                 let imm = self.builder.constant(Value::new_sint(value, Width::_32)); // FIXME
                 self.builder.ins(Instr::Load { rd, imm });
-                Ok(())
             }
             &Lit::Float(sym) => {
-                let value = self
-                    .sym_table
-                    .get_str(sym)
-                    .parse()
-                    .map_err(|_| CompilerError::InvalidLiteral)?;
+                let value = self.sym_table.get_str(sym).parse().unwrap(); // FIXME: unwrap
                 let imm = self.builder.constant(Value::new_f64(value)); // FIXME
                 self.builder.ins(Instr::Load { rd, imm });
-                Ok(())
             }
             &Lit::Str(str) => {
                 let str = self.sym_table.get_str(str);
                 let imm = self.builder.constant(Value::new_str(str));
                 self.builder.ins(Instr::Load { rd, imm });
-                Ok(())
             }
             _ => todo!(),
         }
     }
 
-    fn lookup_var(&self, def_id: DefId) -> Result<Reg> {
+    fn lookup_var(&self, def_id: DefId) -> Reg {
         let index = self.locals.iter().position(|s| *s == def_id).unwrap(); // FIXME: unwrap
-        Ok(Reg(index as u16))
+        Reg(index as u16)
     }
 
     fn top(&self) -> Reg {
@@ -388,19 +372,3 @@ impl<'a> Compiler<'a> {
         self.stack_pos.0 -= 1;
     }
 }
-
-#[derive(Error, Debug)]
-pub enum CompilerError {
-    #[error("no main function defined")]
-    NoMainFunc,
-    #[error("invalid literal")]
-    InvalidLiteral,
-    #[error("cannot find name `{0}`")]
-    UndefinedName(Box<str>),
-    #[error("expected {exp} arguments, got {act}")]
-    Arity { exp: usize, act: usize },
-    #[error("{0}")]
-    TypeError(String),
-}
-
-pub type Result<T, E = CompilerError> = std::result::Result<T, E>;
