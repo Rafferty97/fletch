@@ -65,6 +65,8 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
             // Numeric types
             (Int(lhs), Int(rhs)) => self.mk_int(lhs.min(rhs)),
             (UInt(lhs), UInt(rhs)) => self.mk_uint(lhs.min(rhs)),
+            (Int(_) | UInt(_), Integer) => lhs,
+            (Integer, Int(_) | UInt(_)) => rhs,
             (Float(lhs), Float(rhs)) => self.mk_float(lhs.min(rhs)),
 
             // Nullable types
@@ -121,6 +123,8 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
             // Numeric types
             (Int(lhs), Int(rhs)) => self.mk_int(lhs.max(rhs)),
             (UInt(lhs), UInt(rhs)) => self.mk_uint(lhs.max(rhs)),
+            (Int(_) | UInt(_), Integer) => self.common().int,
+            (Integer, Int(_) | UInt(_)) => self.common().int,
             (Float(lhs), Float(rhs)) => self.mk_float(lhs.max(rhs)),
 
             // Nullable types

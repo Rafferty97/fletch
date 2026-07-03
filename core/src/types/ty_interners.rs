@@ -39,6 +39,7 @@ pub struct CommonTypes<'ty> {
     pub uint16: Ty<'ty>,
     pub uint32: Ty<'ty>,
     pub uint64: Ty<'ty>,
+    pub int: Ty<'ty>,
     pub opt_int8: Ty<'ty>,
     pub opt_int16: Ty<'ty>,
     pub opt_int32: Ty<'ty>,
@@ -47,6 +48,7 @@ pub struct CommonTypes<'ty> {
     pub opt_uint16: Ty<'ty>,
     pub opt_uint32: Ty<'ty>,
     pub opt_uint64: Ty<'ty>,
+    pub opt_int: Ty<'ty>,
     // Floats
     pub float32: Ty<'ty>,
     pub float64: Ty<'ty>,
@@ -100,6 +102,7 @@ impl<'ty> CommonTypes<'ty> {
             uint16: TyKind::UInt(UIntTy::UInt16),
             uint32: TyKind::UInt(UIntTy::UInt32),
             uint64: TyKind::UInt(UIntTy::UInt64),
+            int: TyKind::Integer,
             float32: TyKind::Float(FloatTy::Float32),
             float64: TyKind::Float(FloatTy::Float64),
             str: TyKind::Str,
