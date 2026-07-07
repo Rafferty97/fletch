@@ -1,25 +1,127 @@
+use std::ffi::c_void;
+use std::fmt::Debug;
+use std::mem::ManuallyDrop;
 use std::ops::Deref;
 
-use arcstr::ArcStr;
 use triomphe::{Arc, ThinArc};
 
-use crate::ast::Symbol;
-use crate::parser::escape;
 use crate::types::ty::{FloatTy, IntTy, UIntTy};
-use crate::vm::chunk::Chunk;
-use crate::vm::instr::Width;
-use crate::vm::module::FuncId;
+use crate::vm::{chunk::Chunk, instr::Width, module::FuncId};
 
-#[derive(Clone, PartialEq, Eq, Debug)]
-pub enum Value {
-    Unit,
-    Null,
-    Scalar { ty: ScalarTy, value: u64 },
-    Str(ArcStr),
-    Array(ThinArc<(), Value>),
-    Tuple(ThinArc<(), Value>),
-    Func(FuncId),
+///////
+
+#[repr(transparent)]
+pub struct Value(*const c_void);
+
+enum ValueKind {
+    Scalar(Scalar),
+    Object(Object),
 }
+
+enum ValueKindRef<'a> {
+    Scalar(Scalar),
+    Object(ObjectRef<'a>),
+}
+
+#[repr(transparent)]
+struct Scalar(u64);
+
+#[repr(transparent)]
+struct Object(ThinArc<Head, u64>);
+
+#[repr(transparent)]
+struct ObjectRef<'a>(&'a <ThinArc<Head, u64> as Deref>::Target);
+
+// ManuallyDrop<ThinArc<Head, u64>>
+
+#[derive(PartialEq, Eq, Clone, Debug)]
+enum Head {
+    // todo
+}
+
+impl Default for Value {
+    fn default() -> Self {
+        Self::new_scalar(0)
+    }
+}
+
+impl Clone for Value {
+    fn clone(&self) -> Self {
+        todo!()
+    }
+}
+
+impl Debug for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        todo!()
+    }
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        todo!()
+    }
+}
+
+impl Eq for Value {}
+
+impl Value {
+    #[inline(always)]
+    pub fn new_scalar(value: u64) -> Self {
+        // FIXME: box if high-bit is `1`
+        let value = (value << 1) | 1;
+        assert_eq!(value >> 1, value);
+        let value = value.try_into().unwrap();
+        Self(std::ptr::without_provenance(value))
+    }
+
+    #[inline(always)]
+    fn is_scalar(&self) -> bool {
+        (self.0.addr() & 1) != 0
+    }
+
+    #[inline(always)]
+    fn is_ptr(&self) -> bool {
+        !self.is_scalar()
+    }
+
+    #[inline(always)]
+    fn as_kind(&self) -> ValueKindRef<'_> {
+        match self.is_scalar() {
+            true => ValueKindRef::Scalar(self.as_scalar()),
+            // false => {
+            //     let ptr = unsafe { ManuallyDrop::new(ThinArc::from_raw(self.0)) };
+            //     ValueKindRef::Object(ObjectRef(&**ptr))
+            // }
+            false => todo!(),
+        }
+    }
+
+    #[inline(always)]
+    fn into_kind(self) -> ValueKind {
+        match self.is_scalar() {
+            true => ValueKind::Scalar(self.as_scalar()),
+            false => {
+                let ptr = unsafe { ThinArc::from_raw(self.0) };
+                ValueKind::Object(Object(ptr))
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn as_scalar(&self) -> Scalar {
+        Scalar(self.0.addr().try_into().unwrap())
+    }
+}
+
+impl Drop for Value {
+    fn drop(&mut self) {
+        let this = std::mem::take(self);
+        std::mem::drop(this.into_kind())
+    }
+}
+
+///////
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ScalarTy {
@@ -52,7 +154,7 @@ impl From<FuncObj> for FuncObjRef {
     }
 }
 
-impl Deref for FuncObjRef {
+impl std::ops::Deref for FuncObjRef {
     type Target = FuncObj;
 
     fn deref(&self) -> &Self::Target {
@@ -62,43 +164,35 @@ impl Deref for FuncObjRef {
 
 impl Value {
     pub fn new_unit() -> Self {
-        Self::Unit
+        todo!()
     }
 
     pub fn new_null() -> Self {
-        Self::Null
+        todo!()
     }
 
     pub fn new_bool(value: bool) -> Self {
-        Self::new_scalar(ScalarTy::Bool, value as u64)
+        todo!()
     }
 
     pub fn new_sint(value: i64, width: Width) -> Self {
-        let ty = ScalarTy::Int(width.as_int());
-        Self::new_scalar(ty, u64::from_ne_bytes(i64::to_ne_bytes(value)))
+        todo!()
     }
 
     pub fn new_uint(value: u64, width: Width) -> Self {
-        let ty = ScalarTy::UInt(width.as_uint());
-        Self::new_scalar(ty, value)
+        todo!()
     }
 
     pub fn new_f32(value: f32) -> Self {
-        Self::new_scalar(
-            ScalarTy::Float(FloatTy::Float32),
-            u32::from_ne_bytes(f32::to_ne_bytes(value)) as u64,
-        )
+        todo!()
     }
 
     pub fn new_f64(value: f64) -> Self {
-        Self::new_scalar(
-            ScalarTy::Float(FloatTy::Float64),
-            u64::from_ne_bytes(f64::to_ne_bytes(value)),
-        )
+        todo!()
     }
 
-    pub fn new_str(value: impl Into<ArcStr>) -> Self {
-        Self::Str(value.into())
+    pub fn new_str(value: impl Into<String>) -> Self {
+        todo!()
     }
 
     pub fn new_array<I>(values: I) -> Self
@@ -106,7 +200,7 @@ impl Value {
         I: IntoIterator<Item = Value>,
         I::IntoIter: ExactSizeIterator,
     {
-        Self::Array(ThinArc::from_header_and_iter((), values.into_iter()))
+        todo!()
     }
 
     pub fn new_tuple<I>(values: I) -> Self
@@ -114,142 +208,56 @@ impl Value {
         I: IntoIterator<Item = Value>,
         I::IntoIter: ExactSizeIterator,
     {
-        Self::Tuple(ThinArc::from_header_and_iter((), values.into_iter()))
+        todo!()
     }
 
     pub fn new_func(value: FuncId) -> Self {
-        Self::Func(value)
-    }
-
-    fn new_scalar(ty: ScalarTy, value: u64) -> Self {
-        Self::Scalar { ty, value }
+        todo!()
     }
 
     pub fn is_null(&self) -> bool {
-        matches!(self, Self::Null)
+        todo!()
     }
 
     pub fn as_bool(&self) -> bool {
-        self.as_scalar() != 0
+        todo!()
     }
 
     pub fn as_sint(&self) -> i64 {
-        let value = self.as_scalar();
-        i64::from_ne_bytes(u64::to_ne_bytes(value))
+        todo!()
     }
 
     pub fn as_uint(&self) -> u64 {
-        self.as_scalar()
+        todo!()
     }
 
     pub fn as_f32(&self) -> f32 {
-        let value = self.as_scalar();
-        f32::from_ne_bytes(u32::to_ne_bytes(value as _))
+        todo!()
     }
 
     pub fn as_f64(&self) -> f64 {
-        let value = self.as_scalar();
-        f64::from_ne_bytes(u64::to_ne_bytes(value))
+        todo!()
     }
 
-    pub fn as_str(&self) -> &ArcStr {
-        match self {
-            Self::Str(value) => value,
-            _ => panic!("expected string value"),
-        }
+    pub fn as_str(&self) -> &str {
+        todo!()
     }
 
     pub fn as_array(&self) -> &[Value] {
-        match self {
-            Self::Array(value) => &value.slice,
-            _ => panic!("expected array value"),
-        }
+        todo!()
     }
 
     pub fn as_tuple(&self) -> &[Value] {
-        match self {
-            Self::Tuple(value) => &value.slice,
-            _ => panic!("expected tuple value"),
-        }
+        todo!()
     }
 
     pub fn as_func(&self) -> FuncId {
-        match self {
-            Self::Func(value) => *value,
-            _ => panic!("expected function value"),
-        }
-    }
-
-    fn as_scalar(&self) -> u64 {
-        match self {
-            Self::Scalar { value, .. } => *value,
-            _ => panic!("expected scalar value"),
-        }
+        todo!()
     }
 }
 
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Unit => write!(f, "()"),
-            Self::Null => write!(f, "null"),
-            Self::Scalar { ty: ScalarTy::Bool, value: 0 } => write!(f, "false"),
-            Self::Scalar { ty: ScalarTy::Bool, value: 1.. } => write!(f, "true"),
-            Self::Scalar { ty: ScalarTy::Int(ty), value } => {
-                let value = match ty {
-                    IntTy::Int8 => (*value as u8) as u64,
-                    IntTy::Int16 => (*value as u16) as u64,
-                    IntTy::Int32 => (*value as u32) as u64,
-                    IntTy::Int64 => (*value as u64) as u64,
-                };
-                write!(f, "{}", value)
-            }
-            Self::Scalar { ty: ScalarTy::UInt(ty), value } => {
-                let value = match ty {
-                    UIntTy::UInt8 => (*value as i8) as i64,
-                    UIntTy::UInt16 => (*value as i16) as i64,
-                    UIntTy::UInt32 => (*value as i32) as i64,
-                    UIntTy::UInt64 => (*value as i64) as i64,
-                };
-                write!(f, "{}", value)
-            }
-            Self::Scalar { ty: ScalarTy::Float(ty), value } => match ty {
-                FloatTy::Float32 => write!(f, "{}", f32::from_ne_bytes(u32::to_ne_bytes(*value as u32))),
-                FloatTy::Float64 => write!(f, "{}", f64::from_ne_bytes(u64::to_ne_bytes(*value))),
-            },
-            Self::Str(value) => write!(f, "\"{}\"", escape::escape(value)),
-            Self::Array(value) => match &value.slice {
-                [] => write!(f, "[]"),
-                [first, rest @ ..] => {
-                    write!(f, "[{first}")?;
-                    rest.iter().try_for_each(|v| write!(f, ", {v}"))?;
-                    write!(f, "]")
-                }
-            },
-            Self::Tuple(value) => match &value.slice {
-                [] => write!(f, "()"),
-                [first] => write!(f, "({first},)"),
-                [first, rest @ ..] => {
-                    write!(f, "({first}")?;
-                    rest.iter().try_for_each(|v| write!(f, ", {v}"))?;
-                    write!(f, ")")
-                }
-            },
-            Self::Func(value) => write!(f, "<function>"), // FIXME: function name
-        }
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-
-    pub fn test_display_array() {
-        let value = Value::new_array([
-            Value::new_null(),
-            Value::new_bool(true),
-            Value::new_sint(123, Width::_32),
-        ]);
-        assert_eq!(format!("{value}"), "[null, true, 123]");
+        todo!()
     }
 }
