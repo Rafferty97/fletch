@@ -1,19 +1,17 @@
-use std::convert::Infallible;
 use std::ffi::c_void;
 use std::fmt::Debug;
 use std::marker::PhantomData;
-use std::mem::ManuallyDrop;
+use std::mem::{ManuallyDrop, offset_of};
 use std::ops::Deref;
 use std::slice;
 
-use triomphe::{Arc, ThinArc};
+use triomphe::{Arc, OffsetArc, ThinArc};
 
 use crate::types::ty::{FloatTy, IntTy, UIntTy};
 use crate::vm::{chunk::Chunk, instr::Width, module::FuncId};
 
 ///////
 
-#[repr(transparent)]
 pub struct Value {
     #[cfg(target_pointer_width = "32")]
     half: u32,
@@ -176,8 +174,9 @@ impl Value {
         } else if self.ptr.is_null() {
             ValueKind::Null
         } else {
-            let head: ThinArc<Head, Infallible> = unsafe { std::mem::transmute(&self.ptr) };
-            match head.header.header {
+            let offset = offset_of!(<ThinArc<Head, ()> as Deref>::Target, header.header);
+            let head = unsafe { &*(self.ptr.byte_add(offset) as *const Head) };
+            match head {
                 Head::Scalar => ValueKind::BoxedScalar(unsafe { std::mem::transmute(&self.ptr) }),
                 Head::Str => ValueKind::Str(unsafe { std::mem::transmute(&self.ptr) }),
                 Head::Values => ValueKind::Values(unsafe { std::mem::transmute(&self.ptr) }),
@@ -325,7 +324,7 @@ impl Value {
     }
 
     pub fn is_null(&self) -> bool {
-        todo!()
+        matches!(self.kind(), ValueKind::Null)
     }
 
     pub fn as_bool(&self) -> bool {
@@ -356,5 +355,25 @@ impl Value {
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn roundtrip_primitives() {
+        let null = Value::new_null();
+        assert!(null.is_null());
+
+        let null = Value::new_u64(123);
+        assert_eq!(null.as_u64(), 123);
+
+        let null = Value::new_f32(12.3456);
+        assert_eq!(null.as_f32(), 12.3456);
+
+        let null = Value::new_f64(12.3456);
+        assert_eq!(null.as_f64(), 12.3456);
     }
 }
