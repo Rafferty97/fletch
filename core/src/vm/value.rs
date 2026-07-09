@@ -1,7 +1,10 @@
+use std::convert::Infallible;
 use std::ffi::c_void;
 use std::fmt::Debug;
+use std::marker::PhantomData;
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
+use std::slice;
 
 use triomphe::{Arc, ThinArc};
 
@@ -11,37 +14,51 @@ use crate::vm::{chunk::Chunk, instr::Width, module::FuncId};
 ///////
 
 #[repr(transparent)]
-pub struct Value(*const c_void);
-
-enum ValueKind {
-    Scalar(Scalar),
-    Object(Object),
+pub struct Value {
+    #[cfg(target_pointer_width = "32")]
+    half: u32,
+    ptr: *const c_void,
 }
 
-enum ValueKindRef<'a> {
+enum ValueKind<'a> {
+    Null,
     Scalar(Scalar),
-    Object(ObjectRef<'a>),
+    BoxedScalar(&'a BoxedScalar),
+    Str(&'a BoxedStr),
+    Values(&'a BoxedValues),
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 #[repr(transparent)]
 struct Scalar(u64);
 
 #[repr(transparent)]
-struct Object(ThinArc<Head, u64>);
+struct BoxedScalar(ThinArc<Head, u64>);
 
 #[repr(transparent)]
-struct ObjectRef<'a>(&'a <ThinArc<Head, u64> as Deref>::Target);
+struct BoxedStr(ThinArc<Head, u8>);
 
-// ManuallyDrop<ThinArc<Head, u64>>
+#[repr(transparent)]
+struct BoxedValues(ThinArc<Head, Value>);
 
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 enum Head {
-    // todo
+    Scalar,
+    Str,
+    Values,
+}
+
+trait IntoObject {
+    type Item;
+
+    fn head(&self) -> Head;
+
+    fn tail(&self) -> impl Iterator<Item = Self::Item> + ExactSizeIterator;
 }
 
 impl Default for Value {
     fn default() -> Self {
-        Self::new_scalar(0)
+        Self::new_scalar(Scalar::default())
     }
 }
 
@@ -66,58 +83,166 @@ impl PartialEq for Value {
 impl Eq for Value {}
 
 impl Value {
-    #[inline(always)]
-    pub fn new_scalar(value: u64) -> Self {
-        // FIXME: box if high-bit is `1`
-        let value = (value << 1) | 1;
-        assert_eq!(value >> 1, value);
-        let value = value.try_into().unwrap();
-        Self(std::ptr::without_provenance(value))
+    pub fn new_u32(value: u32) -> Self {
+        Self::new_u64(value as u64)
+    }
+
+    pub fn new_u64(value: u64) -> Self {
+        match Scalar::try_from(value) {
+            Ok(scalar) => Self::new_scalar(scalar),
+            Err(_) => Self::new_boxed(value),
+        }
+    }
+
+    pub fn new_f32(value: f32) -> Self {
+        Self::new_u32(u32::from_ne_bytes(value.to_ne_bytes()))
+    }
+
+    pub fn new_f64(value: f64) -> Self {
+        Self::new_u64(u64::from_ne_bytes(value.to_ne_bytes()))
+    }
+
+    pub fn new_str(value: &str) -> Self {
+        Self::new_boxed(value)
     }
 
     #[inline(always)]
-    fn is_scalar(&self) -> bool {
-        (self.0.addr() & 1) != 0
-    }
-
-    #[inline(always)]
-    fn is_ptr(&self) -> bool {
-        !self.is_scalar()
-    }
-
-    #[inline(always)]
-    fn as_kind(&self) -> ValueKindRef<'_> {
-        match self.is_scalar() {
-            true => ValueKindRef::Scalar(self.as_scalar()),
-            // false => {
-            //     let ptr = unsafe { ManuallyDrop::new(ThinArc::from_raw(self.0)) };
-            //     ValueKindRef::Object(ObjectRef(&**ptr))
-            // }
-            false => todo!(),
+    pub fn new_null() -> Self {
+        Self {
+            #[cfg(target_pointer_width = "32")]
+            half: 0,
+            ptr: std::ptr::null(),
         }
     }
 
     #[inline(always)]
-    fn into_kind(self) -> ValueKind {
-        match self.is_scalar() {
-            true => ValueKind::Scalar(self.as_scalar()),
-            false => {
-                let ptr = unsafe { ThinArc::from_raw(self.0) };
-                ValueKind::Object(Object(ptr))
+    fn new_scalar(value: Scalar) -> Self {
+        Self {
+            #[cfg(target_pointer_width = "32")]
+            half: (value.0 >> 32) as u32,
+            ptr: std::ptr::without_provenance(value.0 as usize),
+        }
+    }
+
+    fn new_boxed(value: impl IntoObject) -> Self {
+        let ptr = ThinArc::from_header_and_iter(value.head(), value.tail());
+        let ptr = ptr.into_raw();
+        assert_eq!(ptr.addr() & 1, 0);
+        Self {
+            #[cfg(target_pointer_width = "32")]
+            half: 0,
+            ptr,
+        }
+    }
+
+    pub fn as_null(&self) -> () {
+        debug_assert!(matches!(self.kind(), ValueKind::Null));
+    }
+
+    pub fn as_u32(&self) -> u32 {
+        self.as_u64() as u32
+    }
+
+    pub fn as_u64(&self) -> u64 {
+        match self.kind() {
+            ValueKind::Scalar(scalar) => scalar.value(),
+            ValueKind::BoxedScalar(boxed) => boxed.0.slice[0],
+            _ => panic!("unexpected value variant"),
+        }
+    }
+
+    pub fn as_f32(&self) -> f32 {
+        f32::from_ne_bytes(self.as_u32().to_ne_bytes())
+    }
+
+    pub fn as_f64(&self) -> f64 {
+        f64::from_ne_bytes(self.as_u64().to_ne_bytes())
+    }
+
+    pub fn as_str(&self) -> &str {
+        let ValueKind::Str(boxed) = self.kind() else {
+            panic!("unexpected value variant");
+        };
+        unsafe { str::from_utf8_unchecked(&boxed.0.slice) }
+    }
+
+    #[inline(always)]
+    fn kind(&self) -> ValueKind<'_> {
+        if (self.ptr.addr() & 1) != 0 {
+            let value = self.ptr.addr() as u64;
+            #[cfg(target_pointer_width = "32")]
+            let value = value | (self.half << 32);
+            ValueKind::Scalar(Scalar(value))
+        } else if self.ptr.is_null() {
+            ValueKind::Null
+        } else {
+            let head: ThinArc<Head, Infallible> = unsafe { std::mem::transmute(&self.ptr) };
+            match head.header.header {
+                Head::Scalar => ValueKind::BoxedScalar(unsafe { std::mem::transmute(&self.ptr) }),
+                Head::Str => ValueKind::Str(unsafe { std::mem::transmute(&self.ptr) }),
+                Head::Values => ValueKind::Values(unsafe { std::mem::transmute(&self.ptr) }),
             }
         }
-    }
-
-    #[inline(always)]
-    fn as_scalar(&self) -> Scalar {
-        Scalar(self.0.addr().try_into().unwrap())
     }
 }
 
 impl Drop for Value {
     fn drop(&mut self) {
-        let this = std::mem::take(self);
-        std::mem::drop(this.into_kind())
+        match self.kind() {
+            ValueKind::Null => {}
+            ValueKind::Scalar(_) => {}
+            ValueKind::BoxedScalar(boxed) => unsafe { std::mem::forget(std::ptr::read(boxed)) },
+            ValueKind::Str(boxed) => unsafe { std::mem::forget(std::ptr::read(boxed)) },
+            ValueKind::Values(boxed) => unsafe { std::mem::forget(std::ptr::read(boxed)) },
+        }
+    }
+}
+
+impl Default for Scalar {
+    fn default() -> Self {
+        Self(1)
+    }
+}
+
+impl TryFrom<u64> for Scalar {
+    type Error = ();
+
+    fn try_from(value: u64) -> Result<Self, ()> {
+        if ((value << 1) >> 1) == value {
+            Ok(Self((value << 1) | 1))
+        } else {
+            Err(())
+        }
+    }
+}
+
+impl Scalar {
+    pub const fn value(self) -> u64 {
+        self.0 >> 1
+    }
+}
+
+impl IntoObject for u64 {
+    type Item = u64;
+
+    fn head(&self) -> Head {
+        Head::Scalar
+    }
+
+    fn tail(&self) -> impl Iterator<Item = u64> + ExactSizeIterator {
+        std::iter::once(*self)
+    }
+}
+
+impl IntoObject for &str {
+    type Item = u8;
+
+    fn head(&self) -> Head {
+        Head::Str
+    }
+
+    fn tail(&self) -> impl Iterator<Item = u8> + ExactSizeIterator {
+        self.bytes()
     }
 }
 
@@ -167,10 +292,6 @@ impl Value {
         todo!()
     }
 
-    pub fn new_null() -> Self {
-        todo!()
-    }
-
     pub fn new_bool(value: bool) -> Self {
         todo!()
     }
@@ -180,18 +301,6 @@ impl Value {
     }
 
     pub fn new_uint(value: u64, width: Width) -> Self {
-        todo!()
-    }
-
-    pub fn new_f32(value: f32) -> Self {
-        todo!()
-    }
-
-    pub fn new_f64(value: f64) -> Self {
-        todo!()
-    }
-
-    pub fn new_str(value: impl Into<String>) -> Self {
         todo!()
     }
 
@@ -228,18 +337,6 @@ impl Value {
     }
 
     pub fn as_uint(&self) -> u64 {
-        todo!()
-    }
-
-    pub fn as_f32(&self) -> f32 {
-        todo!()
-    }
-
-    pub fn as_f64(&self) -> f64 {
-        todo!()
-    }
-
-    pub fn as_str(&self) -> &str {
         todo!()
     }
 
