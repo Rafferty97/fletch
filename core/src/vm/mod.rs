@@ -1,6 +1,6 @@
 use crate::vm::instr::{EncodedInstr, Reg, Width};
 use crate::vm::module::{FuncId, Module};
-use crate::vm::value::Value;
+use crate::vm::value3::Value;
 
 use self::chunk::Chunk;
 use self::instr::Instr;
@@ -9,6 +9,7 @@ pub mod chunk;
 pub mod instr;
 pub mod module;
 pub mod value;
+pub mod value3;
 
 pub struct Vm<'a> {
     module: &'a Module,

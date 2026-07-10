@@ -10,7 +10,7 @@ use crate::vm::instr::{Addr, Imm, Reg};
 use crate::vm::module::FuncId;
 
 use super::instr::{EncodedInstr, Instr};
-use super::value::Value;
+use super::value3::Value;
 
 #[derive(Clone, Debug)]
 pub struct Chunk {

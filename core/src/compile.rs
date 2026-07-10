@@ -14,7 +14,7 @@ use crate::util::IdGen;
 use crate::vm::chunk::{Chunk, ChunkBuilder};
 use crate::vm::instr::{Addr, Instr, Reg, Width};
 use crate::vm::module::{FuncId, Module};
-use crate::vm::value::{FuncObj, ScalarTy, Value};
+use crate::vm::value3::{FuncObj, ScalarTy, Value};
 
 pub fn compile_program(
     ast: &Program,
