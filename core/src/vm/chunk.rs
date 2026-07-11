@@ -10,7 +10,7 @@ use crate::vm::instr::{Addr, Imm, Reg};
 use crate::vm::module::FuncId;
 
 use super::instr::{EncodedInstr, Instr};
-use super::value3::Value;
+use super::value::Value;
 
 #[derive(Clone, Debug)]
 pub struct Chunk {
@@ -69,7 +69,7 @@ impl Chunk {
         if !self.constants.is_empty() {
             write!(out, "\n[constants]\n");
             for value in &self.constants {
-                write!(out, "    {:?}\n", value);
+                write!(out, "    {}\n", value);
             }
         }
 
@@ -182,7 +182,7 @@ mod test {
         assert_eq!(lines.next(), Some("    ret       r0"));
         assert_eq!(lines.next(), Some(""));
         assert_eq!(lines.next(), Some("[constants]"));
-        assert_eq!(lines.next(), Some("    Null"));
+        assert_eq!(lines.next(), Some("    null"));
         assert_eq!(lines.next(), None);
     }
 }

@@ -13,6 +13,8 @@ hashbrown = "0.17.1"
 itertools = "0.14.0"
 line-index = "0.1.2"
 logos = "0.16.1"
+num-bigint = "0.5.1"
+ordered-float = "5.3.0"
 paste = "1.0.15"
 serde = { version = "1.0.228", features = ["derive"] }
 tap = "1.0.1"

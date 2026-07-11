@@ -9,21 +9,20 @@ pub enum Instr {
     LoadNull { rd: Reg },
     LoadFalse { rd: Reg },
     LoadTrue { rd: Reg },
-    LoadZero { w: Width, rd: Reg },
-    LoadFZero { w: Width, rd: Reg },
+    LoadIntZero { rd: Reg },
+    LoadF32Zero { rd: Reg },
+    LoadF64Zero { rd: Reg },
     Load { rd: Reg, imm: Imm },
     Print { r0: Reg },
-    Add { w: Width, r0: Reg, r1: Reg, rd: Reg },
-    Sub { w: Width, r0: Reg, r1: Reg, rd: Reg },
-    Mul { w: Width, r0: Reg, r1: Reg, rd: Reg },
-    UDiv { w: Width, r0: Reg, r1: Reg, rd: Reg },
-    SDiv { w: Width, r0: Reg, r1: Reg, rd: Reg },
+    Add { r0: Reg, r1: Reg, rd: Reg },
+    Sub { r0: Reg, r1: Reg, rd: Reg },
+    Mul { r0: Reg, r1: Reg, rd: Reg },
+    Div { r0: Reg, r1: Reg, rd: Reg },
     Eq { r0: Reg, r1: Reg, rd: Reg },
-    ULt { r0: Reg, r1: Reg, rd: Reg },
-    SLt { r0: Reg, r1: Reg, rd: Reg },
+    Lt { r0: Reg, r1: Reg, rd: Reg },
     Not { r0: Reg, rd: Reg },
-    Neg { w: Width, r0: Reg, rd: Reg },
-    FNeg { w: Width, r0: Reg, rd: Reg },
+    Neg { r0: Reg, rd: Reg },
+    FNeg { w: FloatTy, r0: Reg, rd: Reg },
     Move { r0: Reg, rd: Reg },
     MakeArray { r0: Reg, rn: Reg, rd: Reg },
     Index { r0: Reg, r1: Reg, rd: Reg },
@@ -31,11 +30,11 @@ pub enum Instr {
     Jump { addr: Addr },
     JumpIfTrue { r0: Reg, addr: Addr },
     JumpIfFalse { r0: Reg, addr: Addr },
-    FAdd { w: Width, r0: Reg, r1: Reg, rd: Reg },
-    FSub { w: Width, r0: Reg, r1: Reg, rd: Reg },
-    FMul { w: Width, r0: Reg, r1: Reg, rd: Reg },
-    FDiv { w: Width, r0: Reg, r1: Reg, rd: Reg },
-    FLt { w: Width, r0: Reg, r1: Reg, rd: Reg },
+    FAdd { w: FloatTy, r0: Reg, r1: Reg, rd: Reg },
+    FSub { w: FloatTy, r0: Reg, r1: Reg, rd: Reg },
+    FMul { w: FloatTy, r0: Reg, r1: Reg, rd: Reg },
+    FDiv { w: FloatTy, r0: Reg, r1: Reg, rd: Reg },
+    FLt { w: FloatTy, r0: Reg, r1: Reg, rd: Reg },
     Call { func: Reg, rd: Reg },
 }
 
@@ -95,21 +94,20 @@ impl Instr {
             Self::LoadNull { rd } => EncodedInstr::opcode(2).reg0(rd),
             Self::LoadFalse { rd } => EncodedInstr::opcode(3).reg0(rd),
             Self::LoadTrue { rd } => EncodedInstr::opcode(4).reg0(rd),
-            Self::LoadZero { w, rd } => EncodedInstr::opcode(5).width(w).reg0(rd),
-            Self::LoadFZero { w, rd } => EncodedInstr::opcode(6).width(w).reg0(rd),
-            Self::Load { rd, imm } => EncodedInstr::opcode(7).reg0(rd).imm1(imm),
-            Self::Print { r0 } => EncodedInstr::opcode(8).reg0(r0),
-            Self::Add { w, r0, r1, rd } => EncodedInstr::opcode(10).width(w).reg0(r0).reg1(r1).reg2(rd),
-            Self::Sub { w, r0, r1, rd } => EncodedInstr::opcode(11).width(w).reg0(r0).reg1(r1).reg2(rd),
-            Self::Mul { w, r0, r1, rd } => EncodedInstr::opcode(12).width(w).reg0(r0).reg1(r1).reg2(rd),
-            Self::UDiv { w, r0, r1, rd } => EncodedInstr::opcode(13).width(w).reg0(r0).reg1(r1).reg2(rd),
-            Self::SDiv { w, r0, r1, rd } => EncodedInstr::opcode(14).width(w).reg0(r0).reg1(r1).reg2(rd),
+            Self::LoadIntZero { rd } => EncodedInstr::opcode(5).reg0(rd),
+            Self::LoadF32Zero { rd } => EncodedInstr::opcode(6).reg0(rd),
+            Self::LoadF64Zero { rd } => EncodedInstr::opcode(7).reg0(rd),
+            Self::Load { rd, imm } => EncodedInstr::opcode(8).reg0(rd).imm1(imm),
+            Self::Print { r0 } => EncodedInstr::opcode(9).reg0(r0),
+            Self::Add { r0, r1, rd } => EncodedInstr::opcode(10).reg0(r0).reg1(r1).reg2(rd),
+            Self::Sub { r0, r1, rd } => EncodedInstr::opcode(11).reg0(r0).reg1(r1).reg2(rd),
+            Self::Mul { r0, r1, rd } => EncodedInstr::opcode(12).reg0(r0).reg1(r1).reg2(rd),
+            Self::Div { r0, r1, rd } => EncodedInstr::opcode(13).reg0(r0).reg1(r1).reg2(rd),
             Self::Eq { r0, r1, rd } => EncodedInstr::opcode(15).reg0(r0).reg1(r1).reg2(rd),
-            Self::ULt { r0, r1, rd } => EncodedInstr::opcode(16).reg0(r0).reg1(r1).reg2(rd),
-            Self::SLt { r0, r1, rd } => EncodedInstr::opcode(17).reg0(r0).reg1(r1).reg2(rd),
+            Self::Lt { r0, r1, rd } => EncodedInstr::opcode(16).reg0(r0).reg1(r1).reg2(rd),
             Self::Not { r0, rd } => EncodedInstr::opcode(18).reg0(r0).reg2(rd),
-            Self::Neg { w, r0, rd } => EncodedInstr::opcode(19).width(w).reg0(r0).reg2(rd),
-            Self::FNeg { w, r0, rd } => EncodedInstr::opcode(20).width(w).reg0(r0).reg2(rd),
+            Self::Neg { r0, rd } => EncodedInstr::opcode(19).reg0(r0).reg2(rd),
+            Self::FNeg { w, r0, rd } => EncodedInstr::opcode(20).fwid(w).reg0(r0).reg2(rd),
             Self::MakeArray { r0, rn, rd } => EncodedInstr::opcode(21).reg0(r0).reg1(rn).reg2(rd),
             Self::Index { r0, r1, rd } => EncodedInstr::opcode(22).reg0(r0).reg1(r1).reg2(rd),
             Self::MakeTuple { r0, rn, rd } => EncodedInstr::opcode(23).reg0(r0).reg1(rn).reg2(rd),
@@ -117,11 +115,11 @@ impl Instr {
             Self::Jump { addr } => EncodedInstr::opcode(30).addr(addr),
             Self::JumpIfTrue { r0, addr } => EncodedInstr::opcode(31).reg0(r0).addr(addr),
             Self::JumpIfFalse { r0, addr } => EncodedInstr::opcode(32).reg0(r0).addr(addr),
-            Self::FAdd { w, r0, r1, rd } => EncodedInstr::opcode(40).width(w).reg0(r0).reg1(r1).reg2(rd),
-            Self::FSub { w, r0, r1, rd } => EncodedInstr::opcode(41).width(w).reg0(r0).reg1(r1).reg2(rd),
-            Self::FMul { w, r0, r1, rd } => EncodedInstr::opcode(42).width(w).reg0(r0).reg1(r1).reg2(rd),
-            Self::FDiv { w, r0, r1, rd } => EncodedInstr::opcode(43).width(w).reg0(r0).reg1(r1).reg2(rd),
-            Self::FLt { w, r0, r1, rd } => EncodedInstr::opcode(44).width(w).reg0(r0).reg1(r1).reg2(rd),
+            Self::FAdd { w, r0, r1, rd } => EncodedInstr::opcode(40).reg0(r0).reg1(r1).reg2(rd),
+            Self::FSub { w, r0, r1, rd } => EncodedInstr::opcode(41).reg0(r0).reg1(r1).reg2(rd),
+            Self::FMul { w, r0, r1, rd } => EncodedInstr::opcode(42).reg0(r0).reg1(r1).reg2(rd),
+            Self::FDiv { w, r0, r1, rd } => EncodedInstr::opcode(43).reg0(r0).reg1(r1).reg2(rd),
+            Self::FLt { w, r0, r1, rd } => EncodedInstr::opcode(44).reg0(r0).reg1(r1).reg2(rd),
             Self::Call { func, rd } => EncodedInstr::opcode(50).reg0(func).reg2(rd),
         }
     }
@@ -133,21 +131,20 @@ impl Instr {
             2 => Self::LoadNull { rd: enc.get_reg0() },
             3 => Self::LoadFalse { rd: enc.get_reg0() },
             4 => Self::LoadTrue { rd: enc.get_reg0() },
-            5 => Self::LoadZero { w: enc.get_width(), rd: enc.get_reg0() },
-            6 => Self::LoadFZero { w: enc.get_width(), rd: enc.get_reg0() },
-            7 => Self::Load { rd: enc.get_reg0(), imm: enc.get_imm1() },
-            8 => Self::Print { r0: enc.get_reg0() },
-            10 => Self::Add { w: enc.get_width(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
-            11 => Self::Sub { w: enc.get_width(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
-            12 => Self::Mul { w: enc.get_width(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
-            13 => Self::UDiv { w: enc.get_width(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
-            14 => Self::SDiv { w: enc.get_width(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
+            5 => Self::LoadIntZero { rd: enc.get_reg0() },
+            6 => Self::LoadF32Zero { rd: enc.get_reg0() },
+            7 => Self::LoadF64Zero { rd: enc.get_reg0() },
+            8 => Self::Load { rd: enc.get_reg0(), imm: enc.get_imm1() },
+            9 => Self::Print { r0: enc.get_reg0() },
+            10 => Self::Add { r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
+            11 => Self::Sub { r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
+            12 => Self::Mul { r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
+            13 => Self::Div { r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
             15 => Self::Eq { r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
-            16 => Self::ULt { r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
-            17 => Self::SLt { r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
+            16 => Self::Lt { r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
             18 => Self::Not { r0: enc.get_reg0(), rd: enc.get_reg2() },
-            19 => Self::Neg { w: enc.get_width(), r0: enc.get_reg0(), rd: enc.get_reg2() },
-            20 => Self::FNeg { w: enc.get_width(), r0: enc.get_reg0(), rd: enc.get_reg2() },
+            19 => Self::Neg { r0: enc.get_reg0(), rd: enc.get_reg2() },
+            20 => Self::FNeg { w: enc.get_fwid(), r0: enc.get_reg0(), rd: enc.get_reg2() },
             21 => Self::MakeArray { r0: enc.get_reg0(), rn: enc.get_reg1(), rd: enc.get_reg2() },
             22 => Self::Index { r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
             23 => Self::MakeTuple { r0: enc.get_reg0(), rn: enc.get_reg1(), rd: enc.get_reg2() },
@@ -155,10 +152,10 @@ impl Instr {
             30 => Self::Jump { addr: enc.get_addr() },
             31 => Self::JumpIfTrue { r0: enc.get_reg0(), addr: enc.get_addr() },
             32 => Self::JumpIfFalse { r0: enc.get_reg0(), addr: enc.get_addr() },
-            40 => Self::FAdd { w: enc.get_width(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
-            41 => Self::FSub { w: enc.get_width(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
-            42 => Self::FMul { w: enc.get_width(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
-            43 => Self::FDiv { w: enc.get_width(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
+            40 => Self::FAdd { w: enc.get_fwid(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
+            41 => Self::FSub { w: enc.get_fwid(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
+            42 => Self::FMul { w: enc.get_fwid(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
+            43 => Self::FDiv { w: enc.get_fwid(), r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
             50 => Self::Call { func: enc.get_reg0(), rd: enc.get_reg2() },
             i => panic!("illegal instruction: {i}"),
         }
@@ -179,8 +176,12 @@ impl EncodedInstr {
         Self(opcode as u32)
     }
 
-    fn width(self, width: Width) -> Self {
-        Self(self.0 | ((width as u32) << 6))
+    fn fwid(self, width: FloatTy) -> Self {
+        let bit = match width {
+            FloatTy::Float32 => 0,
+            FloatTy::Float64 => 1,
+        };
+        Self(self.0 | (bit << 7))
     }
 
     fn reg0(self, reg: Reg) -> Self {
@@ -207,12 +208,10 @@ impl EncodedInstr {
         (self.0 & 0x3f) as u8
     }
 
-    fn get_width(self) -> Width {
-        match (self.0 >> 6) & 0x03 {
-            0 => Width::_8,
-            1 => Width::_16,
-            2 => Width::_32,
-            3 => Width::_64,
+    fn get_fwid(self) -> FloatTy {
+        match (self.0 >> 7) & 0x01 {
+            0 => FloatTy::Float32,
+            1 => FloatTy::Float64,
             _ => unreachable!(),
         }
     }
@@ -240,6 +239,8 @@ impl EncodedInstr {
 
 impl Display for Instr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use FloatTy::*;
+
         struct InstrWriter<'a, 'b> {
             f: &'a mut std::fmt::Formatter<'b>,
             instr_len: usize,
@@ -254,15 +255,6 @@ impl Display for Instr {
             fn mnem(mut self, mnem: &str) -> Self {
                 self.instr_len += mnem.len();
                 write!(self.f, "{}", mnem);
-                self
-            }
-
-            fn width(mut self, width: Width) -> Self {
-                self.instr_len += match width {
-                    Width::_8 => 2,
-                    _ => 3,
-                };
-                write!(self.f, ".{}", width);
                 self
             }
 
@@ -308,21 +300,21 @@ impl Display for Instr {
             Self::LoadNull { rd } => iw.mnem("load").reg(rd).val("null"),
             Self::LoadFalse { rd } => iw.mnem("load").reg(rd).val("false"),
             Self::LoadTrue { rd } => iw.mnem("load").reg(rd).val("true"),
-            Self::LoadZero { w, rd } => iw.mnem("load").reg(rd).val(format!("0.i{w}")),
-            Self::LoadFZero { w, rd } => iw.mnem("load").reg(rd).val(format!("0.f{w}")),
+            Self::LoadIntZero { rd } => iw.mnem("load").reg(rd).val(format!("0i")),
+            Self::LoadF32Zero { rd } => iw.mnem("load").reg(rd).val(format!("0f32")),
+            Self::LoadF64Zero { rd } => iw.mnem("load").reg(rd).val(format!("0f64")),
             Self::Load { rd, imm } => iw.mnem("load").reg(rd).imm(imm),
             Self::Print { r0 } => iw.mnem("print").reg(r0),
-            Self::Add { w, r0, r1, rd } => iw.mnem("add").width(w).reg(rd).reg(r0).reg(r1),
-            Self::Sub { w, r0, r1, rd } => iw.mnem("sub").width(w).reg(rd).reg(r0).reg(r1),
-            Self::Mul { w, r0, r1, rd } => iw.mnem("mul").width(w).reg(rd).reg(r0).reg(r1),
-            Self::UDiv { w, r0, r1, rd } => iw.mnem("udiv").width(w).reg(rd).reg(r0).reg(r1),
-            Self::SDiv { w, r0, r1, rd } => iw.mnem("sdiv").width(w).reg(rd).reg(r0).reg(r1),
+            Self::Add { r0, r1, rd } => iw.mnem("add.i").reg(rd).reg(r0).reg(r1),
+            Self::Sub { r0, r1, rd } => iw.mnem("sub.i").reg(rd).reg(r0).reg(r1),
+            Self::Mul { r0, r1, rd } => iw.mnem("mul.i").reg(rd).reg(r0).reg(r1),
+            Self::Div { r0, r1, rd } => iw.mnem("div.i").reg(rd).reg(r0).reg(r1),
             Self::Eq { r0, r1, rd } => iw.mnem("eq").reg(rd).reg(r0).reg(r1),
-            Self::ULt { r0, r1, rd } => iw.mnem("ult").reg(rd).reg(r0).reg(r1),
-            Self::SLt { r0, r1, rd } => iw.mnem("slt").reg(rd).reg(r0).reg(r1),
+            Self::Lt { r0, r1, rd } => iw.mnem("lt").reg(rd).reg(r0).reg(r1),
             Self::Not { r0, rd } => iw.mnem("not").reg(rd).reg(r0),
-            Self::Neg { w, r0, rd } => iw.mnem("neg").width(w).reg(rd).reg(r0),
-            Self::FNeg { w, r0, rd } => iw.mnem("fneg").width(w).reg(rd).reg(r0),
+            Self::Neg { r0, rd } => iw.mnem("neg.i").reg(rd).reg(r0),
+            Self::FNeg { w: Float32, r0, rd } => iw.mnem("neg.f").reg(rd).reg(r0),
+            Self::FNeg { w: Float64, r0, rd } => iw.mnem("neg.d").reg(rd).reg(r0),
             Self::Move { r0, rd } => iw.mnem("move").reg(rd).reg(r0),
             Self::MakeArray { r0, rn, rd } => iw.mnem("mk.arr").reg(rd).reg(r0).reg(rn),
             Self::Index { r0, r1, rd } => iw.mnem("index").reg(rd).reg(r0).reg(r1),
@@ -330,11 +322,16 @@ impl Display for Instr {
             Self::Jump { addr } => iw.mnem("jmp").addr(addr),
             Self::JumpIfTrue { r0, addr } => iw.mnem("brt").reg(r0).addr(addr),
             Self::JumpIfFalse { r0, addr } => iw.mnem("brf").reg(r0).addr(addr),
-            Self::FAdd { w, r0, r1, rd } => iw.mnem("fadd").width(w).reg(rd).reg(r0).reg(r1),
-            Self::FSub { w, r0, r1, rd } => iw.mnem("fsub").width(w).reg(rd).reg(r0).reg(r1),
-            Self::FMul { w, r0, r1, rd } => iw.mnem("fmul").width(w).reg(rd).reg(r0).reg(r1),
-            Self::FDiv { w, r0, r1, rd } => iw.mnem("fdiv").width(w).reg(rd).reg(r0).reg(r1),
-            Self::FLt { w, r0, r1, rd } => iw.mnem("flt").width(w).reg(rd).reg(r0).reg(r1),
+            Self::FAdd { w: Float32, r0, r1, rd } => iw.mnem("add.f").reg(rd).reg(r0).reg(r1),
+            Self::FSub { w: Float32, r0, r1, rd } => iw.mnem("sub.f").reg(rd).reg(r0).reg(r1),
+            Self::FMul { w: Float32, r0, r1, rd } => iw.mnem("mul.f").reg(rd).reg(r0).reg(r1),
+            Self::FDiv { w: Float32, r0, r1, rd } => iw.mnem("div.f").reg(rd).reg(r0).reg(r1),
+            Self::FLt { w: Float32, r0, r1, rd } => iw.mnem("lt.f").reg(rd).reg(r0).reg(r1),
+            Self::FAdd { w: Float64, r0, r1, rd } => iw.mnem("add.d").reg(rd).reg(r0).reg(r1),
+            Self::FSub { w: Float64, r0, r1, rd } => iw.mnem("sub.d").reg(rd).reg(r0).reg(r1),
+            Self::FMul { w: Float64, r0, r1, rd } => iw.mnem("mul.d").reg(rd).reg(r0).reg(r1),
+            Self::FDiv { w: Float64, r0, r1, rd } => iw.mnem("div.d").reg(rd).reg(r0).reg(r1),
+            Self::FLt { w: Float64, r0, r1, rd } => iw.mnem("lt.d").reg(rd).reg(r0).reg(r1),
             Self::Call { func, rd } => iw.mnem("call").reg(rd).reg(func),
         };
         Ok(())
@@ -388,14 +385,16 @@ mod test {
         test(Instr::Print { r0: Reg(0) });
         test(Instr::Print { r0: Reg(86) });
         test(Instr::Print { r0: Reg(234) });
-        test(Instr::Add { w: Width::_8, r0: Reg(1), r1: Reg(2), rd: Reg(3) });
-        test(Instr::Add { w: Width::_16, r0: Reg(10), r1: Reg(20), rd: Reg(30) });
-        test(Instr::Add { w: Width::_32, r0: Reg(100), r1: Reg(200), rd: Reg(250) });
-        test(Instr::Add { w: Width::_64, r0: Reg(255), r1: Reg(255), rd: Reg(255) });
-        test(Instr::Sub { w: Width::_8, r0: Reg(1), r1: Reg(2), rd: Reg(3) });
-        test(Instr::Sub { w: Width::_16, r0: Reg(10), r1: Reg(20), rd: Reg(30) });
-        test(Instr::Sub { w: Width::_32, r0: Reg(100), r1: Reg(200), rd: Reg(250) });
-        test(Instr::Sub { w: Width::_64, r0: Reg(255), r1: Reg(255), rd: Reg(255) });
+        test(Instr::Add { r0: Reg(1), r1: Reg(2), rd: Reg(3) });
+        test(Instr::Add { r0: Reg(10), r1: Reg(20), rd: Reg(30) });
+        test(Instr::Add { r0: Reg(100), r1: Reg(200), rd: Reg(250) });
+        test(Instr::Add { r0: Reg(255), r1: Reg(255), rd: Reg(255) });
+        test(Instr::Sub { r0: Reg(1), r1: Reg(2), rd: Reg(3) });
+        test(Instr::Sub { r0: Reg(10), r1: Reg(20), rd: Reg(30) });
+        test(Instr::Sub { r0: Reg(100), r1: Reg(200), rd: Reg(250) });
+        test(Instr::Sub { r0: Reg(255), r1: Reg(255), rd: Reg(255) });
         test(Instr::Move { r0: Reg(12), rd: Reg(24) });
+        test(Instr::FNeg { w: FloatTy::Float32, r0: Reg(22), rd: Reg(23) });
+        test(Instr::FNeg { w: FloatTy::Float64, r0: Reg(33), rd: Reg(34) });
     }
 }

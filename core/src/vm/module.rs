@@ -1,7 +1,7 @@
 use fnv::FnvHashMap;
 
 use crate::vm::chunk::Chunk;
-use crate::vm::value3::FuncObjRef;
+use crate::vm::value::FuncObjRef;
 
 pub struct Module {
     pub main: FuncId,

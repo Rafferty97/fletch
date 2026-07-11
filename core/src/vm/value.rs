@@ -3,232 +3,198 @@ use std::ptr;
 use std::rc::Rc;
 
 use arcstr::ArcStr;
-use triomphe::ThinArc;
+use num_bigint::BigInt;
+use ordered_float::OrderedFloat;
+use triomphe::{Arc, ThinArc};
 
 use crate::ast::Symbol;
+use crate::parser::escape;
 use crate::thin_rc::{Head, ThinRc};
+use crate::vm::chunk::Chunk;
+use crate::vm::module::FuncId;
 
-pub struct Value {
-    tag: Tag,
-    data: Data,
-}
+#[derive(Clone, PartialEq, Eq, Debug)]
+pub struct Value(ValueInner);
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Tag {
+#[derive(Clone, PartialEq, Eq, Debug)]
+enum ValueInner {
     Unit,
-    Bool,
-    Integer,
-    Float32,
-    Float64,
-    Str,
-    Array,
-    Tuple,
-    Struct,
+    Null,
+    Bool(bool),
+    Int(Int),
+    Float32(OrderedFloat<f32>),
+    Float64(OrderedFloat<f64>),
+    Str(ArcStr),
+    Array(ThinArc<(), Value>),
+    Tuple(ThinArc<(), Value>),
+    Struct(ThinArc<(), (Symbol, Value)>),
+    Func(FuncId),
 }
 
-struct Data {
-    #[cfg(target_pointer_width = "32")]
-    half: u32,
-    ptr: *const (),
-}
+pub type Int = BigInt;
 
 impl Value {
-    fn new_null(tag: Tag) -> Self {
-        Self { tag, data: Data::new_null() }
+    pub const fn new_null() -> Self {
+        Self(ValueInner::Null)
     }
 
-    #[inline(always)]
-    fn from_variant<V: Variant>(v: V) -> Self {
-        Value { tag: V::TAG, data: v.into_raw() }
+    pub const fn new_unit() -> Self {
+        Self(ValueInner::Unit)
     }
 
-    #[inline(always)]
-    fn drop_inner<V: Variant>(&mut self) {
-        assert_eq!(self.tag, V::TAG);
-        let data = unsafe { ptr::read(&self.data) };
-        std::mem::drop(unsafe { V::from_raw(data) });
+    pub const fn new_bool(value: bool) -> Self {
+        Self(ValueInner::Bool(value))
     }
-}
 
-impl Drop for Value {
-    fn drop(&mut self) {
-        match self.tag {
-            Tag::Unit | Tag::Bool | Tag::Float32 | Tag::Float64 => {}
-            Tag::Integer => self.drop_inner::<Integer>(),
-            Tag::Str => todo!(),
-            Tag::Array => todo!(),
-            Tag::Tuple => todo!(),
-            Tag::Struct => todo!(),
+    pub const fn new_int(value: Int) -> Self {
+        Self(ValueInner::Int(value))
+    }
+
+    pub const fn new_f32(value: f32) -> Self {
+        Self(ValueInner::Float32(OrderedFloat(value)))
+    }
+
+    pub const fn new_f64(value: f64) -> Self {
+        Self(ValueInner::Float64(OrderedFloat(value)))
+    }
+
+    pub fn new_str(value: &str) -> Self {
+        Self(ValueInner::Str(value.into()))
+    }
+
+    pub fn new_array<I>(values: I) -> Self
+    where
+        I: IntoIterator<Item = Value>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        let alloc = ThinArc::from_header_and_iter((), values.into_iter());
+        Self(ValueInner::Array(alloc))
+    }
+
+    pub fn new_tuple<I>(values: I) -> Self
+    where
+        I: IntoIterator<Item = Value>,
+        I::IntoIter: ExactSizeIterator,
+    {
+        let alloc = ThinArc::from_header_and_iter((), values.into_iter());
+        Self(ValueInner::Tuple(alloc))
+    }
+
+    pub fn new_func(func_id: FuncId) -> Self {
+        Self(ValueInner::Func(func_id))
+    }
+
+    pub fn as_bool(&self) -> bool {
+        match &self.0 {
+            ValueInner::Bool(v) => *v,
+            _ => panic!("expected a boolean value"),
+        }
+    }
+
+    pub fn as_int(&self) -> &Int {
+        match &self.0 {
+            ValueInner::Int(v) => v,
+            _ => panic!("expected an integer value"),
+        }
+    }
+
+    pub fn as_f32(&self) -> f32 {
+        match &self.0 {
+            ValueInner::Float32(v) => v.0,
+            _ => panic!("expected an f32 value"),
+        }
+    }
+
+    pub fn as_f64(&self) -> f64 {
+        match &self.0 {
+            ValueInner::Float64(v) => v.0,
+            _ => panic!("expected an f64 value"),
+        }
+    }
+
+    pub fn as_func(&self) -> FuncId {
+        match &self.0 {
+            ValueInner::Func(v) => *v,
+            _ => panic!("expected a function value"),
+        }
+    }
+
+    pub fn as_array(&self) -> &[Value] {
+        match &self.0 {
+            ValueInner::Array(alloc) => &alloc.slice,
+            _ => panic!("expected an array value"),
+        }
+    }
+
+    pub fn as_tuple(&self) -> &[Value] {
+        match &self.0 {
+            ValueInner::Tuple(alloc) => &alloc.slice,
+            _ => panic!("expected a tuple value"),
         }
     }
 }
 
-impl Data {
-    const fn new_null() -> Self {
-        Self::from_ptr(ptr::null::<()>())
-    }
-
-    const fn from_u64(value: u64) -> Self {
-        Self {
-            #[cfg(target_pointer_width = "32")]
-            half: (value >> 32) as u32,
-            ptr: ptr::without_provenance(value as usize),
-        }
-    }
-
-    const fn from_ptr<T>(ptr: *const T) -> Self {
-        Self {
-            #[cfg(target_pointer_width = "32")]
-            half: 0,
-            ptr: ptr.cast(),
-        }
-    }
-
-    fn as_u64(&self) -> u64 {
-        let value = self.ptr.addr() as u64;
-        #[cfg(target_pointer_width = "32")]
-        let value = value | (self.half << 32);
-        value
-    }
-
-    fn as_ptr<T>(&self) -> *const T {
-        self.ptr.cast()
-    }
-
-    fn as_mut_ptr<T: Sized>(&self) -> *mut T {
-        self.ptr.cast_mut().cast()
-    }
-}
-
-trait Variant {
-    const TAG: Tag;
-
-    unsafe fn from_raw(value: Data) -> Self;
-
-    fn into_raw(self) -> Data;
-}
-
-#[derive(Default)]
-struct Bool(bool);
-
-impl Variant for Bool {
-    const TAG: Tag = Tag::Bool;
-
-    unsafe fn from_raw(value: Data) -> Self {
-        match value.as_u64() {
-            1 => Self(false),
-            2 => Self(true),
-            _ => unsafe { unreachable_unchecked() },
-        }
-    }
-
-    fn into_raw(self) -> Data {
-        let value = match self.0 {
-            false => 1,
-            true => 2,
-        };
-        Data::from_u64(value)
-    }
-}
-
-struct Integer(*const ());
-
-impl Variant for Integer {
-    const TAG: Tag = Tag::Integer;
-
-    unsafe fn from_raw(value: Data) -> Self {
-        todo!()
-    }
-
-    fn into_raw(self) -> Data {
-        todo!()
-    }
-}
-
-struct Float64(f64);
-
-impl Float64 {
-    pub fn new(value: f64) -> Self {
-        if value.to_bits() == 0 {
-            Self(f64::from_bits(1 << 63))
-        } else {
-            Self(value)
-        }
-    }
-
-    pub fn value(&self) -> f64 {
-        self.0
-    }
-}
-
-impl Variant for Float64 {
-    const TAG: Tag = Tag::Float64;
-
-    unsafe fn from_raw(value: Data) -> Self {
-        Self(f64::from_bits(value.as_u64()))
-    }
-
-    fn into_raw(self) -> Data {
-        Data::from_u64(self.0.to_bits())
-    }
-}
-
-impl Variant for ArcStr {
-    const TAG: Tag = Tag::Str;
-
-    unsafe fn from_raw(value: Data) -> Self {
-        unsafe {
-            let ptr = ptr::NonNull::new_unchecked(value.as_mut_ptr());
-            ArcStr::from_raw(ptr)
-        }
-    }
-
-    fn into_raw(self) -> Data {
-        Data::from_ptr(ArcStr::into_raw(self).as_ptr())
-    }
-}
-
-struct TupleHead {
-    fields: Rc<[Tag]>,
-}
-
-impl Head for TupleHead {
-    type T = Data;
-
-    fn tail_len(&self) -> usize {
-        self.fields.len()
-    }
-
-    fn drop_tail(&mut self, tail: &mut [Data]) {
-        for (&tag, data) in self.fields.iter().zip(tail.iter()) {
-            let data = unsafe { std::ptr::read(data) };
-            let value = Value { tag, data };
-            std::mem::drop(value);
+impl std::fmt::Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.0 {
+            ValueInner::Unit => write!(f, "()"),
+            ValueInner::Null => write!(f, "null"),
+            ValueInner::Bool(false) => write!(f, "false"),
+            ValueInner::Bool(true) => write!(f, "true"),
+            ValueInner::Int(value) => write!(f, "{}", value),
+            ValueInner::Float32(value) => write!(f, "{}", value),
+            ValueInner::Float64(value) => write!(f, "{}", value),
+            ValueInner::Str(value) => write!(f, "\"{}\"", escape::escape(value)),
+            ValueInner::Array(value) => match &value.slice {
+                [] => write!(f, "[]"),
+                [first, rest @ ..] => {
+                    write!(f, "[{first}")?;
+                    rest.iter().try_for_each(|v| write!(f, ", {v}"))?;
+                    write!(f, "]")
+                }
+            },
+            ValueInner::Tuple(value) => match &value.slice {
+                [] => write!(f, "()"),
+                [first] => write!(f, "({first},)"),
+                [first, rest @ ..] => {
+                    write!(f, "({first}")?;
+                    rest.iter().try_for_each(|v| write!(f, ", {v}"))?;
+                    write!(f, ")")
+                }
+            },
+            ValueInner::Struct(value) => todo!(),
+            ValueInner::Func(value) => write!(f, "<func:{}>", value.0), // FIXME: function name
         }
     }
 }
 
-struct Tuple(ThinRc<TupleHead>);
+#[derive(Clone, Debug)]
+pub struct FuncObjRef(Arc<FuncObj>);
 
-impl Variant for Tuple {
-    const TAG: Tag = Tag::Tuple;
+#[derive(Debug)]
+pub struct FuncObj {
+    pub name: String,
+    pub chunk: Chunk,
+}
 
-    unsafe fn from_raw(value: Data) -> Self {
-        todo!()
-    }
-
-    fn into_raw(self) -> Data {
-        todo!()
+impl PartialEq for FuncObjRef {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
     }
 }
 
-struct Struct {
-    fields: Rc<[Field]>,
-    values: [Data],
+impl Eq for FuncObjRef {}
+
+impl From<FuncObj> for FuncObjRef {
+    fn from(value: FuncObj) -> Self {
+        Self(value.into())
+    }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-struct Field {
-    name: Symbol,
-    tag: Tag,
+impl std::ops::Deref for FuncObjRef {
+    type Target = FuncObj;
+
+    fn deref(&self) -> &Self::Target {
+        &*self.0
+    }
 }

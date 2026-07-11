@@ -14,7 +14,7 @@ use crate::util::IdGen;
 use crate::vm::chunk::{Chunk, ChunkBuilder};
 use crate::vm::instr::{Addr, Instr, Reg, Width};
 use crate::vm::module::{FuncId, Module};
-use crate::vm::value3::{FuncObj, ScalarTy, Value};
+use crate::vm::value::{FuncObj, Int, Value};
 
 pub fn compile_program(
     ast: &Program,
@@ -182,8 +182,11 @@ impl<'a> Compiler<'a> {
                     (UnaryOp::Not, TyKind::Bool) => self.builder.ins(Instr::Not { r0, rd }),
                     (UnaryOp::Not, _) => unreachable!(),
 
-                    (UnaryOp::Negate, TyKind::Int(ty)) => self.builder.ins(Instr::Neg { w: ty.width(), r0, rd }),
-                    (UnaryOp::Negate, TyKind::Float(ty)) => self.builder.ins(Instr::FNeg { w: ty.width(), r0, rd }),
+                    (UnaryOp::Negate, TyKind::Int(_)) => self.builder.ins(Instr::Neg { r0, rd }),
+                    (UnaryOp::Negate, TyKind::Float(ty)) => {
+                        println!("asdfasdf: {ty:?}, {r0:?}, {rd:?}");
+                        self.builder.ins(Instr::FNeg { w: ty, r0, rd })
+                    }
                     (UnaryOp::Negate, _) => unreachable!(),
                 }
                 rd
@@ -198,24 +201,24 @@ impl<'a> Compiler<'a> {
 
                 let rd = rd.unwrap_or_else(|| self.push());
                 match (op, ty.kind()) {
-                    (BinOp::Add, TyKind::Int(ty)) => self.builder.ins(Instr::Add { w: ty.width(), r0, r1, rd }),
-                    (BinOp::Add, TyKind::UInt(ty)) => self.builder.ins(Instr::Add { w: ty.width(), r0, r1, rd }),
-                    (BinOp::Add, TyKind::Float(ty)) => self.builder.ins(Instr::FAdd { w: ty.width(), r0, r1, rd }),
+                    (BinOp::Add, TyKind::Int(_)) => self.builder.ins(Instr::Add { r0, r1, rd }),
+                    (BinOp::Add, TyKind::UInt(_)) => self.builder.ins(Instr::Add { r0, r1, rd }),
+                    (BinOp::Add, TyKind::Float(ty)) => self.builder.ins(Instr::FAdd { w: ty, r0, r1, rd }),
                     (BinOp::Add, _) => unreachable!(),
 
-                    (BinOp::Sub, TyKind::Int(ty)) => self.builder.ins(Instr::Sub { w: ty.width(), r0, r1, rd }),
-                    (BinOp::Sub, TyKind::UInt(ty)) => self.builder.ins(Instr::Sub { w: ty.width(), r0, r1, rd }),
-                    (BinOp::Sub, TyKind::Float(ty)) => self.builder.ins(Instr::FSub { w: ty.width(), r0, r1, rd }),
+                    (BinOp::Sub, TyKind::Int(_)) => self.builder.ins(Instr::Sub { r0, r1, rd }),
+                    (BinOp::Sub, TyKind::UInt(_)) => self.builder.ins(Instr::Sub { r0, r1, rd }),
+                    (BinOp::Sub, TyKind::Float(ty)) => self.builder.ins(Instr::FSub { w: ty, r0, r1, rd }),
                     (BinOp::Sub, _) => unreachable!(),
 
-                    (BinOp::Mul, TyKind::Int(ty)) => self.builder.ins(Instr::Mul { w: ty.width(), r0, r1, rd }),
-                    (BinOp::Mul, TyKind::UInt(ty)) => self.builder.ins(Instr::Mul { w: ty.width(), r0, r1, rd }),
-                    (BinOp::Mul, TyKind::Float(ty)) => self.builder.ins(Instr::FMul { w: ty.width(), r0, r1, rd }),
+                    (BinOp::Mul, TyKind::Int(_)) => self.builder.ins(Instr::Mul { r0, r1, rd }),
+                    (BinOp::Mul, TyKind::UInt(_)) => self.builder.ins(Instr::Mul { r0, r1, rd }),
+                    (BinOp::Mul, TyKind::Float(ty)) => self.builder.ins(Instr::FMul { w: ty, r0, r1, rd }),
                     (BinOp::Mul, _) => unreachable!(),
 
-                    (BinOp::Div, TyKind::Int(ty)) => self.builder.ins(Instr::SDiv { w: ty.width(), r0, r1, rd }),
-                    (BinOp::Div, TyKind::UInt(ty)) => self.builder.ins(Instr::UDiv { w: ty.width(), r0, r1, rd }),
-                    (BinOp::Div, TyKind::Float(ty)) => self.builder.ins(Instr::FDiv { w: ty.width(), r0, r1, rd }),
+                    (BinOp::Div, TyKind::Int(_)) => self.builder.ins(Instr::Div { r0, r1, rd }),
+                    (BinOp::Div, TyKind::UInt(_)) => self.builder.ins(Instr::Div { r0, r1, rd }),
+                    (BinOp::Div, TyKind::Float(ty)) => self.builder.ins(Instr::FDiv { w: ty, r0, r1, rd }),
                     (BinOp::Div, _) => unreachable!(),
 
                     (BinOp::Eq, _) => self.builder.ins(Instr::Eq { r0, r1, rd }),
@@ -231,9 +234,9 @@ impl<'a> Compiler<'a> {
                             _ => unreachable!(),
                         };
                         match ty.kind() {
-                            TyKind::Int(_) => self.builder.ins(Instr::SLt { r0, r1, rd }),
-                            TyKind::UInt(_) => self.builder.ins(Instr::ULt { r0, r1, rd }),
-                            TyKind::Float(ty) => self.builder.ins(Instr::FLt { w: ty.width(), r0, r1, rd }),
+                            TyKind::Int(_) => self.builder.ins(Instr::Lt { r0, r1, rd }),
+                            TyKind::UInt(_) => self.builder.ins(Instr::Lt { r0, r1, rd }),
+                            TyKind::Float(ty) => self.builder.ins(Instr::FLt { w: ty, r0, r1, rd }),
                             _ => unreachable!(),
                         }
                         match op {
@@ -354,19 +357,17 @@ impl<'a> Compiler<'a> {
             &Lit::Bool(true) => self.builder.ins(Instr::LoadTrue { rd }),
             &Lit::Int(sym) => {
                 let value = self.sym_table.get_str(sym).parse().unwrap(); // FIXME: unwrap
-                let width = Width::_32; // FIXME
-                if value == 0 {
-                    self.builder.ins(Instr::LoadZero { w: width, rd });
+                if value == Int::ZERO {
+                    self.builder.ins(Instr::LoadIntZero { rd });
                     return;
                 }
-                let imm = self.builder.constant(Value::new_sint(value, width));
+                let imm = self.builder.constant(Value::new_int(value));
                 self.builder.ins(Instr::Load { rd, imm });
             }
             &Lit::Float(sym) => {
                 let value = self.sym_table.get_str(sym).parse().unwrap(); // FIXME: unwrap
-                let width = Width::_64; // FIXME
                 if value == 0.0 {
-                    self.builder.ins(Instr::LoadFZero { w: width, rd });
+                    self.builder.ins(Instr::LoadF64Zero { rd }); // FIXME
                     return;
                 }
                 let imm = self.builder.constant(Value::new_f64(value)); // FIXME
