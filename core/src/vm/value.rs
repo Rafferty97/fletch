@@ -1,12 +1,11 @@
 use std::hint::unreachable_unchecked;
-use std::mem::ManuallyDrop;
+use std::mem::{ManuallyDrop, offset_of};
 use std::ops::Deref;
 use std::os::raw::c_void;
 use std::ptr;
 use std::rc::Rc;
 
-use arcstr::ArcStr;
-use num_bigint::BigInt;
+use num_bigint::{BigInt, Sign};
 use ordered_float::OrderedFloat;
 use triomphe::{Arc, ThinArc};
 
@@ -30,7 +29,8 @@ enum Variant {
     Float32(OrderedFloat<f32>),
     Float64(OrderedFloat<f64>),
     Func(FuncId),
-    Str(ArcStr),
+    Str(ThinArc<(), u8>),
+    BigInt(ThinArc<Sign, u32>),
     Array(ThinArc<(), Value>),
     Tuple(ThinArc<(), Value>),
     Struct(ThinArc<(), (Symbol, Value)>),
@@ -45,9 +45,10 @@ enum VariantRef<'a> {
     Float64(OrderedFloat<f64>),
     Func(FuncId),
     Str(&'a str),
-    Array(&'a [Value]),
-    Tuple(&'a [Value]),
-    Struct(&'a [(Symbol, Value)]),
+    BigInt(&'a <ThinArc<Sign, u32> as Deref>::Target),
+    Array(&'a <ThinArc<(), Value> as Deref>::Target),
+    Tuple(&'a <ThinArc<(), Value> as Deref>::Target),
+    Struct(&'a <ThinArc<(), (Symbol, Value)> as Deref>::Target),
 }
 
 pub type Int = BigInt;
@@ -96,7 +97,7 @@ impl Value {
         I::IntoIter: ExactSizeIterator,
     {
         let alloc = ThinArc::from_header_and_iter((), values.into_iter());
-        // Self(ValueInner::Array(alloc))
+        // Self(VariantRef::Array(alloc))
         todo!()
     }
 
@@ -106,7 +107,7 @@ impl Value {
         I::IntoIter: ExactSizeIterator,
     {
         let alloc = ThinArc::from_header_and_iter((), values.into_iter());
-        // Self(ValueInner::Tuple(alloc))
+        // Self(VariantRef::Tuple(alloc))
         todo!()
     }
 
@@ -116,51 +117,50 @@ impl Value {
 
     pub fn as_bool(&self) -> bool {
         match self.variant() {
-            Variant::Bool(v) => v,
+            VariantRef::Bool(v) => v,
             _ => panic!("expected a boolean value"),
         }
     }
 
-    pub fn as_int(&self) -> &Int {
+    pub fn as_int(&self) -> Int {
         match self.variant() {
-            Variant::Int48(_) => todo!(),
-            Variant::Boxed(_) => todo!(),
+            VariantRef::Int48(value) => Int::from(value),
+            VariantRef::BigInt(boxed) => Int::from_slice(boxed.header.header, &boxed.slice),
             _ => panic!("expected an integer value"),
         }
     }
 
     pub fn as_f32(&self) -> f32 {
         match self.variant() {
-            Variant::Float32(v) => v.0,
+            VariantRef::Float32(v) => v.0,
             _ => panic!("expected an f32 value"),
         }
     }
 
     pub fn as_f64(&self) -> f64 {
         match self.variant() {
-            Variant::Float64(v) => v.0,
+            VariantRef::Float64(v) => v.0,
             _ => panic!("expected an f64 value"),
         }
     }
 
     pub fn as_func(&self) -> FuncId {
         match self.variant() {
-            Variant::Func(v) => v,
+            VariantRef::Func(v) => v,
             _ => panic!("expected a function value"),
         }
     }
 
     pub fn as_array(&self) -> &[Value] {
         match self.variant() {
-            Variant::Boxed(_) => todo!(),
-            // ValueInner::Array(alloc) => &alloc.slice,
+            VariantRef::Array(boxed) => &boxed.slice,
             _ => panic!("expected an array value"),
         }
     }
 
     pub fn as_tuple(&self) -> &[Value] {
         match self.variant() {
-            Variant::Tuple(alloc) => &alloc.slice,
+            VariantRef::Tuple(boxed) => &boxed.slice,
             _ => panic!("expected a tuple value"),
         }
     }
@@ -189,10 +189,11 @@ impl Value {
                 ptr::without_provenance((value.to_bits() ^ NAN_MASK) as _)
             }
             Variant::Func(func_id) => inline(5, func_id.0 as u64),
-            Variant::Str(value) => boxed(6, value.as_ptr()),
-            Variant::Array(value) => boxed(7, value.as_ptr()),
-            Variant::Tuple(value) => boxed(7, value.as_ptr()),
-            Variant::Struct(value) => boxed(7, value.as_ptr()),
+            Variant::Str(value) => boxed(6, value.into_raw()),
+            Variant::BigInt(value) => boxed(7, value.into_raw()),
+            Variant::Array(value) => boxed(8, value.into_raw()),
+            Variant::Tuple(value) => boxed(9, value.into_raw()),
+            Variant::Struct(value) => boxed(10, value.into_raw()),
         };
 
         Self { ptr }
@@ -210,49 +211,76 @@ impl Value {
             4 => VariantRef::Float32(f32::from_bits(value as u32).into()),
             5 => VariantRef::Func(FuncId(value as u32)),
             6 => unsafe {
-                let ptr = ptr::NonNull::new_unchecked(ptr.cast_mut());
-                let ptr = ManuallyDrop::new(ArcStr::from_raw(ptr.cast()));
-                VariantRef::Str(ptr.as_str());
+                let arc = ManuallyDrop::new(ThinArc::<(), _>::from_raw(ptr));
+                let slice = &*(&arc.slice as *const _);
+                VariantRef::Str(str::from_utf8_unchecked(slice))
             },
-            7 => VariantRef::Array(unsafe { std::mem::transmute(ptr) }),
-            8 => VariantRef::Tuple(unsafe { std::mem::transmute(ptr) }),
-            9 => VariantRef::Struct(unsafe { std::mem::transmute(ptr) }),
+            7 => unsafe {
+                let arc = ManuallyDrop::new(ThinArc::from_raw(ptr));
+                let slice = &*(&**arc as *const _);
+                VariantRef::BigInt(slice)
+            },
+            8 => unsafe {
+                let arc = ManuallyDrop::new(ThinArc::from_raw(ptr));
+                let slice = &*(&**arc as *const _);
+                VariantRef::Array(slice)
+            },
+            9 => unsafe {
+                let arc = ManuallyDrop::new(ThinArc::from_raw(ptr));
+                let slice = &*(&**arc as *const _);
+                VariantRef::Tuple(slice)
+            },
+            10 => unsafe {
+                let arc = ManuallyDrop::new(ThinArc::from_raw(ptr));
+                let slice = &*(&**arc as *const _);
+                VariantRef::Struct(slice)
+            },
             _ => VariantRef::Float64(f64::from_bits(value ^ NAN_MASK).into()),
         }
     }
+
+    // fn foo(&self) {
+    //     let offset = offset_of!(<ThinArc<(), u8> as Deref>::Target, slice[0]);
+    //     let head = unsafe { &*(self.ptr.byte_add(offset) as *const Head) };
+    //     match head {
+    //         Head::Scalar => ValueKind::BoxedScalar(unsafe { std::mem::transmute(&self.ptr) }),
+    //         Head::Str => ValueKind::Str(unsafe { std::mem::transmute(&self.ptr) }),
+    //         Head::Values => ValueKind::Values(unsafe { std::mem::transmute(&self.ptr) }),
+    //     }
+    // }
 }
 
 impl std::fmt::Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.variant() {
-            // ValueInner::Unit => write!(f, "()"),
-            // ValueInner::Null => write!(f, "null"),
-            // ValueInner::Bool(false) => write!(f, "false"),
-            // ValueInner::Bool(true) => write!(f, "true"),
-            // ValueInner::Int(value) => write!(f, "{}", value),
-            // ValueInner::Float32(value) => write!(f, "{}", value),
-            // ValueInner::Float64(value) => write!(f, "{}", value),
-            // ValueInner::Str(value) => write!(f, "\"{}\"", escape::escape(value)),
-            // ValueInner::Array(value) => match &value.slice {
-            //     [] => write!(f, "[]"),
-            //     [first, rest @ ..] => {
-            //         write!(f, "[{first}")?;
-            //         rest.iter().try_for_each(|v| write!(f, ", {v}"))?;
-            //         write!(f, "]")
-            //     }
-            // },
-            // ValueInner::Tuple(value) => match &value.slice {
-            //     [] => write!(f, "()"),
-            //     [first] => write!(f, "({first},)"),
-            //     [first, rest @ ..] => {
-            //         write!(f, "({first}")?;
-            //         rest.iter().try_for_each(|v| write!(f, ", {v}"))?;
-            //         write!(f, ")")
-            //     }
-            // },
-            // ValueInner::Struct(value) => todo!(),
-            // ValueInner::Func(value) => write!(f, "<func:{}>", value.0), // FIXME: function name
-            _ => todo!(),
+            VariantRef::Unit => write!(f, "()"),
+            VariantRef::Null => write!(f, "null"),
+            VariantRef::Bool(false) => write!(f, "false"),
+            VariantRef::Bool(true) => write!(f, "true"),
+            VariantRef::Int48(value) => write!(f, "{}", value),
+            VariantRef::Float32(value) => write!(f, "{}", value),
+            VariantRef::Float64(value) => write!(f, "{}", value),
+            VariantRef::Str(boxed) => write!(f, "\"{}\"", escape::escape(boxed)),
+            VariantRef::BigInt(boxed) => write!(f, "{}", BigInt::from_slice(boxed.header.header, &boxed.slice)),
+            VariantRef::Array(boxed) => match &boxed.slice {
+                [] => write!(f, "[]"),
+                [first, rest @ ..] => {
+                    write!(f, "[{first}")?;
+                    rest.iter().try_for_each(|v| write!(f, ", {v}"))?;
+                    write!(f, "]")
+                }
+            },
+            VariantRef::Tuple(boxed) => match &boxed.slice {
+                [] => write!(f, "()"),
+                [first] => write!(f, "({first},)"),
+                [first, rest @ ..] => {
+                    write!(f, "({first}")?;
+                    rest.iter().try_for_each(|v| write!(f, ", {v}"))?;
+                    write!(f, ")")
+                }
+            },
+            VariantRef::Struct(boxed) => todo!(),
+            VariantRef::Func(boxed) => write!(f, "<func:{}>", boxed.0), // FIXME: function name
         }
     }
 }
