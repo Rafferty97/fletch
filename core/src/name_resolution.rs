@@ -68,7 +68,6 @@ impl<'a> NameResolution<'a> {
             self.defs.insert(def_id, binding_info);
             self.scopes.last_mut().unwrap().insert(sym, def_id);
             self.print_def_id = Some(def_id);
-            println!("print_def_id = {def_id:?}");
         }
 
         for func in &program.funcs {

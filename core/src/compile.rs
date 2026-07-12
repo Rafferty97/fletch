@@ -183,10 +183,7 @@ impl<'a> Compiler<'a> {
                     (UnaryOp::Not, _) => unreachable!(),
 
                     (UnaryOp::Negate, TyKind::Int(_)) => self.builder.ins(Instr::Neg { r0, rd }),
-                    (UnaryOp::Negate, TyKind::Float(ty)) => {
-                        println!("asdfasdf: {ty:?}, {r0:?}, {rd:?}");
-                        self.builder.ins(Instr::FNeg { w: ty, r0, rd })
-                    }
+                    (UnaryOp::Negate, TyKind::Float(ty)) => self.builder.ins(Instr::FNeg { w: ty, r0, rd }),
                     (UnaryOp::Negate, _) => unreachable!(),
                 }
                 rd
