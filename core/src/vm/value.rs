@@ -198,3 +198,36 @@ impl std::ops::Deref for FuncObjRef {
         &*self.0
     }
 }
+
+#[cfg(test)]
+mod test {
+    use crate::vm::value::Value;
+
+    #[test]
+    fn roundtrip_primitive_values() {
+        assert_eq!(Value::new_unit().to_string(), "()");
+        assert_eq!(Value::new_null().to_string(), "null");
+        assert_eq!(Value::new_bool(false).to_string(), "false");
+        assert_eq!(Value::new_bool(true).to_string(), "true");
+        assert_eq!(Value::new_int(0.into()).to_string(), "0");
+        assert_eq!(Value::new_int(1.into()).to_string(), "1");
+        assert_eq!(Value::new_int(2.into()).to_string(), "2");
+        assert_eq!(Value::new_int(i32::MAX.into()).to_string(), i32::MAX.to_string());
+        assert_eq!(Value::new_int(i32::MIN.into()).to_string(), i32::MIN.to_string());
+        assert_eq!(Value::new_int(i64::MAX.into()).to_string(), i64::MAX.to_string());
+        assert_eq!(Value::new_int(i64::MIN.into()).to_string(), i64::MIN.to_string());
+        assert_eq!(Value::new_int(i128::MAX.into()).to_string(), i128::MAX.to_string());
+        assert_eq!(Value::new_int(i128::MIN.into()).to_string(), i128::MIN.to_string());
+        assert_eq!(Value::new_str("").to_string(), r#""""#);
+        assert_eq!(Value::new_str("hello world").to_string(), r#""hello world""#);
+        assert_eq!(Value::new_str("hello\nworld").to_string(), r#""hello\nworld""#);
+        assert_eq!(Value::new_f32(0.0).to_string(), "0");
+        assert_eq!(Value::new_f32(1.0).to_string(), "1");
+        assert_eq!(Value::new_f32(10.0).to_string(), "10");
+        assert_eq!(Value::new_f32(123.25).to_string(), "123.25");
+        assert_eq!(Value::new_f64(0.0).to_string(), "0");
+        assert_eq!(Value::new_f64(1.0).to_string(), "1");
+        assert_eq!(Value::new_f64(10.0).to_string(), "10");
+        assert_eq!(Value::new_f64(123.25).to_string(), "123.25");
+    }
+}
