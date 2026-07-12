@@ -1,4 +1,6 @@
 use std::hint::unreachable_unchecked;
+use std::mem::ManuallyDrop;
+use std::ops::Deref;
 use std::os::raw::c_void;
 use std::ptr;
 use std::rc::Rc;
@@ -28,23 +30,41 @@ enum Variant {
     Float32(OrderedFloat<f32>),
     Float64(OrderedFloat<f64>),
     Func(FuncId),
-    Boxed(*const c_void),
+    Str(ArcStr),
+    Array(ThinArc<(), Value>),
+    Tuple(ThinArc<(), Value>),
+    Struct(ThinArc<(), (Symbol, Value)>),
+}
+
+enum VariantRef<'a> {
+    Unit,
+    Null,
+    Bool(bool),
+    Int48(i64),
+    Float32(OrderedFloat<f32>),
+    Float64(OrderedFloat<f64>),
+    Func(FuncId),
+    Str(&'a str),
+    Array(&'a [Value]),
+    Tuple(&'a [Value]),
+    Struct(&'a [(Symbol, Value)]),
 }
 
 pub type Int = BigInt;
 
 const NAN_MASK: u64 = 0x7FFF_0000_0000_0000;
+const CANONICAL_NAN: f64 = f64::from_bits(0x7FF0_0000_0000_0001);
 
 impl Value {
-    pub const fn new_null() -> Self {
+    pub fn new_null() -> Self {
         Self::from_variant(Variant::Null)
     }
 
-    pub const fn new_unit() -> Self {
+    pub fn new_unit() -> Self {
         Self::from_variant(Variant::Unit)
     }
 
-    pub const fn new_bool(value: bool) -> Self {
+    pub fn new_bool(value: bool) -> Self {
         Self::from_variant(Variant::Bool(value))
     }
 
@@ -58,11 +78,11 @@ impl Value {
         Self::from_variant(variant)
     }
 
-    pub const fn new_f32(value: f32) -> Self {
+    pub fn new_f32(value: f32) -> Self {
         Self::from_variant(Variant::Float32(OrderedFloat(value)))
     }
 
-    pub const fn new_f64(value: f64) -> Self {
+    pub fn new_f64(value: f64) -> Self {
         Self::from_variant(Variant::Float64(OrderedFloat(value)))
     }
 
@@ -140,50 +160,64 @@ impl Value {
 
     pub fn as_tuple(&self) -> &[Value] {
         match self.variant() {
-            Variant::Boxed(_) => todo!(),
-            // ValueInner::Tuple(alloc) => &alloc.slice,
+            Variant::Tuple(alloc) => &alloc.slice,
             _ => panic!("expected a tuple value"),
         }
     }
 
     #[cfg(target_pointer_width = "64")]
-    const fn from_variant(variant: Variant) -> Self {
-        let data = match variant {
-            Variant::Unit => (1 << 48) | 0,
-            Variant::Null => (1 << 48) | 1,
-            Variant::Bool(false) => (1 << 48) | 2,
-            Variant::Bool(true) => (1 << 48) | 3,
-            Variant::Int48(value) => (2 << 48) | (((value << 16) as u64) >> 16),
-            Variant::Float32(value) => (3 << 48) | (value.0.to_bits() as u64),
-            Variant::Float64(value) if value.0.is_nan() => (1 << 48) | 4,
-            Variant::Float64(value) => value.0.to_bits() ^ NAN_MASK,
-            Variant::Func(func_id) => (4 << 48) | (func_id.0 as u64),
-            Variant::Boxed(ptr) => return Self { ptr },
+    fn from_variant(variant: Variant) -> Self {
+        fn inline(tag: u64, payload: u64) -> *const c_void {
+            ptr::without_provenance(((tag << 48) | payload) as usize)
+        }
+
+        fn boxed<T>(tag: usize, ptr: *const T) -> *const c_void {
+            ptr.map_addr(|a| a | (tag << 48)).cast()
+        }
+
+        let ptr = match variant {
+            Variant::Unit => inline(0, 0),
+            Variant::Null => inline(1, 0),
+            Variant::Bool(value) => inline(2, value as u64),
+            Variant::Int48(value) => inline(3, ((value << 16) as u64) >> 16),
+            Variant::Float32(value) => inline(4, value.0.to_bits() as u64),
+            Variant::Float64(value) => {
+                let value = match value.is_nan() {
+                    true => CANONICAL_NAN,
+                    false => value.0,
+                };
+                ptr::without_provenance((value.to_bits() ^ NAN_MASK) as _)
+            }
+            Variant::Func(func_id) => inline(5, func_id.0 as u64),
+            Variant::Str(value) => boxed(6, value.as_ptr()),
+            Variant::Array(value) => boxed(7, value.as_ptr()),
+            Variant::Tuple(value) => boxed(7, value.as_ptr()),
+            Variant::Struct(value) => boxed(7, value.as_ptr()),
         };
 
-        Self { ptr: ptr::without_provenance(data as usize) }
+        Self { ptr }
     }
 
     #[cfg(target_pointer_width = "64")]
-    fn variant(&self) -> Variant {
+    fn variant<'a>(&'a self) -> VariantRef<'a> {
         let value = self.ptr.addr() as u64;
+        let ptr = self.ptr.map_addr(|a| a & 0xffff_ffff_ffff);
         match value >> 48 {
-            0 => Variant::Boxed(self.ptr),
-            1 => match value & 0xF {
-                0 => Variant::Unit,
-                1 => Variant::Null,
-                2 => Variant::Bool(false),
-                3 => Variant::Bool(true),
-                4 => Variant::Float64(f64::NAN.into()),
-                _ => {
-                    debug_assert!(false, "invalid subtag {}", value & 0xF);
-                    unsafe { unreachable_unchecked() }
-                }
+            0 => VariantRef::Unit,
+            1 => VariantRef::Null,
+            2 => VariantRef::Bool(value & 1 != 0),
+            3 => VariantRef::Int48(((value << 16) as i64) >> 16),
+            4 => VariantRef::Float32(f32::from_bits(value as u32).into()),
+            5 => VariantRef::Func(FuncId(value as u32)),
+            6 => unsafe {
+                let ptr = ptr::NonNull::new_unchecked(ptr.cast_mut());
+                let ptr = ManuallyDrop::new(ArcStr::from_raw(ptr.cast()));
+                VariantRef::Str(ptr.as_str());
             },
-            2 => Variant::Int48(((value << 16) as i64) >> 16),
-            3 => Variant::Float32(f32::from_bits(value as u32).into()),
-            4 => Variant::Func(FuncId(value as u32)),
-            _ => Variant::Float64(f64::from_bits(value ^ NAN_MASK).into()),
+            7 => VariantRef::Array(unsafe { std::mem::transmute(ptr) }),
+            8 => VariantRef::Tuple(unsafe { std::mem::transmute(ptr) }),
+            9 => VariantRef::Struct(unsafe { std::mem::transmute(ptr) }),
+            _ => VariantRef::Float64(f64::from_bits(value ^ NAN_MASK).into()),
         }
     }
 }
@@ -232,7 +266,7 @@ impl std::fmt::Debug for Value {
 impl Clone for Value {
     fn clone(&self) -> Self {
         match self.variant() {
-            Variant::Boxed(ptr) => todo!(),
+            VariantRef::Str(_) => todo!(),
             other => Self { ptr: self.ptr },
         }
     }
