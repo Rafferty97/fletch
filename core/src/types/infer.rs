@@ -187,7 +187,7 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
     }
 
     /// Substitutes occurances of type variables with their current upper or lower bound
-    fn substitute_vars(self, ty: Ty<'ty>, bounds: &[TyBounds<'ty>], bound: Bound) -> Ty<'ty> {
+    pub fn substitute_vars(self, ty: Ty<'ty>, bounds: &[TyBounds<'ty>], bound: Bound) -> Ty<'ty> {
         self.transform_with_variance(ty, |ty, variance| match ty.kind() {
             TyKind::Param(idx) => match (bound, variance) {
                 (Bound::Upper, Variance::Co) => bounds[idx.0 as usize].upper,

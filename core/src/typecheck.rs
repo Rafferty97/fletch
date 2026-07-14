@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 use bumpalo::Bump;
+use codespan_reporting::diagnostic;
 use fnv::FnvHashMap;
 use itertools::Itertools;
 use thiserror::Error;
@@ -12,7 +13,7 @@ use crate::ast::{
 use crate::diagnostics::{Diagnostic, DiagnosticReporter};
 use crate::interner::IndexTable;
 use crate::name_resolution::{DefId, NameTables};
-use crate::types::infer::{TyBounds, TypeError};
+use crate::types::infer::{Bound, TyBounds, TypeError};
 use crate::types::ty::{ParamId, VarId};
 use crate::types::ty_ctx::TyCtx;
 use crate::types::ty_interners::{CommonTypes, TyInterners};
@@ -125,28 +126,47 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
     }
 
     pub fn check_block(&mut self, ast: &Block, expected: Ty<'ty>) -> Ty<'ty> {
-        // FIXME: push inference state
         for stmt in &ast.stmts {
             self.check_stmt(stmt);
         }
         if let Some(tail) = &ast.tail {
-            self.check_tail(tail, expected)
+            self.check_toplevel_expr(tail, expected)
         } else {
             self.common().unit()
         }
-        // FIXME: pop inference state
+    }
+
+    fn check_toplevel_expr(&mut self, ast: &Expr, expected: Ty<'ty>) -> Ty<'ty> {
+        self.ty_vars.push(vec![]);
+        let mut ret = self.ty_ctx.common().pending;
+
+        let mut cnt = 0;
+        while !ret.is_final() {
+            if cnt == 10 {
+                let diagnostic = Diagnostic::error("hit iteration limit", Span::dummy());
+                self.errors.report_err(diagnostic);
+                break;
+            }
+
+            ret = self.check_expr(ast, expected);
+            cnt += 1;
+        }
+
+        // FIXME: check all inference vars are resolved
+        self.ty_vars.pop();
+
+        ret
     }
 
     fn check_stmt(&mut self, ast: &Stmt) {
-        self.ty_vars.push(vec![]);
         match &ast.node {
             StmtKind::Expr(expr) => {
-                self.check_expr(&*expr, self.common().infer);
+                self.check_toplevel_expr(&*expr, self.common().infer);
             }
             StmtKind::Let(name, ty, value, _) => {
                 let def_id = *self.name_tables.uses.get(&name.id).unwrap(); // FIXME
                 let expected = ty.as_ref().map(|ty| self.lower_ty(ty)).unwrap_or(self.common().infer);
-                let ty = self.check_expr(&*value, expected);
+                let ty = self.check_toplevel_expr(&*value, expected);
                 if let Ok(def_id) = def_id {
                     self.def_map.insert(def_id, Def::Var(ty)); // FIXME?
                 }
@@ -160,27 +180,26 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     .and_then(|def_id| self.def_map.get(&def_id))
                     .and_then(|def| def.as_var())
                     .unwrap_or(self.common().infer);
-                self.check_expr(rhs, expected);
+                self.check_toplevel_expr(rhs, expected);
             }
         }
-        // FIXME: check all inference vars are resolved
-        self.ty_vars.pop();
-    }
-
-    fn check_tail(&mut self, ast: &Expr, expected: Ty<'ty>) -> Ty<'ty> {
-        self.ty_vars.push(vec![]);
-        let ret = self.check_expr(ast, expected);
-        // FIXME: check all inference vars are resolved
-        self.ty_vars.pop();
-        ret
     }
 
     fn infer_expr(&mut self, ast: &Expr) -> Ty<'ty> {
         self.check_expr(ast, self.common().infer)
     }
 
-    fn check_expr(&mut self, ast: &Expr, expected: Ty<'ty>) -> Ty<'ty> {
-        let actual = match &ast.node {
+    fn check_expr(&mut self, ast: &Expr, mut expected: Ty<'ty>) -> Ty<'ty> {
+        if let Some(&ty) = self.type_map.get(&ast.id) {
+            return ty;
+        }
+
+        let vars = self.ty_vars.last().expect("not in expression");
+        if !vars.is_empty() {
+            expected = self.ty_ctx.substitute_vars(expected, vars, Bound::Upper);
+        };
+
+        let mut actual = match &ast.node {
             ExprKind::Lit(lit) => match lit {
                 Lit::Null => self.common().opt_never,
                 Lit::Bool(_) => self.common().bool,
@@ -311,20 +330,24 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             ExprKind::Block(block) => self.check_block(block, expected),
         };
 
-        let ty = if expected.is_final() {
-            match self.ty_ctx.reconcile(actual, expected) {
-                Ok(ty) => ty,
-                Err(err) => {
-                    let diagnostic = Diagnostic::error(err.to_string(), ast.span);
-                    self.ty_ctx.mk_error(self.errors.report_err(diagnostic))
-                }
+        let vars = self.ty_vars.last().expect("not in expression");
+        if !vars.is_empty() {
+            actual = self.ty_ctx.substitute_vars(expected, vars, Bound::Lower);
+        };
+
+        if !expected.is_final() {
+            return actual;
+        }
+
+        let ty = match self.ty_ctx.reconcile(actual, expected) {
+            Ok(ty) => ty,
+            Err(err) => {
+                let diagnostic = Diagnostic::error(err.to_string(), ast.span);
+                self.ty_ctx.mk_error(self.errors.report_err(diagnostic))
             }
-        } else {
-            actual
         };
 
         self.type_map.insert(ast.id, ty);
-
         ty
     }
 
