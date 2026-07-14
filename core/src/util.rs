@@ -39,4 +39,8 @@ impl<T> IdGen<T> {
     pub fn next(&self) -> T {
         (self.make)(self.next_id.fetch_add(1, Ordering::Relaxed))
     }
+
+    pub fn reset(&mut self) {
+        self.next_id.store(1, Ordering::Relaxed);
+    }
 }

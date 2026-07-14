@@ -12,7 +12,7 @@ use crate::ast::{
 use crate::diagnostics::{Diagnostic, DiagnosticReporter};
 use crate::interner::IndexTable;
 use crate::name_resolution::{DefId, NameTables};
-use crate::types::infer::TypeError;
+use crate::types::infer::{TyBounds, TypeError};
 use crate::types::ty::{ParamId, VarId};
 use crate::types::ty_ctx::TyCtx;
 use crate::types::ty_interners::{CommonTypes, TyInterners};
@@ -26,7 +26,7 @@ pub struct TypeChecker<'a, 'ty> {
     def_map: FnvHashMap<DefId, Def<'ty>>,
     sym_table: &'a IndexTable<'a, Symbol, str>,
     errors: &'a dyn DiagnosticReporter,
-    ty_vars: IdGen<VarId>,
+    ty_vars: Vec<Vec<TyBounds<'ty>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -59,7 +59,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             def_map: FnvHashMap::default(),
             sym_table,
             errors,
-            ty_vars: IdGen::new(VarId),
+            ty_vars: vec![],
         }
     }
 
@@ -125,17 +125,20 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
     }
 
     pub fn check_block(&mut self, ast: &Block, expected: Ty<'ty>) -> Ty<'ty> {
+        // FIXME: push inference state
         for stmt in &ast.stmts {
             self.check_stmt(stmt);
         }
         if let Some(tail) = &ast.tail {
-            self.check_expr(tail, expected)
+            self.check_tail(tail, expected)
         } else {
             self.common().unit()
         }
+        // FIXME: pop inference state
     }
 
     fn check_stmt(&mut self, ast: &Stmt) {
+        self.ty_vars.push(vec![]);
         match &ast.node {
             StmtKind::Expr(expr) => {
                 self.check_expr(&*expr, self.common().infer);
@@ -160,6 +163,16 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 self.check_expr(rhs, expected);
             }
         }
+        // FIXME: check all inference vars are resolved
+        self.ty_vars.pop();
+    }
+
+    fn check_tail(&mut self, ast: &Expr, expected: Ty<'ty>) -> Ty<'ty> {
+        self.ty_vars.push(vec![]);
+        let ret = self.check_expr(ast, expected);
+        // FIXME: check all inference vars are resolved
+        self.ty_vars.pop();
+        ret
     }
 
     fn infer_expr(&mut self, ast: &Expr) -> Ty<'ty> {
@@ -181,8 +194,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     .uses
                     .get(&name.id)
                     .unwrap() // FIXME: unwrap
-                    .map(|def_id| self.def_map.get(&def_id).unwrap()) // FIXME: unwrap
-                    .map(|def| self.def_ty(def))
+                    .map(|def_id| self.def_ty(def_id))
                     .unwrap_or_else(|err| self.ty_ctx.mk_error(err)) // FIXME: unwrap
             }
             ExprKind::Unary(op, rhs, span) => {
@@ -374,11 +386,17 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
         self.ty_ctx.common()
     }
 
-    fn def_ty(&self, def: &Def<'ty>) -> Ty<'ty> {
+    fn def_ty(&mut self, def_id: DefId) -> Ty<'ty> {
+        let def = self.def_map.get(&def_id).unwrap(); // FIXME: unwrap
+        let mut vars = self.ty_vars.last_mut().expect("not in statement");
         match def {
             Def::Var(ty) => *ty,
             Def::Func(func) => {
-                let vars = func.ty_params.iter().map(|_| self.fresh_ty_var()).collect_vec();
+                let vars = func
+                    .ty_params
+                    .iter()
+                    .map(|_| Self::fresh_ty_var(self.ty_ctx, vars))
+                    .collect_vec();
                 let params = func
                     .params
                     .iter()
@@ -390,8 +408,10 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
         }
     }
 
-    fn fresh_ty_var(&self) -> Ty<'ty> {
-        self.ty_ctx.mk_var(self.ty_vars.next())
+    fn fresh_ty_var(ctx: TyCtx<'_, 'ty>, vars: &mut Vec<TyBounds<'ty>>) -> Ty<'ty> {
+        let id = VarId(vars.len() as u32);
+        vars.push(ctx.new_bounds());
+        ctx.mk_var(id)
     }
 }
 
