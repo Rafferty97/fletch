@@ -13,10 +13,11 @@ use crate::diagnostics::{Diagnostic, DiagnosticReporter};
 use crate::interner::IndexTable;
 use crate::name_resolution::{DefId, NameTables};
 use crate::types::infer::TypeError;
+use crate::types::ty::{ParamId, VarId};
 use crate::types::ty_ctx::TyCtx;
 use crate::types::ty_interners::{CommonTypes, TyInterners};
 use crate::types::{Ty, TyKind};
-use crate::util::Args;
+use crate::util::{Args, IdGen};
 
 pub struct TypeChecker<'a, 'ty> {
     ty_ctx: TyCtx<'a, 'ty>,
@@ -25,6 +26,7 @@ pub struct TypeChecker<'a, 'ty> {
     def_map: FnvHashMap<DefId, Def<'ty>>,
     sym_table: &'a IndexTable<'a, Symbol, str>,
     errors: &'a dyn DiagnosticReporter,
+    ty_vars: IdGen<VarId>,
 }
 
 #[derive(Clone, Debug)]
@@ -57,6 +59,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             def_map: FnvHashMap::default(),
             sym_table,
             errors,
+            ty_vars: IdGen::new(VarId),
         }
     }
 
@@ -86,14 +89,18 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
     pub fn check_func_signature(&mut self, ast: &Func) {
         // FIXME: dedupe logic with `check_func_body`
         let def_id = self.name_tables.uses[&ast.name.id].unwrap();
-        let param_tys = ast.params.iter().map(|(_, ty)| self.lower_ty(ty)).collect_vec();
+        let param_tys = ast
+            .params
+            .iter()
+            .map(|(_, ty)| self.lower_ty_with_params(ty, &ast.ty_params))
+            .collect_vec();
         let ret_ty = ast
             .ret
             .as_ref()
-            .map(|ty| self.lower_ty(ty))
+            .map(|ty| self.lower_ty_with_params(ty, &ast.ty_params))
             .unwrap_or(self.common().unit());
         let func = FuncDef {
-            name: self.sym_table.find_str("print").unwrap(),
+            name: ast.name.sym,
             ty_params: ast.ty_params.clone(),
             params: param_tys,
             ret: ret_ty,
@@ -104,7 +111,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
     pub fn check_func_body(&mut self, ast: &Func) {
         for (name, ty) in &ast.params {
             let def_id = *self.name_tables.uses.get(&name.id).unwrap(); // FIXME
-            let ty = self.lower_ty(ty);
+            let ty = self.lower_ty_with_params(ty, &ast.ty_params);
             if let Ok(def_id) = def_id {
                 self.def_map.insert(def_id, Def::Var(ty));
             }
@@ -112,7 +119,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
         let ret_ty = ast
             .ret
             .as_ref()
-            .map(|ty| self.lower_ty(ty))
+            .map(|ty| self.lower_ty_with_params(ty, &ast.ty_params))
             .unwrap_or(self.common().unit());
         self.check_block(&ast.body, ret_ty);
     }
@@ -175,7 +182,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     .get(&name.id)
                     .unwrap() // FIXME: unwrap
                     .map(|def_id| self.def_map.get(&def_id).unwrap()) // FIXME: unwrap
-                    .map(|def| def.ty(self.ty_ctx)) // FIXME: unwrap
+                    .map(|def| self.def_ty(def))
                     .unwrap_or_else(|err| self.ty_ctx.mk_error(err)) // FIXME: unwrap
             }
             ExprKind::Unary(op, rhs, span) => {
@@ -310,42 +317,54 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
     }
 
     fn lower_ty(&mut self, ast: &ast::Ty) -> Ty<'ty> {
+        self.lower_ty_with_params(ast, &[])
+    }
+
+    fn lower_ty_with_params(&mut self, ast: &ast::Ty, ty_params: &[Ident]) -> Ty<'ty> {
         match &ast.node {
             ast::TyKind::Infer => self.common().infer,
-            ast::TyKind::Var(ident) => match self.sym_table.get_str(ident.sym) {
-                "never" => self.common().never,
-                "null" => self.common().opt_never,
-                "bool" => self.common().bool,
-                "uint8" => self.common().uint8,
-                "uint16" => self.common().uint16,
-                "uint32" => self.common().uint32,
-                "uint64" => self.common().uint64,
-                "uint" => self.common().uint64,
-                "int8" => self.common().int8,
-                "int16" => self.common().int16,
-                "int32" => self.common().int32,
-                "int64" => self.common().int64,
-                "int" => self.common().int64,
-                "float32" => self.common().float32,
-                "float64" => self.common().float64,
-                "float" => self.common().float64,
-                "str" => self.common().str,
-                name => {
-                    let msg = format!("cannot find type '{name}' in scope");
-                    let diagnostic = Diagnostic::error(msg, ident.span);
-                    self.ty_ctx.mk_error(self.errors.report_err(diagnostic))
+            ast::TyKind::Var(ident) => {
+                if let Some(index) = ty_params.iter().position(|p| p.sym == ident.sym) {
+                    return self.ty_ctx.mk_param(ParamId(index as u32));
                 }
-            },
+                match self.sym_table.get_str(ident.sym) {
+                    "never" => self.common().never,
+                    "null" => self.common().opt_never,
+                    "bool" => self.common().bool,
+                    "uint8" => self.common().uint8,
+                    "uint16" => self.common().uint16,
+                    "uint32" => self.common().uint32,
+                    "uint64" => self.common().uint64,
+                    "uint" => self.common().uint64,
+                    "int8" => self.common().int8,
+                    "int16" => self.common().int16,
+                    "int32" => self.common().int32,
+                    "int64" => self.common().int64,
+                    "int" => self.common().int64,
+                    "float32" => self.common().float32,
+                    "float64" => self.common().float64,
+                    "float" => self.common().float64,
+                    "str" => self.common().str,
+                    name => {
+                        let msg = format!("cannot find type '{name}' in scope");
+                        let diagnostic = Diagnostic::error(msg, ident.span);
+                        self.ty_ctx.mk_error(self.errors.report_err(diagnostic))
+                    }
+                }
+            }
             ast::TyKind::Nullable(inner) => {
-                let inner = self.lower_ty(inner);
+                let inner = self.lower_ty_with_params(inner, ty_params);
                 self.ty_ctx.mk_nullable(inner)
             }
             ast::TyKind::Array(inner) => {
-                let inner = self.lower_ty(inner);
+                let inner = self.lower_ty_with_params(inner, ty_params);
                 self.ty_ctx.mk_array(inner)
             }
             ast::TyKind::Tuple(tys) => {
-                let tys = tys.into_iter().map(|ty| self.lower_ty(ty)).collect_vec();
+                let tys = tys
+                    .into_iter()
+                    .map(|ty| self.lower_ty_with_params(ty, ty_params))
+                    .collect_vec();
                 self.ty_ctx.mk_tuple(&tys)
             }
         }
@@ -354,6 +373,26 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
     fn common(&self) -> &CommonTypes<'ty> {
         self.ty_ctx.common()
     }
+
+    fn def_ty(&self, def: &Def<'ty>) -> Ty<'ty> {
+        match def {
+            Def::Var(ty) => *ty,
+            Def::Func(func) => {
+                let vars = func.ty_params.iter().map(|_| self.fresh_ty_var()).collect_vec();
+                let params = func
+                    .params
+                    .iter()
+                    .map(|ty| self.ty_ctx.substitute_params(*ty, &vars))
+                    .collect_vec();
+                let ret = self.ty_ctx.substitute_params(func.ret, &vars);
+                self.ty_ctx.mk_func(&params, ret)
+            }
+        }
+    }
+
+    fn fresh_ty_var(&self) -> Ty<'ty> {
+        self.ty_ctx.mk_var(self.ty_vars.next())
+    }
 }
 
 impl<'ty> Def<'ty> {
@@ -361,13 +400,6 @@ impl<'ty> Def<'ty> {
         match self {
             Self::Var(ty) => Some(*ty),
             _ => None,
-        }
-    }
-
-    pub fn ty(&self, ty_ctx: TyCtx<'_, 'ty>) -> Ty<'ty> {
-        match self {
-            Self::Var(ty) => *ty,
-            Self::Func(func) => ty_ctx.mk_func(&func.params, func.ret),
         }
     }
 }
