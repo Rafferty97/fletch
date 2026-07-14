@@ -166,7 +166,7 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
     pub fn instantiate(self, params: &mut [Ty<'ty>]) -> usize {
         let mut var_cnt = 0;
         for param in params {
-            *param = self.transform(*param, |ty| match ty.kind() {
+            *param = self.transform(*param, &mut |ty| match ty.kind() {
                 TyKind::Infer => {
                     let ty_var = self.mk_var(VarId(var_cnt));
                     var_cnt += 1;
@@ -180,7 +180,7 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
 
     /// Substitutes occurances of type parameters in the type with their instantiations
     pub fn substitute_params(self, ty: Ty<'ty>, params: &[Ty<'ty>]) -> Ty<'ty> {
-        self.transform(ty, |ty| match ty.kind() {
+        self.transform(ty, &mut |ty| match ty.kind() {
             TyKind::Param(idx) => params[idx.0 as usize],
             _ => ty,
         })
