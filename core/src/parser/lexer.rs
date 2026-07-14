@@ -27,6 +27,8 @@ pub enum Token<'a> {
     If,
     #[token("else")]
     Else,
+    #[token("_", priority = 3)]
+    Underscore,
     #[token("(")]
     LeftParen,
     #[token(")")]
@@ -105,6 +107,7 @@ impl<'a> std::fmt::Display for Token<'a> {
             Self::Var => "'var'",
             Self::If => "'if'",
             Self::Else => "'else'",
+            Self::Underscore => "'_'",
             Self::LeftParen => "'('",
             Self::RightParen => "')'",
             Self::LeftBrace => "'{'",

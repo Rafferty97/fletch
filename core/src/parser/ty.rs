@@ -15,6 +15,10 @@ impl<'a, 'sym> Parser<'a, 'sym> {
     pub(super) fn parse_ty(&mut self) -> Result<Ty> {
         let start = self.curr_pos();
         let mut ty = match self.peek() {
+            Token::Underscore => {
+                self.consume();
+                self.make_spanned(start, TyKind::Infer)
+            }
             Token::Ident(_) => {
                 let ident = self.parse_ident()?;
                 let span = ident.span;
