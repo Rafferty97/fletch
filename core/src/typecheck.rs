@@ -6,7 +6,9 @@ use itertools::Itertools;
 use thiserror::Error;
 
 use crate::ast::span::Span;
-use crate::ast::{self, BinOp, Block, Expr, ExprKind, Func, Lit, NodeId, Program, Stmt, StmtKind, Symbol, UnaryOp};
+use crate::ast::{
+    self, BinOp, Block, Expr, ExprKind, Func, Ident, Lit, NodeId, Program, Stmt, StmtKind, Symbol, UnaryOp,
+};
 use crate::diagnostics::{Diagnostic, DiagnosticReporter};
 use crate::interner::IndexTable;
 use crate::name_resolution::{DefId, NameTables};
@@ -20,9 +22,23 @@ pub struct TypeChecker<'a, 'ty> {
     ty_ctx: TyCtx<'a, 'ty>,
     name_tables: &'a NameTables,
     type_map: FnvHashMap<NodeId, Ty<'ty>>,
-    def_map: FnvHashMap<DefId, Ty<'ty>>,
+    def_map: FnvHashMap<DefId, Def<'ty>>,
     sym_table: &'a IndexTable<'a, Symbol, str>,
     errors: &'a dyn DiagnosticReporter,
+}
+
+#[derive(Clone, Debug)]
+pub enum Def<'ty> {
+    Func(FuncDef<'ty>),
+    Var(Ty<'ty>),
+}
+
+#[derive(Clone, Debug)]
+pub struct FuncDef<'ty> {
+    name: Symbol,
+    ty_params: Vec<Ident>,
+    params: Vec<Ty<'ty>>,
+    ret: Ty<'ty>,
 }
 
 pub type Result<'ty, T> = std::result::Result<T, TypeError<'ty>>;
@@ -50,8 +66,13 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
 
     pub fn check_program(&mut self, ast: &Program) {
         if let Some(def_id) = self.name_tables.print_def_id {
-            self.def_map
-                .insert(def_id, self.ty_ctx.mk_func(&[self.common().any], self.common().unit()));
+            let func = FuncDef {
+                name: self.sym_table.find_str("print").unwrap(),
+                ty_params: vec![],
+                params: vec![self.common().any],
+                ret: self.common().unit(),
+            };
+            self.def_map.insert(def_id, Def::Func(func));
         }
 
         for func in &ast.funcs {
@@ -71,8 +92,13 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             .as_ref()
             .map(|ty| self.lower_ty(ty))
             .unwrap_or(self.common().unit());
-        let ty = self.ty_ctx.mk_func(&param_tys, ret_ty);
-        self.def_map.insert(def_id, ty);
+        let func = FuncDef {
+            name: self.sym_table.find_str("print").unwrap(),
+            ty_params: ast.ty_params.clone(),
+            params: param_tys,
+            ret: ret_ty,
+        };
+        self.def_map.insert(def_id, Def::Func(func));
     }
 
     pub fn check_func_body(&mut self, ast: &Func) {
@@ -80,7 +106,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             let def_id = *self.name_tables.uses.get(&name.id).unwrap(); // FIXME
             let ty = self.lower_ty(ty);
             if let Ok(def_id) = def_id {
-                self.def_map.insert(def_id, ty);
+                self.def_map.insert(def_id, Def::Var(ty));
             }
         }
         let ret_ty = ast
@@ -112,17 +138,18 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 let expected = ty.as_ref().map(|ty| self.lower_ty(ty)).unwrap_or(self.common().infer);
                 let ty = self.check_expr(&*value, expected);
                 if let Ok(def_id) = def_id {
-                    self.def_map.insert(def_id, ty); // FIXME?
+                    self.def_map.insert(def_id, Def::Var(ty)); // FIXME?
                 }
             }
             StmtKind::Assign(lhs, rhs) => {
-                let expected = *self
+                let expected = self
                     .name_tables
                     .uses
                     .get(&lhs.id)
                     .and_then(|def_id| def_id.ok())
                     .and_then(|def_id| self.def_map.get(&def_id))
-                    .unwrap_or(&self.common().infer);
+                    .and_then(|def| def.as_var())
+                    .unwrap_or(self.common().infer);
                 self.check_expr(rhs, expected);
             }
         }
@@ -147,7 +174,8 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     .uses
                     .get(&name.id)
                     .unwrap() // FIXME: unwrap
-                    .map(|def_id| *self.def_map.get(&def_id).unwrap()) // FIXME: unwrap
+                    .map(|def_id| self.def_map.get(&def_id).unwrap()) // FIXME: unwrap
+                    .map(|def| def.ty(self.ty_ctx)) // FIXME: unwrap
                     .unwrap_or_else(|err| self.ty_ctx.mk_error(err)) // FIXME: unwrap
             }
             ExprKind::Unary(op, rhs, span) => {
@@ -325,5 +353,21 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
 
     fn common(&self) -> &CommonTypes<'ty> {
         self.ty_ctx.common()
+    }
+}
+
+impl<'ty> Def<'ty> {
+    pub fn as_var(&self) -> Option<Ty<'ty>> {
+        match self {
+            Self::Var(ty) => Some(*ty),
+            _ => None,
+        }
+    }
+
+    pub fn ty(&self, ty_ctx: TyCtx<'_, 'ty>) -> Ty<'ty> {
+        match self {
+            Self::Var(ty) => *ty,
+            Self::Func(func) => ty_ctx.mk_func(&func.params, func.ret),
+        }
     }
 }
