@@ -28,6 +28,7 @@ fn test_undefined_var() {
 fn test_basic_if_stmt() {
     let src = r#"
         fn main() {
+
             var x = 1;
             if x < 10 {
                 x = 2;
