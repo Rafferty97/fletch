@@ -11,7 +11,7 @@ use super::ty::{Ty, TyKind};
 use super::ty_ctx::TyCtx;
 
 /// Represents the infered bounds of a type parameter
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Eq, PartialEq, Debug)]
 pub struct TyBounds<'ty> {
     pub lower: Ty<'ty>,
     pub upper: Ty<'ty>,
@@ -199,8 +199,13 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
         })
     }
 
+    /// Creates an unresolved pair of type bounds
+    pub fn pending_bounds(self) -> TyBounds<'ty> {
+        TyBounds { lower: self.common().pending, upper: self.common().pending }
+    }
+
     /// Creates an empty pair of type bounds
-    pub fn new_bounds(self) -> TyBounds<'ty> {
+    pub fn empty_bounds(self) -> TyBounds<'ty> {
         TyBounds { lower: self.common().never, upper: self.common().any }
     }
 

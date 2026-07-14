@@ -27,7 +27,13 @@ pub struct TypeChecker<'a, 'ty> {
     def_map: FnvHashMap<DefId, Def<'ty>>,
     sym_table: &'a IndexTable<'a, Symbol, str>,
     errors: &'a dyn DiagnosticReporter,
-    ty_vars: Vec<Vec<TyBounds<'ty>>>,
+    ty_vars: Vec<TyVars<'ty>>,
+}
+
+#[derive(Clone, Debug)]
+struct TyVars<'ty> {
+    prev: Vec<TyBounds<'ty>>,
+    next: Vec<TyBounds<'ty>>,
 }
 
 #[derive(Clone, Debug)]
@@ -137,20 +143,22 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
     }
 
     fn check_toplevel_expr(&mut self, ast: &Expr, expected: Ty<'ty>) -> Ty<'ty> {
-        self.ty_vars.push(vec![]);
-        let mut ret = self.ty_ctx.common().pending;
+        self.ty_vars.push(TyVars { prev: vec![], next: vec![] });
 
-        let mut cnt = 0;
-        while !ret.is_final() {
-            if cnt == 10 {
-                let diagnostic = Diagnostic::error("hit iteration limit", Span::dummy());
-                self.errors.report_err(diagnostic);
-                break;
+        let ret = loop {
+            let ret = self.check_expr(ast, expected);
+
+            let vars = self.ty_vars.last_mut().unwrap();
+            if !vars.prev.is_empty() {
+                println!("{:?}", vars.next);
+            }
+            if vars.prev == vars.next {
+                break ret;
             }
 
-            ret = self.check_expr(ast, expected);
-            cnt += 1;
-        }
+            std::mem::swap(&mut vars.prev, &mut vars.next);
+            vars.next.fill(self.ty_ctx.empty_bounds());
+        };
 
         // FIXME: check all inference vars are resolved
         self.ty_vars.pop();
@@ -195,8 +203,9 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
         }
 
         let vars = self.ty_vars.last().expect("not in expression");
-        if !vars.is_empty() {
-            expected = self.ty_ctx.substitute_vars(expected, vars, Bound::Upper);
+        let unsub_expected = expected;
+        if !vars.prev.is_empty() {
+            expected = self.ty_ctx.substitute_vars(expected, &vars.prev, Bound::Upper);
         };
 
         let mut actual = match &ast.node {
@@ -330,9 +339,11 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             ExprKind::Block(block) => self.check_block(block, expected),
         };
 
-        let vars = self.ty_vars.last().expect("not in expression");
-        if !vars.is_empty() {
-            actual = self.ty_ctx.substitute_vars(expected, vars, Bound::Lower);
+        let vars = self.ty_vars.last_mut().expect("not in expression");
+        if !vars.prev.is_empty() {
+            let unsub_actual = actual;
+            actual = self.ty_ctx.substitute_vars(actual, &vars.prev, Bound::Lower);
+            self.ty_ctx.update_bounds(unsub_actual, unsub_expected, &mut vars.next);
         };
 
         if !expected.is_final() {
@@ -431,9 +442,10 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
         }
     }
 
-    fn fresh_ty_var(ctx: TyCtx<'_, 'ty>, vars: &mut Vec<TyBounds<'ty>>) -> Ty<'ty> {
-        let id = VarId(vars.len() as u32);
-        vars.push(ctx.new_bounds());
+    fn fresh_ty_var(ctx: TyCtx<'_, 'ty>, vars: &mut TyVars<'ty>) -> Ty<'ty> {
+        let id = VarId(vars.prev.len() as u32);
+        vars.prev.push(ctx.pending_bounds());
+        vars.next.push(ctx.empty_bounds());
         ctx.mk_var(id)
     }
 }
