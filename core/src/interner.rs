@@ -149,6 +149,12 @@ pub struct IndexTable<'a, S, T: ?Sized> {
 }
 
 impl<'a, S, T: ?Sized> IndexTable<'a, S, T> {
+    pub fn empty() -> &'static Self {
+        Self::from_slice(&[])
+    }
+}
+
+impl<'a, S, T: ?Sized> IndexTable<'a, S, T> {
     pub fn from_slice<'s>(values: &'s [&'a T]) -> &'s Self {
         // SAFETY: repr(transparent) gives IndexTable the same layout and the
         // same pointer metadata (slice length) as [&'a T], so reinterpreting

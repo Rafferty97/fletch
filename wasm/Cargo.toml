@@ -14,7 +14,10 @@ fletch = { path = "../core" }
 wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"
 js-sys = "0.3"
+web-sys = { version = "0.3", features = ["console"] }
 console_error_panic_hook = "0.1.7"
+log = "0.4.33"
+wasm-log = "0.3.1"
 
 [dependencies.serde]
 version = "1"

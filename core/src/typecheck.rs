@@ -37,10 +37,10 @@ pub enum Def<'ty> {
 
 #[derive(Clone, Debug)]
 pub struct FuncDef<'ty> {
-    name: Symbol,
-    ty_params: Vec<Ident>,
-    params: Vec<Ty<'ty>>,
-    ret: Ty<'ty>,
+    pub name: Symbol,
+    pub ty_params: Vec<Ident>,
+    pub params: Vec<Ty<'ty>>,
+    pub ret: Ty<'ty>,
 }
 
 pub type Result<'ty, T> = std::result::Result<T, TypeError<'ty>>;
@@ -60,6 +60,10 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             sym_table,
             errors,
         }
+    }
+
+    pub fn def_map(&self) -> &FnvHashMap<DefId, Def<'_>> {
+        &self.def_map
     }
 
     pub fn finish(self) -> FnvHashMap<NodeId, Ty<'ty>> {

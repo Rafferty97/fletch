@@ -5,6 +5,7 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(start)]
 pub fn start() {
     console_error_panic_hook::set_once(); // add console_error_panic_hook dep if you want this
+    wasm_log::init(wasm_log::Config::default());
 }
 
 // check(source) -> JsValue (array of diagnostics)

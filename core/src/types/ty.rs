@@ -1,6 +1,12 @@
 use std::fmt::{Debug, Display};
 
-use crate::{diagnostics::ErrGuaranteed, interner::Interned, types::ty_ctx::Variance, vm::instr::Width};
+use crate::{
+    ast::{Ident, Symbol},
+    diagnostics::ErrGuaranteed,
+    interner::{IndexTable, Interned},
+    types::ty_ctx::Variance,
+    vm::instr::Width,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Ty<'ty>(pub(super) Interned<'ty, TyKind<'ty>>);
@@ -158,11 +164,36 @@ impl<'ty> Ty<'ty> {
             _ => accum,
         }
     }
+
+    pub fn display_ctx<'a>(
+        self,
+        ty_params: &'a [Ident],
+        sym_table: &'a IndexTable<'a, Symbol, str>,
+    ) -> TyWithCtx<'a, 'ty> {
+        TyWithCtx { ty: self, ty_params, sym_table }
+    }
+
+    pub fn with_ctx<'a>(self, other: TyWithCtx<'a, 'ty>) -> TyWithCtx<'a, 'ty> {
+        TyWithCtx { ty: self, ..other }
+    }
 }
 
 impl<'ty> Display for Ty<'ty> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.kind() {
+        write!(f, "{}", self.display_ctx(&[], IndexTable::empty()))
+    }
+}
+
+#[derive(Clone, Copy)]
+pub struct TyWithCtx<'a, 'ty> {
+    pub ty: Ty<'ty>,
+    pub ty_params: &'a [Ident],
+    pub sym_table: &'a IndexTable<'a, Symbol, str>,
+}
+
+impl<'ty> Display for TyWithCtx<'_, 'ty> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.ty.kind() {
             TyKind::Never => write!(f, "never"),
             TyKind::Bool => write!(f, "bool"),
             TyKind::Int(IntTy::Int8) => write!(f, "int8"),
@@ -181,16 +212,16 @@ impl<'ty> Display for Ty<'ty> {
                 if inner.kind() == TyKind::Never {
                     write!(f, "null")
                 } else {
-                    write!(f, "{inner}?")
+                    write!(f, "{}?", inner.with_ctx(*self))
                 }
             }
-            TyKind::Array(inner) => write!(f, "[{inner}]"),
+            TyKind::Array(inner) => write!(f, "[{}]", inner.with_ctx(*self)),
             TyKind::Tuple(tys) => match &tys[..] {
                 [] => write!(f, "()"),
                 [first, rest @ ..] => {
-                    write!(f, "({first}")?;
+                    write!(f, "({}", first.with_ctx(*self))?;
                     for ty in rest {
-                        write!(f, ", {ty}")?;
+                        write!(f, ", {}", ty.with_ctx(*self))?;
                     }
                     write!(f, ")")
                 }
@@ -198,25 +229,32 @@ impl<'ty> Display for Ty<'ty> {
             TyKind::Func(FuncTy { params, ret }) if ret.is_unit() => match &params[..] {
                 [] => write!(f, "fn()"),
                 [first, rest @ ..] => {
-                    write!(f, "fn({first}")?;
+                    write!(f, "fn({}", first.with_ctx(*self))?;
                     for ty in rest {
-                        write!(f, ", {ty}")?;
+                        write!(f, ", {}", ty.with_ctx(*self))?;
                     }
                     write!(f, ")")
                 }
             },
             TyKind::Func(FuncTy { params, ret }) => match &params[..] {
-                [] => write!(f, "fn() -> {ret}"),
+                [] => write!(f, "fn() -> {}", ret.with_ctx(*self)),
                 [first, rest @ ..] => {
-                    write!(f, "fn({first}")?;
+                    write!(f, "fn({}", first.with_ctx(*self))?;
                     for ty in rest {
-                        write!(f, ", {ty}")?;
+                        write!(f, ", {}", ty.with_ctx(*self))?;
                     }
-                    write!(f, ") -> {ret}")
+                    write!(f, ") -> {}", ret.with_ctx(*self))
                 }
             },
             TyKind::Any => write!(f, "any"),
-            TyKind::Param(id) => write!(f, "${}", id.0),
+            TyKind::Param(id) => match self
+                .ty_params
+                .get(id.0 as usize)
+                .map(|ident| self.sym_table.get_str(ident.sym))
+            {
+                Some(name) => write!(f, "{}", name),
+                None => write!(f, "${}", id.0),
+            },
             TyKind::Var(id) => write!(f, "?{}", id.0),
             TyKind::Infer => write!(f, "_"),
             TyKind::Pending => write!(f, "?"),
@@ -227,7 +265,7 @@ impl<'ty> Display for Ty<'ty> {
 
 impl<'ty> Debug for Ty<'ty> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Ty({self})")
+        write!(f, "Ty({})", self)
     }
 }
 

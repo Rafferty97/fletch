@@ -1,3 +1,4 @@
+use std::fmt::Pointer;
 use std::num;
 
 use bumpalo::Bump;
@@ -5,18 +6,19 @@ use codespan_reporting::diagnostic::{self, Label};
 use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
+use fnv::FnvHashMap;
 use serde::Serialize;
 
 use crate::ast::sexpr::{SExpr, SExprCtx, to_sexpr};
 use crate::ast::span::Span;
-use crate::ast::{ExprKind, Lit, StmtKind};
+use crate::ast::{ExprKind, Lit, StmtKind, Symbol};
 use crate::compile::{compile_func, compile_program};
 use crate::diagnostics::{Diagnostic, DiagnosticReporter, Level, VecReporter};
-use crate::interner::IndexedInterner;
+use crate::interner::{IndexTable, IndexedInterner};
 use crate::name_resolution::{self, NameResolution};
 use crate::parser::{ParseCtx, Parser};
-use crate::typecheck::TypeChecker;
-use crate::types::ty;
+use crate::typecheck::{Def, FuncDef, TypeChecker};
+use crate::types::ty::{self, TyWithCtx};
 use crate::types::ty_ctx::TyCtx;
 use crate::types::ty_interners::{self, TyInterners};
 use crate::vm::{OutputSink, Vm};
@@ -105,7 +107,7 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
     vm.execute(output);
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Debug)]
 pub struct CheckResult {
     diagnostics: Vec<Diagnostic>,
     types: Vec<(Span, String)>,
@@ -139,18 +141,61 @@ pub fn check(src: &str) -> CheckResult {
     let ty_ctx = TyCtx::new(&arena, &ty_interners);
     let mut checker = TypeChecker::new(ty_ctx, &name_tables, sym_table, &errors);
     checker.check_program(&ast);
-    let type_map = checker.finish();
-
-    // Extract types
     let types = name_tables
         .idents
-        .into_iter()
+        .iter()
         .flat_map(|ident| {
-            let ty = type_map.get(&ident.id)?;
-            Some((ident.span, ty.to_string()))
+            let def_id = name_tables.uses.get(&ident.id)?.ok()?;
+            let ty = checker.def_map().get(&def_id)?;
+            let name = sym_table.get_str(ident.sym);
+            match ty {
+                Def::Var(ty) => Some((ident.span, format!("let {} = {}", name, ty.display_ctx(&[], sym_table)))),
+                Def::Func(func) => Some((ident.span, format_func(func, sym_table))),
+            }
         })
         .collect();
+    let type_map = checker.finish();
 
     // Return info
     CheckResult { diagnostics: errors.into_errors(), types }
+}
+
+fn format_func(func: &FuncDef, sym_table: &IndexTable<'_, Symbol, str>) -> String {
+    use std::fmt::Write;
+
+    let mut buf = String::from("fn ");
+    buf.push_str(sym_table.get_str(func.name));
+
+    match &*func.ty_params {
+        [] => {}
+        [first, rest @ ..] => {
+            buf.push('<');
+            buf.push_str(sym_table.get_str(first.sym));
+            for param in rest {
+                buf.push_str(", ");
+                buf.push_str(sym_table.get_str(param.sym));
+            }
+            buf.push('>');
+        }
+    }
+
+    match &*func.params {
+        [] => buf.push_str("()"),
+        [first, rest @ ..] => {
+            buf.push('(');
+            write!(&mut buf, "{}", first.display_ctx(&func.ty_params, sym_table));
+            for param in rest {
+                buf.push_str(", ");
+                write!(&mut buf, "{}", param.display_ctx(&func.ty_params, sym_table));
+            }
+            buf.push(')');
+        }
+    }
+
+    if !func.ret.is_unit() {
+        buf.push_str(" -> ");
+        write!(&mut buf, "{}", func.ret.display_ctx(&func.ty_params, sym_table));
+    }
+
+    buf
 }

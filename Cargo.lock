@@ -182,6 +182,7 @@ dependencies = [
  "hashbrown",
  "itertools",
  "line-index",
+ "log",
  "logos",
  "num-bigint",
  "ordered-float",
@@ -199,9 +200,12 @@ dependencies = [
  "console_error_panic_hook",
  "fletch",
  "js-sys",
+ "log",
  "serde",
  "serde-wasm-bindgen",
  "wasm-bindgen",
+ "wasm-log",
+ "web-sys",
 ]
 
 [[package]]
@@ -292,6 +296,12 @@ dependencies = [
  "nohash-hasher",
  "text-size",
 ]
+
+[[package]]
+name = "log"
+version = "0.4.33"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "logos"
@@ -621,6 +631,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc1b4cb0cc549fcf58d7dfc081778139b3d283a081644e833e84682ad71cea24"
 dependencies = [
  "unicode-ident",
+]
+
+[[package]]
+name = "wasm-log"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "def95b2a762924804037f77e3de791f1c177d6ecbe0385a64e519bd7902a5f81"
+dependencies = [
+ "log",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
+name = "web-sys"
+version = "0.3.103"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8622dcb61c0bcc9fffa6938bed81210af2da9a7e4a1a834b2e37a59b6dfb6141"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
 ]
 
 [[package]]
