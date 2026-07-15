@@ -2,6 +2,13 @@ use crate::interner::IndexTable;
 
 use super::*;
 
+pub fn to_sexpr(ast: &impl SExpr, sym_table: &IndexTable<'_, Symbol, str>) -> String {
+    let mut buf = String::new();
+    let mut sexpr_ctx = SExprCtx { str: &mut buf, sym_table };
+    SExpr::write(ast, &mut sexpr_ctx);
+    buf
+}
+
 pub trait SExpr {
     fn write(&self, ctx: &mut SExprCtx);
 }
@@ -230,6 +237,19 @@ impl<'a> SExprCtx<'a> {
                 for ty in tys {
                     self.str.push(' ');
                     self.write_ty(ty);
+                }
+                self.str.push(')');
+            }
+            TyKind::Func(params, ret) => {
+                self.str.push_str("(func");
+                for ty in params {
+                    self.str.push(' ');
+                    self.write_ty(ty);
+                }
+                self.str.push(' ');
+                match ret {
+                    Some(ty) => self.write_ty(ty),
+                    None => self.str.push_str("none"),
                 }
                 self.str.push(')');
             }

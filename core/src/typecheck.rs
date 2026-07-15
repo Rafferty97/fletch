@@ -6,6 +6,7 @@ use fnv::FnvHashMap;
 use itertools::Itertools;
 use thiserror::Error;
 
+use crate::ast::sexpr::to_sexpr;
 use crate::ast::span::Span;
 use crate::ast::{
     self, BinOp, Block, Expr, ExprKind, Func, Ident, Lit, NodeId, Program, Stmt, StmtKind, Symbol, UnaryOp,
@@ -146,12 +147,9 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
         self.ty_vars.push(TyVars { prev: vec![], next: vec![] });
 
         let ret = loop {
-            let ret = self.check_expr(ast, expected);
+            let ret = self.check_expr(ast, expected, true);
 
             let vars = self.ty_vars.last_mut().unwrap();
-            if !vars.prev.is_empty() {
-                println!("{:?}", vars.next);
-            }
             if vars.prev == vars.next {
                 break ret;
             }
@@ -193,14 +191,17 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
         }
     }
 
-    fn infer_expr(&mut self, ast: &Expr) -> Ty<'ty> {
-        self.check_expr(ast, self.common().infer)
+    fn infer_expr(&mut self, ast: &Expr, mode: bool) -> Ty<'ty> {
+        self.check_expr(ast, self.common().infer, mode)
     }
 
-    fn check_expr(&mut self, ast: &Expr, mut expected: Ty<'ty>) -> Ty<'ty> {
-        if let Some(&ty) = self.type_map.get(&ast.id) {
-            return ty;
-        }
+    fn check_expr(&mut self, ast: &Expr, mut expected: Ty<'ty>, mode: bool) -> Ty<'ty> {
+        // if let Some(&ty) = self.type_map.get(&ast.id) {
+        //     println!("update\t{ty}\t{expected}");
+        //     let mut vars = self.ty_vars.last_mut().expect("not in expression");
+        //     self.ty_ctx.update_bounds(ty, expected, &mut vars.next);
+        //     return ty;
+        // }
 
         let vars = self.ty_vars.last().expect("not in expression");
         let unsub_expected = expected;
@@ -212,12 +213,20 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             ExprKind::Lit(lit) => match lit {
                 Lit::Null => self.common().opt_never,
                 Lit::Bool(_) => self.common().bool,
-                Lit::Int(_) => self.common().int32,     // FIXME
-                Lit::Float(_) => self.common().float64, // FIXME
+                Lit::Int(_) => self.common().int,
+                Lit::Float(_) => self.common().float64,
                 Lit::Str(_) => self.common().str,
                 Lit::Err(err) => self.ty_ctx.mk_error(*err),
             },
             ExprKind::Var(name) => {
+                if let Some(&ty) = self.type_map.get(&ast.id) {
+                    let mut vars = self.ty_vars.last_mut().expect("not in expression");
+                    if mode {
+                        self.ty_ctx.update_bounds(ty, expected, &mut vars.next);
+                    }
+                    return ty;
+                }
+
                 self.name_tables
                     .uses
                     .get(&name.id)
@@ -226,7 +235,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     .unwrap_or_else(|err| self.ty_ctx.mk_error(err)) // FIXME: unwrap
             }
             ExprKind::Unary(op, rhs, span) => {
-                let rhs = self.check_expr(rhs, self.common().infer);
+                let rhs = self.check_expr(rhs, self.common().infer, mode);
                 match (op, rhs.kind()) {
                     (UnaryOp::Not, TyKind::Bool) => rhs,
                     (UnaryOp::Negate, TyKind::Int(_) | TyKind::UInt(_) | TyKind::Float(_)) => rhs,
@@ -238,8 +247,8 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 }
             }
             ExprKind::Binary(op, lhs, rhs, span) => {
-                let lhs = self.check_expr(lhs, self.common().infer);
-                let rhs = self.check_expr(rhs, self.common().infer);
+                let lhs = self.check_expr(lhs, self.common().infer, mode);
+                let rhs = self.check_expr(rhs, self.common().infer, mode);
                 let result = match op {
                     BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div => (lhs == rhs).then_some(lhs),
                     BinOp::Eq | BinOp::NotEq => {
@@ -263,7 +272,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 }
             }
             ExprKind::Call(func, args, span) => {
-                let func_ty = self.infer_expr(func);
+                let func_ty = self.infer_expr(func, false);
                 match func_ty.kind() {
                     TyKind::Func(func) => {
                         if func.params.len() != args.len() {
@@ -275,13 +284,13 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                         let infer = self.common().infer;
                         for (idx, arg) in args.iter().enumerate() {
                             let expected = func.params.get(idx).copied().unwrap_or(infer);
-                            self.check_expr(arg, expected);
+                            self.check_expr(arg, expected, mode);
                         }
                         func.ret
                     }
                     TyKind::Error(err) => {
                         for arg in args {
-                            self.infer_expr(arg);
+                            self.infer_expr(arg, mode);
                         }
                         self.ty_ctx.mk_error(err)
                     }
@@ -290,7 +299,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                         let diagnostic = Diagnostic::error(msg, func.span);
                         let err = self.errors.report_err(diagnostic);
                         for arg in args {
-                            self.infer_expr(arg);
+                            self.infer_expr(arg, mode);
                         }
                         self.ty_ctx.mk_error(err)
                     }
@@ -299,13 +308,16 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             ExprKind::Array(exprs) => {
                 let expected = expected.array_elem().unwrap_or(self.common().infer);
                 let never = self.common().never;
-                let expr_tys = exprs.iter().map(|expr| self.check_expr(expr, expected)).collect_vec();
+                let expr_tys = exprs
+                    .iter()
+                    .map(|expr| self.check_expr(expr, expected, mode))
+                    .collect_vec();
                 let element_ty = expr_tys.into_iter().fold(never, |a, b| self.ty_ctx.join(a, b));
                 self.ty_ctx.mk_array(element_ty)
             }
             ExprKind::Index(expr, index) => {
-                let expr_ty = self.check_expr(expr, self.common().infer);
-                self.check_expr(index, self.common().int64);
+                let expr_ty = self.check_expr(expr, self.common().infer, mode);
+                self.check_expr(index, self.common().int64, mode);
                 match expr_ty.kind() {
                     TyKind::Array(el) => el,
                     TyKind::Error(_) => expr_ty,
@@ -323,15 +335,15 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 let expr_tys = exprs
                     .iter()
                     .enumerate()
-                    .map(|(index, expr)| self.check_expr(expr, expected.get(index).copied().unwrap_or(infer)))
+                    .map(|(index, expr)| self.check_expr(expr, expected.get(index).copied().unwrap_or(infer), mode))
                     .collect_vec();
                 self.ty_ctx.mk_tuple(&expr_tys)
             }
             ExprKind::If { cond, then, r#else } => {
-                self.check_expr(cond, self.common().bool);
-                let then_ty = self.check_expr(then, expected);
+                self.check_expr(cond, self.common().bool, mode);
+                let then_ty = self.check_expr(then, expected, mode);
                 let else_ty = match r#else {
-                    Some(r#else) => self.check_expr(r#else, expected),
+                    Some(r#else) => self.check_expr(r#else, expected, mode),
                     None => self.common().unit(),
                 };
                 self.ty_ctx.join(then_ty, else_ty)
@@ -343,7 +355,9 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
         if !vars.prev.is_empty() {
             let unsub_actual = actual;
             actual = self.ty_ctx.substitute_vars(actual, &vars.prev, Bound::Lower);
-            self.ty_ctx.update_bounds(unsub_actual, unsub_expected, &mut vars.next);
+            if mode {
+                self.ty_ctx.update_bounds(unsub_actual, unsub_expected, &mut vars.next);
+            }
         };
 
         if !expected.is_final() {
@@ -412,6 +426,17 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     .map(|ty| self.lower_ty_with_params(ty, ty_params))
                     .collect_vec();
                 self.ty_ctx.mk_tuple(&tys)
+            }
+            ast::TyKind::Func(params, ret) => {
+                let params = params
+                    .into_iter()
+                    .map(|ty| self.lower_ty_with_params(ty, ty_params))
+                    .collect_vec();
+                let ret = ret
+                    .as_ref()
+                    .map(|ty| self.lower_ty_with_params(&*ty, ty_params))
+                    .unwrap_or(self.common().unit());
+                self.ty_ctx.mk_func(&params, ret)
             }
         }
     }
