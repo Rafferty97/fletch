@@ -128,45 +128,21 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             self.check_stmt(stmt);
         }
         if let Some(tail) = &ast.tail {
-            self.check_toplevel_expr(tail, expected)
+            self.check_expr(tail, expected)
         } else {
             self.common().unit() // FIXME: check `expected`
         }
     }
 
-    fn check_toplevel_expr(&mut self, ast: &Expr, expected: Ty<'ty>) -> Ty<'ty> {
-        // FIXME: better method for checking fixed-point is reached and reporting errors
-
-        let mut ret = self.ty_ctx.common().pending;
-        let mut prev = self.type_map.clone();
-
-        loop {
-            ret = self.check_expr(ast, expected);
-            if self.type_map == prev {
-                break;
-            }
-            prev = self.type_map.clone();
-        }
-
-        if self.type_map.iter().any(|(_, (_, is_final))| !is_final) {
-            // FIXME: better message
-            let diagnostic = Diagnostic::error("could not infer all types", ast.span);
-            self.type_map.retain(|_, (_, is_final)| *is_final);
-            return self.ty_ctx.mk_error(self.errors.report_err(diagnostic));
-        }
-
-        ret
-    }
-
     fn check_stmt(&mut self, ast: &Stmt) {
         match &ast.node {
             StmtKind::Expr(expr) => {
-                self.check_toplevel_expr(&*expr, self.common().infer);
+                self.check_expr(&*expr, self.common().infer);
             }
             StmtKind::Let(name, ty, value, _) => {
                 let def_id = *self.name_tables.uses.get(&name.id).unwrap(); // FIXME
                 let expected = ty.as_ref().map(|ty| self.lower_ty(ty)).unwrap_or(self.common().infer);
-                let ty = self.check_toplevel_expr(&*value, expected);
+                let ty = self.check_expr(&*value, expected);
                 if let Ok(def_id) = def_id {
                     self.def_map.insert(def_id, Def::Var(ty)); // FIXME?
                 }
@@ -180,7 +156,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     .and_then(|def_id| self.def_map.get(&def_id))
                     .and_then(|def| def.as_var())
                     .unwrap_or(self.common().infer);
-                self.check_toplevel_expr(rhs, expected);
+                self.check_expr(rhs, expected);
             }
         }
     }
@@ -251,43 +227,54 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             }
             ExprKind::Call(func, args, span) => {
                 let pending = self.common().pending;
-                let params = args
-                    .iter()
-                    .map(|expr| self.type_map.get(&expr.id).map(|(ty, _)| *ty).unwrap_or(pending))
-                    .collect_vec();
-                let func_exp = self.ty_ctx.mk_func(&params, expected);
-                let func_ty = self.check_expr(func, func_exp);
+                let mut prev_params = vec![];
 
-                match func_ty.kind() {
-                    TyKind::Func(func) => {
-                        if func.params.len() != args.len() {
-                            let msg = format!("expected {}, found {}", Args(func.params.len()), args.len());
-                            let diagnostic = Diagnostic::error(msg, *span);
+                loop {
+                    let params = args
+                        .iter()
+                        .map(|expr| self.type_map.get(&expr.id).map(|(ty, _)| *ty).unwrap_or(pending))
+                        .collect_vec();
+                    let func_exp = self.ty_ctx.mk_func(&params, expected);
+                    let func_ty = self.check_expr(func, func_exp);
+
+                    let ret = match func_ty.kind() {
+                        TyKind::Func(func) => {
+                            if func.params.len() != args.len() {
+                                let msg = format!("expected {}, found {}", Args(func.params.len()), args.len());
+                                let diagnostic = Diagnostic::error(msg, *span);
+                                let err = self.errors.report_err(diagnostic);
+                            }
+
+                            let infer = self.common().infer;
+                            for (idx, arg) in args.iter().enumerate() {
+                                let expected = func.params.get(idx).copied().unwrap_or(infer);
+                                self.check_expr(arg, expected);
+                            }
+                            func.ret
+                        }
+                        TyKind::Error(err) => {
+                            for arg in args {
+                                self.infer_expr(arg);
+                            }
+                            self.ty_ctx.mk_error(err)
+                        }
+                        _ => {
+                            let msg = format!("expected a function, found '{func_ty}'");
+                            let diagnostic = Diagnostic::error(msg, func.span);
                             let err = self.errors.report_err(diagnostic);
+                            for arg in args {
+                                self.infer_expr(arg);
+                            }
+                            self.ty_ctx.mk_error(err)
                         }
+                    };
 
-                        let infer = self.common().infer;
-                        for (idx, arg) in args.iter().enumerate() {
-                            let expected = func.params.get(idx).copied().unwrap_or(infer);
-                            self.check_expr(arg, expected);
-                        }
-                        func.ret
+                    println!("{params:?}");
+                    if params == prev_params {
+                        println!("   => {ret}");
+                        break ret;
                     }
-                    TyKind::Error(err) => {
-                        for arg in args {
-                            self.infer_expr(arg);
-                        }
-                        self.ty_ctx.mk_error(err)
-                    }
-                    _ => {
-                        let msg = format!("expected a function, found '{func_ty}'");
-                        let diagnostic = Diagnostic::error(msg, func.span);
-                        let err = self.errors.report_err(diagnostic);
-                        for arg in args {
-                            self.infer_expr(arg);
-                        }
-                        self.ty_ctx.mk_error(err)
-                    }
+                    prev_params = params;
                 }
             }
             ExprKind::Array(exprs) => {
@@ -374,7 +361,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     "int16" => self.common().int16,
                     "int32" => self.common().int32,
                     "int64" => self.common().int64,
-                    "int" => self.common().int64,
+                    "int" => self.common().int,
                     "float32" => self.common().float32,
                     "float64" => self.common().float64,
                     "float" => self.common().float64,

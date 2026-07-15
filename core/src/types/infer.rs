@@ -359,6 +359,7 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
             // Scalar types
             (Int(act_in), Int(exp_in)) if act_in <= exp_in => Ok(exp),
             (UInt(act_in), UInt(exp_in)) if act_in <= exp_in => Ok(exp),
+            (Int(_) | UInt(_), Integer) => Ok(exp),
             (Float(act_in), Float(exp_in)) if act_in <= exp_in => Ok(exp),
 
             // Top and bottom types
