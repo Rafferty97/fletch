@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::ast::span::Span;
 use crate::ast::{
-    self, BinOp, Block, Expr, ExprKind, Func, Ident, Lit, NodeId, Program, Stmt, StmtKind, Symbol, UnaryOp,
+    self, BinOp, Block, Expr, ExprKind, Func, Ident, Lit, NodeId, Program, Stmt, StmtKind, Symbol, UnaryOp, sexpr,
 };
 use crate::diagnostics::{Diagnostic, DiagnosticReporter};
 use crate::interner::IndexTable;
@@ -23,11 +23,10 @@ use crate::util::{Args, IdGen};
 pub struct TypeChecker<'a, 'ty> {
     ty_ctx: TyCtx<'a, 'ty>,
     name_tables: &'a NameTables,
-    type_map: FnvHashMap<NodeId, Ty<'ty>>,
+    type_map: FnvHashMap<NodeId, (Ty<'ty>, bool)>,
     def_map: FnvHashMap<DefId, Def<'ty>>,
     sym_table: &'a IndexTable<'a, Symbol, str>,
     errors: &'a dyn DiagnosticReporter,
-    ty_vars: Vec<Vec<TyBounds<'ty>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -60,12 +59,11 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             def_map: FnvHashMap::default(),
             sym_table,
             errors,
-            ty_vars: vec![],
         }
     }
 
     pub fn finish(self) -> FnvHashMap<NodeId, Ty<'ty>> {
-        self.type_map
+        self.type_map.into_iter().map(|(id, (ty, _))| (id, ty)).collect()
     }
 
     pub fn check_program(&mut self, ast: &Program) {
@@ -132,28 +130,30 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
         if let Some(tail) = &ast.tail {
             self.check_toplevel_expr(tail, expected)
         } else {
-            self.common().unit()
+            self.common().unit() // FIXME: check `expected`
         }
     }
 
     fn check_toplevel_expr(&mut self, ast: &Expr, expected: Ty<'ty>) -> Ty<'ty> {
-        self.ty_vars.push(vec![]);
-        let mut ret = self.ty_ctx.common().pending;
+        // FIXME: better method for checking fixed-point is reached and reporting errors
 
-        let mut cnt = 0;
-        while !ret.is_final() {
-            if cnt == 10 {
-                let diagnostic = Diagnostic::error("hit iteration limit", Span::dummy());
-                self.errors.report_err(diagnostic);
+        let mut ret = self.ty_ctx.common().pending;
+        let mut prev = self.type_map.clone();
+
+        loop {
+            ret = self.check_expr(ast, expected);
+            if self.type_map == prev {
                 break;
             }
-
-            ret = self.check_expr(ast, expected);
-            cnt += 1;
+            prev = self.type_map.clone();
         }
 
-        // FIXME: check all inference vars are resolved
-        self.ty_vars.pop();
+        if self.type_map.iter().any(|(_, (_, is_final))| !is_final) {
+            // FIXME: better message
+            let diagnostic = Diagnostic::error("could not infer all types", ast.span);
+            self.type_map.retain(|_, (_, is_final)| *is_final);
+            return self.ty_ctx.mk_error(self.errors.report_err(diagnostic));
+        }
 
         ret
     }
@@ -190,14 +190,10 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
     }
 
     fn check_expr(&mut self, ast: &Expr, mut expected: Ty<'ty>) -> Ty<'ty> {
-        if let Some(&ty) = self.type_map.get(&ast.id) {
+        if let Some(&(ty, true)) = self.type_map.get(&ast.id) {
+            // println!("{} => {}", sexpr::to_sexpr(ast, self.sym_table), ty);
             return ty;
         }
-
-        let vars = self.ty_vars.last().expect("not in expression");
-        if !vars.is_empty() {
-            expected = self.ty_ctx.substitute_vars(expected, vars, Bound::Upper);
-        };
 
         let mut actual = match &ast.node {
             ExprKind::Lit(lit) => match lit {
@@ -213,7 +209,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     .uses
                     .get(&name.id)
                     .unwrap() // FIXME: unwrap
-                    .map(|def_id| self.def_ty(def_id))
+                    .map(|def_id| self.def_ty(def_id, expected, name.span))
                     .unwrap_or_else(|err| self.ty_ctx.mk_error(err)) // FIXME: unwrap
             }
             ExprKind::Unary(op, rhs, span) => {
@@ -254,7 +250,14 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 }
             }
             ExprKind::Call(func, args, span) => {
-                let func_ty = self.infer_expr(func);
+                let pending = self.common().pending;
+                let params = args
+                    .iter()
+                    .map(|expr| self.type_map.get(&expr.id).map(|(ty, _)| *ty).unwrap_or(pending))
+                    .collect_vec();
+                let func_exp = self.ty_ctx.mk_func(&params, expected);
+                let func_ty = self.check_expr(func, func_exp);
+
                 match func_ty.kind() {
                     TyKind::Func(func) => {
                         if func.params.len() != args.len() {
@@ -330,12 +333,8 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             ExprKind::Block(block) => self.check_block(block, expected),
         };
 
-        let vars = self.ty_vars.last().expect("not in expression");
-        if !vars.is_empty() {
-            actual = self.ty_ctx.substitute_vars(expected, vars, Bound::Lower);
-        };
-
         if !expected.is_final() {
+            self.type_map.insert(ast.id, (actual, false));
             return actual;
         }
 
@@ -347,7 +346,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             }
         };
 
-        self.type_map.insert(ast.id, ty);
+        self.type_map.insert(ast.id, (ty, true));
         ty
     }
 
@@ -420,32 +419,40 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
         self.ty_ctx.common()
     }
 
-    fn def_ty(&mut self, def_id: DefId) -> Ty<'ty> {
+    fn def_ty(&mut self, def_id: DefId, expected: Ty<'ty>, span: Span) -> Ty<'ty> {
         let def = self.def_map.get(&def_id).unwrap(); // FIXME: unwrap
-        let mut vars = self.ty_vars.last_mut().expect("not in statement");
         match def {
             Def::Var(ty) => *ty,
             Def::Func(func) => {
-                let vars = func
-                    .ty_params
-                    .iter()
-                    .map(|_| Self::fresh_ty_var(self.ty_ctx, vars))
+                let params = (0..func.ty_params.len())
+                    .map(|i| self.ty_ctx.mk_var(VarId(i as u32)))
                     .collect_vec();
-                let params = func
-                    .params
-                    .iter()
-                    .map(|ty| self.ty_ctx.substitute_params(*ty, &vars))
-                    .collect_vec();
-                let ret = self.ty_ctx.substitute_params(func.ret, &vars);
-                self.ty_ctx.mk_func(&params, ret)
+                let mut bounds = params.iter().map(|_| self.ty_ctx.new_bounds()).collect_vec();
+                let actual_gen = self.ty_ctx.mk_func(&func.params, func.ret);
+                let actual = self.ty_ctx.substitute_params(actual_gen, &params);
+                println!("actual = {actual}, expected = {expected}");
+                self.ty_ctx.update_bounds(actual, expected, &mut bounds);
+                println!("bounds -> {bounds:?}");
+                if expected.is_final() {
+                    let params = bounds
+                        .into_iter()
+                        .enumerate()
+                        .map(|(idx, bound)| match self.ty_ctx.reconcile(bound.lower, bound.upper) {
+                            Ok(ty) => ty,
+                            Err(err) => {
+                                let param = self.sym_table.get_str(func.ty_params[idx].sym);
+                                let msg = format!("cannot infer type parameter `{param}`, {err}");
+                                let diagnostic = Diagnostic::error(msg, span);
+                                self.ty_ctx.mk_error(self.errors.report_err(diagnostic))
+                            }
+                        })
+                        .collect_vec();
+                    self.ty_ctx.substitute_params(actual_gen, &params)
+                } else {
+                    self.ty_ctx.substitute_vars(actual, &bounds, Bound::Lower)
+                }
             }
         }
-    }
-
-    fn fresh_ty_var(ctx: TyCtx<'_, 'ty>, vars: &mut Vec<TyBounds<'ty>>) -> Ty<'ty> {
-        let id = VarId(vars.len() as u32);
-        vars.push(ctx.new_bounds());
-        ctx.mk_var(id)
     }
 }
 

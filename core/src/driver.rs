@@ -7,7 +7,7 @@ use codespan_reporting::term;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
 use serde::Serialize;
 
-use crate::ast::sexpr::{SExpr, SExprCtx};
+use crate::ast::sexpr::{SExpr, SExprCtx, to_sexpr};
 use crate::ast::span::Span;
 use crate::ast::{ExprKind, Lit, StmtKind};
 use crate::compile::{compile_func, compile_program};
@@ -48,9 +48,7 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
 
     // Print s-expr
     if opts.sexpr {
-        let mut buf = String::new();
-        let mut sexpr_ctx = SExprCtx { str: &mut buf, sym_table };
-        SExpr::write(&ast, &mut sexpr_ctx);
+        let mut buf = to_sexpr(&ast, sym_table);
         buf.push('\n');
         output.emit(&buf);
     }
