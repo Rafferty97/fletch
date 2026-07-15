@@ -233,6 +233,19 @@ impl<'a> SExprCtx<'a> {
                 }
                 self.str.push(')');
             }
+            TyKind::Func(params, ret) => {
+                self.str.push_str("(func");
+                for ty in params {
+                    self.str.push(' ');
+                    self.write_ty(ty);
+                }
+                self.str.push(' ');
+                match ret {
+                    Some(ty) => self.write_ty(ty),
+                    None => self.str.push_str("none"),
+                }
+                self.str.push(')');
+            }
         }
     }
 

@@ -103,6 +103,7 @@ pub enum TyKind {
     Nullable(Box<Ty>),
     Array(Box<Ty>),
     Tuple(Vec<Ty>),
+    Func(Vec<Ty>, Option<Box<Ty>>),
 }
 
 #[derive(Clone, Copy, Debug)]

@@ -402,6 +402,17 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     .collect_vec();
                 self.ty_ctx.mk_tuple(&tys)
             }
+            ast::TyKind::Func(params, ret) => {
+                let params = params
+                    .into_iter()
+                    .map(|ty| self.lower_ty_with_params(ty, ty_params))
+                    .collect_vec();
+                let ret = ret
+                    .as_ref()
+                    .map(|ty| self.lower_ty_with_params(&*ty, ty_params))
+                    .unwrap_or(self.common().unit());
+                self.ty_ctx.mk_func(&params, ret)
+            }
         }
     }
 

@@ -46,6 +46,24 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                     _ => self.make_spanned(start, TyKind::Tuple(elements)),
                 }
             }
+            Token::Func => {
+                self.consume();
+                self.expect(Token::LeftParen)?;
+
+                let mut elements = vec![];
+                while self.peek() != Token::RightParen {
+                    elements.push(self.parse_ty()?);
+                    self.consume_if(|t| t == Token::Comma);
+                }
+                self.expect(Token::RightParen)?;
+
+                let ret = match self.consume_if(|t| t == Token::ThinArrow) {
+                    Some(_) => Some(self.parse_ty()?.into()),
+                    None => None,
+                };
+
+                self.make_spanned(start, TyKind::Func(elements, ret))
+            }
             _ => Err(self.unexpected_prev())?,
         };
 
