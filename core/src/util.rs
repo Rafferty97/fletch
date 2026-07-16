@@ -44,3 +44,9 @@ impl<T> IdGen<T> {
         self.next_id.store(1, Ordering::Relaxed);
     }
 }
+
+#[derive(Copy, Clone)]
+pub struct WithCtx<'a, T, Ctx> {
+    value: &'a T,
+    ctx: Ctx,
+}
