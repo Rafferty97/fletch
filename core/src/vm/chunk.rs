@@ -6,6 +6,7 @@ use fnv::FnvHashMap;
 use itertools::Itertools;
 
 use crate::ast::Symbol;
+use crate::interner::IndexTable;
 use crate::vm::instr::{Addr, Imm, Reg};
 use crate::vm::module::FuncId;
 
@@ -38,7 +39,7 @@ impl Chunk {
         &self.constants[imm.0 as usize]
     }
 
-    pub fn disassemble(&self) -> String {
+    pub fn disassemble(&self, sym_table: &IndexTable<'_, Symbol, str>) -> String {
         let mut out = String::new();
 
         write!(out, "[attrs]\n");
@@ -69,7 +70,7 @@ impl Chunk {
         if !self.constants.is_empty() {
             write!(out, "\n[constants]\n");
             for value in &self.constants {
-                write!(out, "    {}\n", value);
+                write!(out, "    {}\n", value.display_ctx(sym_table));
             }
         }
 
@@ -171,7 +172,7 @@ mod test {
             constants: vec![Value::new_null()],
             stack_size: 0,
         };
-        let text = chunk.disassemble();
+        let text = chunk.disassemble(IndexTable::empty());
         let mut lines = text.lines();
         assert_eq!(lines.next(), Some("[attrs]"));
         assert_eq!(lines.next(), Some("func_id = 12"));

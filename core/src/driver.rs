@@ -98,12 +98,12 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
 
     // Print chunks
     if opts.disassemble {
-        output.emit(&module.disassemble());
+        output.emit(&module.disassemble(sym_table));
         output.emit("\n");
     }
 
     // Execute
-    let mut vm = Vm::new(&module);
+    let mut vm = Vm::new(&module, sym_table);
     vm.execute(output);
 }
 

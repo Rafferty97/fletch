@@ -10,6 +10,7 @@ use ordered_float::OrderedFloat;
 use triomphe::{Arc, ThinArc};
 
 use crate::ast::Symbol;
+use crate::interner::IndexTable;
 use crate::parser::escape;
 use crate::thin_rc::{Head, ThinRc};
 use crate::vm::chunk::Chunk;
@@ -35,6 +36,7 @@ enum Variant {
     Array(ThinArc<(), Value>),
     Tuple(ThinArc<(), Value>),
     Struct(ThinArc<(), (Symbol, Value)>),
+    Variant(Arc<(Symbol, Value)>),
 }
 
 enum VariantRef<'a> {
@@ -50,6 +52,7 @@ enum VariantRef<'a> {
     Array(&'a <ThinArc<(), Value> as Deref>::Target),
     Tuple(&'a <ThinArc<(), Value> as Deref>::Target),
     Struct(&'a <ThinArc<(), (Symbol, Value)> as Deref>::Target),
+    Variant(&'a <Arc<(Symbol, Value)> as Deref>::Target),
 }
 
 pub type Int = BigInt;
@@ -98,8 +101,7 @@ impl Value {
         I::IntoIter: ExactSizeIterator,
     {
         let alloc = ThinArc::from_header_and_iter((), values.into_iter());
-        // Self(VariantRef::Array(alloc))
-        todo!()
+        Self::from_variant(Variant::Array(alloc))
     }
 
     pub fn new_tuple<I>(values: I) -> Self
@@ -108,8 +110,7 @@ impl Value {
         I::IntoIter: ExactSizeIterator,
     {
         let alloc = ThinArc::from_header_and_iter((), values.into_iter());
-        // Self(VariantRef::Tuple(alloc))
-        todo!()
+        Self::from_variant(Variant::Tuple(alloc))
     }
 
     pub fn new_func(func_id: FuncId) -> Self {
@@ -195,6 +196,7 @@ impl Value {
             Variant::Array(value) => boxed(8, value.into_raw()),
             Variant::Tuple(value) => boxed(9, value.into_raw()),
             Variant::Struct(value) => boxed(10, value.into_raw()),
+            Variant::Variant(value) => boxed(11, Arc::into_raw(value)),
         };
 
         Self { ptr }
@@ -216,6 +218,7 @@ impl Value {
             8 => unsafe { Variant::Array(ThinArc::from_raw(ptr)) },
             9 => unsafe { Variant::Tuple(ThinArc::from_raw(ptr)) },
             10 => unsafe { Variant::Struct(ThinArc::from_raw(ptr)) },
+            11 => unsafe { Variant::Variant(Arc::from_raw(ptr.cast())) },
             _ => Variant::Float64(f64::from_bits(value ^ NAN_MASK).into()),
         };
         ManuallyDrop::new(variant)
@@ -238,13 +241,33 @@ impl Value {
             Variant::Array(arc) => unsafe { VariantRef::Array(&*(&**arc as *const _)) },
             Variant::Tuple(arc) => unsafe { VariantRef::Tuple(&*(&**arc as *const _)) },
             Variant::Struct(arc) => unsafe { VariantRef::Struct(&*(&**arc as *const _)) },
+            Variant::Variant(arc) => unsafe { VariantRef::Variant(&*(&**arc as *const _)) },
         }
+    }
+
+    pub fn display_ctx<'a>(&'a self, sym_table: &'a IndexTable<'a, Symbol, str>) -> ValueWithCtx<'a> {
+        ValueWithCtx { value: self, sym_table }
     }
 }
 
-impl std::fmt::Display for Value {
+#[derive(Clone, Copy, Debug)]
+pub struct ValueWithCtx<'a> {
+    value: &'a Value,
+    sym_table: &'a IndexTable<'a, Symbol, str>,
+}
+
+impl<'a> ValueWithCtx<'a> {
+    fn derive<'b>(self, value: &'b Value) -> ValueWithCtx<'b>
+    where
+        'a: 'b,
+    {
+        ValueWithCtx { value, ..self }
+    }
+}
+
+impl std::fmt::Display for ValueWithCtx<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.variant_ref() {
+        match self.value.variant_ref() {
             VariantRef::Unit => write!(f, "()"),
             VariantRef::Null => write!(f, "null"),
             VariantRef::Bool(false) => write!(f, "false"),
@@ -257,21 +280,34 @@ impl std::fmt::Display for Value {
             VariantRef::Array(boxed) => match &boxed.slice {
                 [] => write!(f, "[]"),
                 [first, rest @ ..] => {
-                    write!(f, "[{first}")?;
-                    rest.iter().try_for_each(|v| write!(f, ", {v}"))?;
+                    write!(f, "[{}", self.derive(first))?;
+                    rest.iter().try_for_each(|v| write!(f, ", {}", self.derive(v)))?;
                     write!(f, "]")
                 }
             },
             VariantRef::Tuple(boxed) => match &boxed.slice {
                 [] => write!(f, "()"),
-                [first] => write!(f, "({first},)"),
+                [first] => write!(f, "({},)", self.derive(first)),
                 [first, rest @ ..] => {
-                    write!(f, "({first}")?;
-                    rest.iter().try_for_each(|v| write!(f, ", {v}"))?;
+                    write!(f, "({}", self.derive(first))?;
+                    rest.iter().try_for_each(|v| write!(f, ", {}", self.derive(v)))?;
                     write!(f, ")")
                 }
             },
-            VariantRef::Struct(boxed) => todo!(),
+            VariantRef::Struct(boxed) => match &boxed.slice {
+                [] => write!(f, "{{}}"),
+                [first, rest @ ..] => {
+                    write!(f, "{{ {}: {}", self.sym_table.get_str(first.0), self.derive(&first.1))?;
+                    rest.iter()
+                        .try_for_each(|v| write!(f, ", {}: {}", self.sym_table.get_str(v.0), self.derive(&v.1)))?;
+                    write!(f, " }}")
+                }
+            },
+            VariantRef::Variant(boxed) => {
+                let (tag, value) = &*boxed;
+                let tag = self.sym_table.get_str(*tag);
+                write!(f, "{}({})", tag, self.derive(value))
+            }
             VariantRef::Func(boxed) => write!(f, "<func:{}>", boxed.0), // FIXME: function name
         }
     }
@@ -279,7 +315,7 @@ impl std::fmt::Display for Value {
 
 impl std::fmt::Debug for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Value({self})")
+        write!(f, "Value({:?})", self.variant())
     }
 }
 
@@ -345,35 +381,56 @@ impl std::ops::Deref for FuncObjRef {
     }
 }
 
+#[derive(PartialEq, Eq, Clone, Debug)]
+struct ArcStr(ThinArc<(), u8>);
+
+impl From<&str> for ArcStr {
+    fn from(value: &str) -> Self {
+        Self(ThinArc::from_header_and_slice((), value.as_bytes()))
+    }
+}
+
+impl std::ops::Deref for ArcStr {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        unsafe { str::from_utf8_unchecked(&self.0.slice) }
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use crate::interner::IndexTable;
     use crate::vm::value::Value;
 
     #[test]
     fn roundtrip_primitive_values() {
-        assert_eq!(Value::new_unit().to_string(), "()");
-        assert_eq!(Value::new_null().to_string(), "null");
-        assert_eq!(Value::new_bool(false).to_string(), "false");
-        assert_eq!(Value::new_bool(true).to_string(), "true");
-        assert_eq!(Value::new_int(0.into()).to_string(), "0");
-        assert_eq!(Value::new_int(1.into()).to_string(), "1");
-        assert_eq!(Value::new_int(2.into()).to_string(), "2");
-        assert_eq!(Value::new_int(i32::MAX.into()).to_string(), i32::MAX.to_string());
-        assert_eq!(Value::new_int(i32::MIN.into()).to_string(), i32::MIN.to_string());
-        assert_eq!(Value::new_int(i64::MAX.into()).to_string(), i64::MAX.to_string());
-        assert_eq!(Value::new_int(i64::MIN.into()).to_string(), i64::MIN.to_string());
-        assert_eq!(Value::new_int(i128::MAX.into()).to_string(), i128::MAX.to_string());
-        assert_eq!(Value::new_int(i128::MIN.into()).to_string(), i128::MIN.to_string());
-        assert_eq!(Value::new_str("").to_string(), r#""""#);
-        assert_eq!(Value::new_str("hello world").to_string(), r#""hello world""#);
-        assert_eq!(Value::new_str("hello\nworld").to_string(), r#""hello\nworld""#);
-        assert_eq!(Value::new_f32(0.0).to_string(), "0");
-        assert_eq!(Value::new_f32(1.0).to_string(), "1");
-        assert_eq!(Value::new_f32(10.0).to_string(), "10");
-        assert_eq!(Value::new_f32(123.25).to_string(), "123.25");
-        assert_eq!(Value::new_f64(0.0).to_string(), "0");
-        assert_eq!(Value::new_f64(1.0).to_string(), "1");
-        assert_eq!(Value::new_f64(10.0).to_string(), "10");
-        assert_eq!(Value::new_f64(123.25).to_string(), "123.25");
+        let sym_table = &IndexTable::empty();
+        let print = |value: Value| value.display_ctx(sym_table).to_string();
+
+        assert_eq!(print(Value::new_unit()), "()");
+        assert_eq!(print(Value::new_null()), "null");
+        assert_eq!(print(Value::new_bool(false)), "false");
+        assert_eq!(print(Value::new_bool(true)), "true");
+        assert_eq!(print(Value::new_int(0.into())), "0");
+        assert_eq!(print(Value::new_int(1.into())), "1");
+        assert_eq!(print(Value::new_int(2.into())), "2");
+        assert_eq!(print(Value::new_int(i32::MAX.into())), i32::MAX.to_string());
+        assert_eq!(print(Value::new_int(i32::MIN.into())), i32::MIN.to_string());
+        assert_eq!(print(Value::new_int(i64::MAX.into())), i64::MAX.to_string());
+        assert_eq!(print(Value::new_int(i64::MIN.into())), i64::MIN.to_string());
+        assert_eq!(print(Value::new_int(i128::MAX.into())), i128::MAX.to_string());
+        assert_eq!(print(Value::new_int(i128::MIN.into())), i128::MIN.to_string());
+        assert_eq!(print(Value::new_str("")), r#""""#);
+        assert_eq!(print(Value::new_str("hello world")), r#""hello world""#);
+        assert_eq!(print(Value::new_str("hello\nworld")), r#""hello\nworld""#);
+        assert_eq!(print(Value::new_f32(0.0)), "0");
+        assert_eq!(print(Value::new_f32(1.0)), "1");
+        assert_eq!(print(Value::new_f32(10.0)), "10");
+        assert_eq!(print(Value::new_f32(123.25)), "123.25");
+        assert_eq!(print(Value::new_f64(0.0)), "0");
+        assert_eq!(print(Value::new_f64(1.0)), "1");
+        assert_eq!(print(Value::new_f64(10.0)), "10");
+        assert_eq!(print(Value::new_f64(123.25)), "123.25");
     }
 }

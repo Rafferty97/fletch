@@ -1,3 +1,5 @@
+use crate::ast::Symbol;
+use crate::interner::IndexTable;
 use crate::types::ty::FloatTy;
 use crate::vm::instr::{EncodedInstr, Reg, Width};
 use crate::vm::module::{FuncId, Module};
@@ -13,6 +15,7 @@ pub mod value;
 
 pub struct Vm<'a> {
     module: &'a Module,
+    sym_table: &'a IndexTable<'a, Symbol, str>,
     frames: Vec<CallFrame<'a>>,
     stack: Vec<Value>,
     current: CallFrame<'a>,
@@ -33,9 +36,16 @@ struct CallFrame<'a> {
 }
 
 impl<'a> Vm<'a> {
-    pub fn new(module: &'a Module) -> Self {
+    pub fn new(module: &'a Module, sym_table: &'a IndexTable<'a, Symbol, str>) -> Self {
         let current = CallFrame { code: &[], constants: &[], base_idx: 0, pc: 0, rd: Reg(0) };
-        Self { module, stack: vec![], frames: vec![], current, ret: Value::new_null() }
+        Self {
+            module,
+            sym_table,
+            stack: vec![],
+            frames: vec![],
+            current,
+            ret: Value::new_null(),
+        }
     }
 
     pub fn execute(&mut self, output: &mut dyn OutputSink) {
@@ -68,7 +78,7 @@ impl<'a> Vm<'a> {
                 }
                 Instr::Print { r0 } => {
                     let value = self.read(r0);
-                    output.emit(&format!("{value}\n"));
+                    output.emit(&format!("{}\n", value.display_ctx(self.sym_table)));
                 }
                 Instr::Add { r0, r1, rd } => {
                     let lhs = self.read(r0).as_int();

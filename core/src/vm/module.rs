@@ -1,5 +1,7 @@
 use fnv::FnvHashMap;
 
+use crate::ast::Symbol;
+use crate::interner::IndexTable;
 use crate::vm::chunk::Chunk;
 use crate::vm::value::FuncObjRef;
 
@@ -16,13 +18,13 @@ impl Module {
         &self.funcs[&self.main].chunk
     }
 
-    pub fn disassemble(&self) -> String {
+    pub fn disassemble(&self, sym_table: &IndexTable<'_, Symbol, str>) -> String {
         use std::fmt::Write;
 
         let mut out = String::new();
         for (_, func) in &self.funcs {
             write!(&mut out, "<{}>\n", func.name);
-            write!(&mut out, "{}\n", func.chunk.disassemble());
+            write!(&mut out, "{}\n", func.chunk.disassemble(sym_table));
         }
         out
     }
