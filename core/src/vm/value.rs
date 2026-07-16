@@ -31,7 +31,7 @@ enum Variant {
     Float32(OrderedFloat<f32>),
     Float64(OrderedFloat<f64>),
     Func(FuncId),
-    Str(ThinArc<(), u8>),
+    Str(ArcStr),
     BigInt(ThinArc<Sign, u32>),
     Array(ThinArc<(), Value>),
     Tuple(ThinArc<(), Value>),
@@ -47,7 +47,7 @@ enum VariantRef<'a> {
     Float32(OrderedFloat<f32>),
     Float64(OrderedFloat<f64>),
     Func(FuncId),
-    Str(&'a str),
+    Str(&'a <ArcStr as Deref>::Target),
     BigInt(&'a <ThinArc<Sign, u32> as Deref>::Target),
     Array(&'a <ThinArc<(), Value> as Deref>::Target),
     Tuple(&'a <ThinArc<(), Value> as Deref>::Target),
@@ -58,7 +58,7 @@ enum VariantRef<'a> {
 pub type Int = BigInt;
 
 const NAN_MASK: u64 = 0x7FFF_0000_0000_0000;
-const CANONICAL_NAN: f64 = f64::from_bits(0x7FF0_0000_0000_0001);
+const CANONICAL_NAN: u64 = 0x7FF0_0000_0000_0001;
 
 impl Value {
     pub fn new_null() -> Self {
@@ -76,9 +76,12 @@ impl Value {
     pub fn new_int(value: Int) -> Self {
         const I48_MIN: i64 = -(1 << 47);
         const I48_MAX: i64 = (1 << 47) - 1;
-        let variant = match i64::try_from(value) {
-            Ok(v) if (I48_MIN..=I48_MAX).contains(&v) => Variant::Int48(v),
-            _ => todo!(),
+        let variant = match i64::try_from(&value) {
+            Ok(value) if (I48_MIN..=I48_MAX).contains(&value) => Variant::Int48(value),
+            _ => {
+                let (sign, digits) = value.to_u32_digits();
+                Variant::BigInt(ThinArc::from_header_and_iter(sign, digits.into_iter()))
+            }
         };
         Self::from_variant(variant)
     }
@@ -92,7 +95,7 @@ impl Value {
     }
 
     pub fn new_str(value: &str) -> Self {
-        todo!()
+        Self::from_variant(Variant::Str(value.into()))
     }
 
     pub fn new_array<I>(values: I) -> Self
@@ -171,45 +174,67 @@ impl Value {
         }
     }
 
-    #[cfg(target_pointer_width = "64")]
-    fn from_variant(variant: Variant) -> Self {
-        fn inline(tag: u64, payload: u64) -> *const c_void {
-            ptr::without_provenance(((tag << 48) | payload) as usize)
+    fn new_inline(tag: u64, payload: u64) -> Self {
+        let value = (tag << 48) | payload;
+        Self {
+            #[cfg(target_pointer_width = "32")]
+            half: (value >> 32) as u32,
+            ptr: ptr::without_provenance(value as usize),
         }
+    }
 
-        fn boxed<T>(tag: usize, ptr: *const T) -> *const c_void {
-            ptr.map_addr(|a| a | (tag << 48)).cast()
-        }
-
-        let ptr = match variant {
-            Variant::Unit => inline(0, 0),
-            Variant::Null => inline(1, 0),
-            Variant::Bool(value) => inline(2, value as u64),
-            Variant::Int48(value) => inline(3, ((value << 16) as u64) >> 16),
-            Variant::Float32(value) => inline(4, value.0.to_bits() as u64),
-            Variant::Float64(value) => {
-                let value = match value.is_nan() {
-                    true => CANONICAL_NAN,
-                    false => value.0,
-                };
-                ptr::without_provenance((value.to_bits() ^ NAN_MASK) as _)
-            }
-            Variant::Func(func_id) => inline(5, func_id.0 as u64),
-            Variant::Str(value) => boxed(6, value.into_raw()),
-            Variant::BigInt(value) => boxed(7, value.into_raw()),
-            Variant::Array(value) => boxed(8, value.into_raw()),
-            Variant::Tuple(value) => boxed(9, value.into_raw()),
-            Variant::Struct(value) => boxed(10, value.into_raw()),
-            Variant::Variant(value) => boxed(11, Arc::into_raw(value)),
+    fn new_float(value: f64) -> Self {
+        let value = match value.is_nan() {
+            true => CANONICAL_NAN ^ NAN_MASK,
+            false => value.to_bits() ^ NAN_MASK,
         };
+        Self {
+            #[cfg(target_pointer_width = "32")]
+            half: (value >> 32) as u32,
+            ptr: ptr::without_provenance(value as usize),
+        }
+    }
 
-        Self { ptr }
+    #[cfg(target_pointer_width = "32")]
+    fn new_boxed<T>(tag: usize, ptr: *const T) -> Self {
+        Value { half: (tag as u32) << 16, ptr: ptr.cast() }
     }
 
     #[cfg(target_pointer_width = "64")]
+    fn new_boxed<T>(tag: usize, ptr: *const T) -> Self {
+        let ptr = ptr.map_addr(|a| a | (tag << 48)).cast();
+        Value { ptr }
+    }
+
+    fn from_variant(variant: Variant) -> Self {
+        match variant {
+            Variant::Unit => Self::new_inline(0, 0),
+            Variant::Null => Self::new_inline(1, 0),
+            Variant::Bool(value) => Self::new_inline(2, value as u64),
+            Variant::Int48(value) => Self::new_inline(3, ((value << 16) as u64) >> 16),
+            Variant::Float32(value) => Self::new_inline(4, value.0.to_bits() as u64),
+            Variant::Float64(value) => Self::new_float(*value),
+            Variant::Func(func_id) => Self::new_inline(5, func_id.0 as u64),
+            Variant::Str(value) => Self::new_boxed(6, value.0.into_raw()),
+            Variant::BigInt(value) => Self::new_boxed(7, value.into_raw()),
+            Variant::Array(value) => Self::new_boxed(8, value.into_raw()),
+            Variant::Tuple(value) => Self::new_boxed(9, value.into_raw()),
+            Variant::Struct(value) => Self::new_boxed(10, value.into_raw()),
+            Variant::Variant(value) => Self::new_boxed(11, Arc::into_raw(value)),
+        }
+    }
+
     fn variant(&self) -> ManuallyDrop<Variant> {
+        #[cfg(target_pointer_width = "32")]
+        let value = ((self.half as u64) << 32) | (self.ptr.addr() as u64);
+        #[cfg(target_pointer_width = "64")]
         let value = self.ptr.addr() as u64;
+
+        #[cfg(target_pointer_width = "32")]
+        let ptr = self.ptr;
+        #[cfg(target_pointer_width = "64")]
         let ptr = self.ptr.map_addr(|a| a & 0xffff_ffff_ffff);
+
         let variant = match value >> 48 {
             0 => Variant::Unit,
             1 => Variant::Null,
@@ -217,7 +242,7 @@ impl Value {
             3 => Variant::Int48(((value << 16) as i64) >> 16),
             4 => Variant::Float32(f32::from_bits(value as u32).into()),
             5 => Variant::Func(FuncId(value as u32)),
-            6 => unsafe { Variant::Str(ThinArc::from_raw(ptr)) },
+            6 => unsafe { Variant::Str(ArcStr(ThinArc::from_raw(ptr))) },
             7 => unsafe { Variant::BigInt(ThinArc::from_raw(ptr)) },
             8 => unsafe { Variant::Array(ThinArc::from_raw(ptr)) },
             9 => unsafe { Variant::Tuple(ThinArc::from_raw(ptr)) },
@@ -238,7 +263,7 @@ impl Value {
             Variant::Float64(value) => VariantRef::Float64(*value),
             Variant::Func(value) => VariantRef::Func(*value),
             Variant::Str(arc) => unsafe {
-                let slice = &*(&arc.slice as *const _);
+                let slice = &*(&arc.0.slice as *const _);
                 VariantRef::Str(str::from_utf8_unchecked(slice))
             },
             Variant::BigInt(arc) => unsafe { VariantRef::BigInt(&*(&**arc as *const _)) },
@@ -251,6 +276,13 @@ impl Value {
 
     pub fn display_ctx<'a>(&'a self, sym_table: &'a SymTable<'a>) -> ValueWithCtx<'a> {
         ValueWithCtx { value: self, sym_table }
+    }
+
+    pub(crate) fn raw(&self) -> u64 {
+        #[cfg(target_pointer_width = "32")]
+        return (self.ptr.addr() as u64) | ((self.half as u64) << 32);
+        #[cfg(target_pointer_width = "64")]
+        return self.ptr.addr() as u64;
     }
 }
 
@@ -333,7 +365,11 @@ impl Clone for Value {
             Variant::Struct(boxed) => mem::forget(boxed.clone()),
             _ => {}
         }
-        Self { ptr: self.ptr }
+        Self {
+            #[cfg(target_pointer_width = "32")]
+            half: self.half,
+            ptr: self.ptr,
+        }
     }
 }
 
