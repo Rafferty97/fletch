@@ -112,7 +112,7 @@ impl Instr {
             Self::MakeArray { r0, rn, rd } => EncodedInstr::opcode(21).reg0(r0).reg1(rn).reg2(rd),
             Self::Index { r0, r1, rd } => EncodedInstr::opcode(22).reg0(r0).reg1(r1).reg2(rd),
             Self::MakeTuple { r0, rn, rd } => EncodedInstr::opcode(23).reg0(r0).reg1(rn).reg2(rd),
-            Self::MakeVariant { r0, imm, rd } => EncodedInstr::opcode(24).reg0(r0).imm1(imm).reg2(rd),
+            Self::MakeVariant { r0, imm, rd } => EncodedInstr::opcode(24).reg0(r0).reg1(rd).imm2(imm),
             Self::Move { r0, rd } => EncodedInstr::opcode(25).reg0(r0).reg1(rd),
             Self::Jump { addr } => EncodedInstr::opcode(30).addr(addr),
             Self::JumpIfTrue { r0, addr } => EncodedInstr::opcode(31).reg0(r0).addr(addr),
@@ -150,7 +150,7 @@ impl Instr {
             21 => Self::MakeArray { r0: enc.get_reg0(), rn: enc.get_reg1(), rd: enc.get_reg2() },
             22 => Self::Index { r0: enc.get_reg0(), r1: enc.get_reg1(), rd: enc.get_reg2() },
             23 => Self::MakeTuple { r0: enc.get_reg0(), rn: enc.get_reg1(), rd: enc.get_reg2() },
-            24 => Self::MakeVariant { r0: enc.get_reg0(), imm: enc.get_imm1(), rd: enc.get_reg2() },
+            24 => Self::MakeVariant { r0: enc.get_reg0(), imm: enc.get_imm2(), rd: enc.get_reg1() },
             25 => Self::Move { r0: enc.get_reg0(), rd: enc.get_reg1() },
             30 => Self::Jump { addr: enc.get_addr() },
             31 => Self::JumpIfTrue { r0: enc.get_reg0(), addr: enc.get_addr() },
@@ -203,6 +203,10 @@ impl EncodedInstr {
         Self(self.0 | ((imm.0 as u32) << 16))
     }
 
+    fn imm2(self, imm: Imm) -> Self {
+        Self(self.0 | ((imm.0 as u32) << 24))
+    }
+
     fn addr(self, addr: Addr) -> Self {
         Self(self.0 | ((addr.0 as u32) << 16))
     }
@@ -233,6 +237,10 @@ impl EncodedInstr {
 
     fn get_imm1(self) -> Imm {
         Imm(((self.0 >> 16) & 0xffff) as _)
+    }
+
+    fn get_imm2(self) -> Imm {
+        Imm(((self.0 >> 24) & 0xff) as _)
     }
 
     fn get_addr(self) -> Addr {
@@ -400,5 +408,6 @@ mod test {
         test(Instr::Move { r0: Reg(12), rd: Reg(24) });
         test(Instr::FNeg { w: FloatTy::Float32, r0: Reg(22), rd: Reg(23) });
         test(Instr::FNeg { w: FloatTy::Float64, r0: Reg(33), rd: Reg(34) });
+        test(Instr::MakeVariant { r0: Reg(45), imm: Imm(10), rd: Reg(12) });
     }
 }

@@ -342,7 +342,7 @@ impl std::fmt::Display for ValueWithCtx<'_> {
             VariantRef::Variant(boxed) => {
                 let (tag, value) = &*boxed;
                 let tag = self.sym_table.get_str(*tag);
-                write!(f, "{}({})", tag, self.derive(value))
+                write!(f, "('{} {})", tag, self.derive(value))
             }
             VariantRef::Func(boxed) => write!(f, "<func:{}>", boxed.0), // FIXME: function name
         }
