@@ -273,9 +273,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                         }
                     };
 
-                    println!("{params:?}");
                     if params == prev_params {
-                        println!("   => {ret}");
                         break ret;
                     }
                     prev_params = params;
@@ -421,9 +419,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 let mut bounds = params.iter().map(|_| self.ty_ctx.new_bounds()).collect_vec();
                 let actual_gen = self.ty_ctx.mk_func(&func.params, func.ret);
                 let actual = self.ty_ctx.substitute_params(actual_gen, &params);
-                println!("actual = {actual}, expected = {expected}");
                 self.ty_ctx.update_bounds(actual, expected, &mut bounds);
-                println!("bounds -> {bounds:?}");
                 if expected.is_final() {
                     let params = bounds
                         .into_iter()

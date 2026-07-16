@@ -199,7 +199,8 @@ impl<'a> Vm<'a> {
         let frame = CallFrame { code, constants, base_idx, pc, rd };
 
         self.frames.push(std::mem::replace(&mut self.current, frame));
-        self.stack.resize(base_idx + func.chunk.stack_size(), Value::new_null());
+        let new_size = base_idx + func.chunk.stack_size();
+        self.stack.resize(new_size.max(self.stack.len()), Value::new_null());
     }
 
     fn pop_frame(&mut self, ret: Value) {
