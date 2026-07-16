@@ -7,6 +7,7 @@ use itertools::Itertools;
 
 use crate::ast::Symbol;
 use crate::interner::IndexTable;
+use crate::parser::SymTable;
 use crate::vm::instr::{Addr, Imm, Reg};
 use crate::vm::module::FuncId;
 
@@ -39,7 +40,7 @@ impl Chunk {
         &self.constants[imm.0 as usize]
     }
 
-    pub fn disassemble(&self, sym_table: &IndexTable<'_, Symbol, str>) -> String {
+    pub fn disassemble(&self, sym_table: &SymTable<'_>) -> String {
         let mut out = String::new();
 
         write!(out, "[attrs]\n");

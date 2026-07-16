@@ -5,10 +5,11 @@ use crate::ast::span::Span;
 use crate::ast::{Block, Expr, ExprKind, Func, Ident, Mutability, NodeId, Program, StmtKind, Symbol};
 use crate::diagnostics::{Diagnostic, DiagnosticReporter, ErrGuaranteed};
 use crate::interner::IndexTable;
+use crate::parser::SymTable;
 use crate::util::IdGen;
 
 pub struct NameResolution<'a> {
-    sym_table: &'a IndexTable<'a, Symbol, str>,
+    sym_table: &'a SymTable<'a>,
     defs: FnvHashMap<DefId, BindingInfo>,
     uses: FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
     scopes: Vec<FnvHashMap<Symbol, DefId>>,
@@ -36,7 +37,7 @@ pub struct BindingInfo {
 }
 
 impl<'a> NameResolution<'a> {
-    pub fn new(sym_table: &'a IndexTable<'a, Symbol, str>, errors: &'a dyn DiagnosticReporter) -> Self {
+    pub fn new(sym_table: &'a SymTable<'a>, errors: &'a dyn DiagnosticReporter) -> Self {
         Self {
             sym_table,
             defs: FnvHashMap::default(),

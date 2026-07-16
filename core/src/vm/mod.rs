@@ -1,5 +1,6 @@
 use crate::ast::Symbol;
 use crate::interner::IndexTable;
+use crate::parser::SymTable;
 use crate::types::ty::FloatTy;
 use crate::vm::instr::{EncodedInstr, Reg, Width};
 use crate::vm::module::{FuncId, Module};
@@ -15,7 +16,7 @@ pub mod value;
 
 pub struct Vm<'a> {
     module: &'a Module,
-    sym_table: &'a IndexTable<'a, Symbol, str>,
+    sym_table: &'a SymTable<'a>,
     frames: Vec<CallFrame<'a>>,
     stack: Vec<Value>,
     current: CallFrame<'a>,
@@ -36,7 +37,7 @@ struct CallFrame<'a> {
 }
 
 impl<'a> Vm<'a> {
-    pub fn new(module: &'a Module, sym_table: &'a IndexTable<'a, Symbol, str>) -> Self {
+    pub fn new(module: &'a Module, sym_table: &'a SymTable<'a>) -> Self {
         let current = CallFrame { code: &[], constants: &[], base_idx: 0, pc: 0, rd: Reg(0) };
         Self {
             module,

@@ -16,7 +16,7 @@ use crate::compile::{compile_func, compile_program};
 use crate::diagnostics::{Diagnostic, DiagnosticReporter, Level, VecReporter};
 use crate::interner::{IndexTable, IndexedInterner};
 use crate::name_resolution::{self, NameResolution};
-use crate::parser::{ParseCtx, Parser};
+use crate::parser::{ParseCtx, Parser, SymTable};
 use crate::typecheck::{Def, FuncDef, TypeChecker};
 use crate::types::ty::{self, TyWithCtx};
 use crate::types::ty_ctx::TyCtx;
@@ -160,7 +160,7 @@ pub fn check(src: &str) -> CheckResult {
     CheckResult { diagnostics: errors.into_errors(), types }
 }
 
-fn format_func(func: &FuncDef, sym_table: &IndexTable<'_, Symbol, str>) -> String {
+fn format_func(func: &FuncDef, sym_table: &SymTable<'_>) -> String {
     use std::fmt::Write;
 
     let mut buf = String::from("fn ");

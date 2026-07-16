@@ -4,6 +4,7 @@ use crate::{
     ast::{Ident, Symbol},
     diagnostics::ErrGuaranteed,
     interner::{IndexTable, Interned},
+    parser::SymTable,
     types::ty_ctx::Variance,
     vm::instr::Width,
 };
@@ -165,11 +166,7 @@ impl<'ty> Ty<'ty> {
         }
     }
 
-    pub fn display_ctx<'a>(
-        self,
-        ty_params: &'a [Ident],
-        sym_table: &'a IndexTable<'a, Symbol, str>,
-    ) -> TyWithCtx<'a, 'ty> {
+    pub fn display_ctx<'a>(self, ty_params: &'a [Ident], sym_table: &'a SymTable<'a>) -> TyWithCtx<'a, 'ty> {
         TyWithCtx { ty: self, ty_params, sym_table }
     }
 
@@ -188,7 +185,7 @@ impl<'ty> Display for Ty<'ty> {
 pub struct TyWithCtx<'a, 'ty> {
     pub ty: Ty<'ty>,
     pub ty_params: &'a [Ident],
-    pub sym_table: &'a IndexTable<'a, Symbol, str>,
+    pub sym_table: &'a SymTable<'a>,
 }
 
 impl<'ty> Display for TyWithCtx<'_, 'ty> {

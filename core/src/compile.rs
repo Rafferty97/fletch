@@ -7,6 +7,7 @@ use crate::ast::{BinOp, Block, Expr, ExprKind, Func, Ident, Lit, NodeId, Program
 use crate::diagnostics::{DiagnosticReporter, ErrGuaranteed};
 use crate::interner::IndexTable;
 use crate::name_resolution::DefId;
+use crate::parser::SymTable;
 use crate::types::infer::TypeError;
 use crate::types::ty::IntTy;
 use crate::types::{Ty, TyKind};
@@ -18,7 +19,7 @@ use crate::vm::value::{FuncObj, Int, Value};
 
 pub fn compile_program(
     ast: &Program,
-    sym_table: &IndexTable<'_, Symbol, str>,
+    sym_table: &SymTable<'_>,
     uses: &FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
     type_map: &FnvHashMap<NodeId, Ty<'_>>,
 ) -> Module {
@@ -55,7 +56,7 @@ pub fn compile_program(
 pub fn compile_func(
     ast: &Func,
     func_id: FuncId,
-    sym_table: &IndexTable<'_, Symbol, str>,
+    sym_table: &SymTable<'_>,
     uses: &FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
     type_map: &FnvHashMap<NodeId, Ty<'_>>,
     funcs: &FnvHashMap<DefId, FuncId>,
@@ -78,7 +79,7 @@ pub fn compile_func(
 
 struct Compiler<'a> {
     builder: ChunkBuilder,
-    sym_table: &'a IndexTable<'a, Symbol, str>,
+    sym_table: &'a SymTable<'a>,
     uses: &'a FnvHashMap<NodeId, Result<DefId, ErrGuaranteed>>,
     type_map: &'a FnvHashMap<NodeId, Ty<'a>>,
     locals: Vec<DefId>,

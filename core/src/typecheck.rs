@@ -13,6 +13,7 @@ use crate::ast::{
 use crate::diagnostics::{Diagnostic, DiagnosticReporter};
 use crate::interner::IndexTable;
 use crate::name_resolution::{DefId, NameTables};
+use crate::parser::SymTable;
 use crate::types::infer::{Bound, TyBounds, TypeError};
 use crate::types::ty::{ParamId, VarId};
 use crate::types::ty_ctx::TyCtx;
@@ -25,7 +26,7 @@ pub struct TypeChecker<'a, 'ty> {
     name_tables: &'a NameTables,
     type_map: FnvHashMap<NodeId, (Ty<'ty>, bool)>,
     def_map: FnvHashMap<DefId, Def<'ty>>,
-    sym_table: &'a IndexTable<'a, Symbol, str>,
+    sym_table: &'a SymTable<'a>,
     errors: &'a dyn DiagnosticReporter,
 }
 
@@ -49,7 +50,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
     pub fn new(
         ty_ctx: TyCtx<'a, 'ty>,
         name_tables: &'a NameTables,
-        sym_table: &'a IndexTable<'a, Symbol, str>,
+        sym_table: &'a SymTable<'a>,
         errors: &'a dyn DiagnosticReporter,
     ) -> Self {
         Self {

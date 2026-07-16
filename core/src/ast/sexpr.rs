@@ -1,8 +1,8 @@
-use crate::interner::IndexTable;
+use crate::{interner::IndexTable, parser::SymTable};
 
 use super::*;
 
-pub fn to_sexpr(ast: &impl SExpr, sym_table: &IndexTable<'_, Symbol, str>) -> String {
+pub fn to_sexpr(ast: &impl SExpr, sym_table: &SymTable<'_>) -> String {
     let mut buf = String::new();
     let mut sexpr_ctx = SExprCtx { str: &mut buf, sym_table };
     SExpr::write(ast, &mut sexpr_ctx);
@@ -15,7 +15,7 @@ pub trait SExpr {
 
 pub struct SExprCtx<'a> {
     pub str: &'a mut String,
-    pub sym_table: &'a IndexTable<'a, Symbol, str>,
+    pub sym_table: &'a SymTable<'a>,
 }
 
 impl SExpr for Program {

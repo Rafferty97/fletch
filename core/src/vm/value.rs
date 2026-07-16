@@ -11,7 +11,7 @@ use triomphe::{Arc, ThinArc};
 
 use crate::ast::Symbol;
 use crate::interner::IndexTable;
-use crate::parser::escape;
+use crate::parser::{SymTable, escape};
 use crate::thin_rc::{Head, ThinRc};
 use crate::vm::chunk::Chunk;
 use crate::vm::module::FuncId;
@@ -167,6 +167,7 @@ impl Value {
         }
     }
 
+<<<<<<< HEAD
     #[cfg(target_pointer_width = "64")]
     fn from_variant(variant: Variant) -> Self {
         fn inline(tag: u64, payload: u64) -> *const c_void {
@@ -246,6 +247,9 @@ impl Value {
     }
 
     pub fn display_ctx<'a>(&'a self, sym_table: &'a IndexTable<'a, Symbol, str>) -> ValueWithCtx<'a> {
+=======
+    pub fn display_ctx<'a>(&'a self, sym_table: &'a SymTable<'a>) -> ValueWithCtx<'a> {
+>>>>>>> 4c12091 (Add SymTable alias)
         ValueWithCtx { value: self, sym_table }
     }
 }
@@ -253,7 +257,7 @@ impl Value {
 #[derive(Clone, Copy, Debug)]
 pub struct ValueWithCtx<'a> {
     value: &'a Value,
-    sym_table: &'a IndexTable<'a, Symbol, str>,
+    sym_table: &'a SymTable<'a>,
 }
 
 impl<'a> ValueWithCtx<'a> {

@@ -8,7 +8,7 @@ use logos::{Lexer, Logos, SpannedIter};
 use crate::ast::span::{Span, Spanned};
 use crate::ast::{Expr, NodeId, Program, Symbol};
 use crate::diagnostics::{Diagnostic, DiagnosticReporter};
-use crate::interner::IndexedInterner;
+use crate::interner::{IndexTable, IndexedInterner};
 use crate::parser::error::Result;
 use crate::parser::lexer::Token;
 use crate::util::IdGen;
@@ -29,6 +29,8 @@ pub struct ParseCtx<'a, 'sym> {
     /// The sink for diagnostics
     pub errors: &'a dyn DiagnosticReporter,
 }
+
+pub type SymTable<'a> = IndexTable<'a, Symbol, str>;
 
 pub struct Parser<'a, 'sym> {
     /// The parsing context
