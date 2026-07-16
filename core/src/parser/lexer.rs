@@ -7,6 +7,8 @@ use crate::diagnostics::ErrGuaranteed;
 pub enum Token<'a> {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*")]
     Ident(&'a str),
+    #[regex("'[a-zA-Z_][a-zA-Z0-9_]*")]
+    Tag(&'a str),
     #[regex("-?[0-9]+(\\.[0-9]*)?")]
     Number(&'a str),
     #[regex(r#""([^"\\]|\\.)*""#)]
@@ -97,6 +99,7 @@ impl<'a> std::fmt::Display for Token<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let str = match self {
             Self::Ident(_) => "identifer",
+            Self::Tag(_) => "tag",
             Self::Number(_) => "number",
             Self::Str(_) => "string",
             Self::Null => "'null'",

@@ -19,9 +19,13 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 self.consume();
                 self.make_spanned(start, TyKind::Infer)
             }
+            Token::Tag(str) => {
+                let ident = self.parse_tag()?;
+                let ty = self.parse_ty()?.into();
+                self.make_spanned(start, TyKind::Variant(ident, ty))
+            }
             Token::Ident(_) => {
                 let ident = self.parse_ident()?;
-                let span = ident.span;
                 self.make_spanned(start, TyKind::Var(ident))
             }
             Token::LeftBracket => {
@@ -64,7 +68,7 @@ impl<'a, 'sym> Parser<'a, 'sym> {
 
                 self.make_spanned(start, TyKind::Func(elements, ret))
             }
-            _ => Err(self.unexpected_prev())?,
+            _ => Err(self.unexpected_curr())?,
         };
 
         if let Some(token) = self.consume_if(|t| t == Token::Question) {

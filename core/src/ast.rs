@@ -58,6 +58,7 @@ pub enum ExprKind {
     Array(Vec<Expr>),
     Index(Box<Expr>, Box<Expr>),
     Tuple(Vec<Expr>),
+    Variant(Tag, Box<Expr>),
     If {
         cond: Box<Expr>,
         then: Box<Expr>,
@@ -103,11 +104,19 @@ pub enum TyKind {
     Nullable(Box<Ty>),
     Array(Box<Ty>),
     Tuple(Vec<Ty>),
+    Variant(Tag, Box<Ty>),
     Func(Vec<Ty>, Option<Box<Ty>>),
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct Ident {
+    pub id: NodeId,
+    pub sym: Symbol,
+    pub span: Span,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Tag {
     pub id: NodeId,
     pub sym: Symbol,
     pub span: Span,

@@ -113,6 +113,10 @@ impl Value {
         Self::from_variant(Variant::Tuple(alloc))
     }
 
+    pub fn new_variant(tag: Symbol, inner: Value) -> Self {
+        Self::from_variant(Variant::Variant(Arc::new((tag, inner))))
+    }
+
     pub fn new_func(func_id: FuncId) -> Self {
         Self::from_variant(Variant::Func(func_id))
     }
@@ -167,7 +171,6 @@ impl Value {
         }
     }
 
-<<<<<<< HEAD
     #[cfg(target_pointer_width = "64")]
     fn from_variant(variant: Variant) -> Self {
         fn inline(tag: u64, payload: u64) -> *const c_void {
@@ -246,10 +249,7 @@ impl Value {
         }
     }
 
-    pub fn display_ctx<'a>(&'a self, sym_table: &'a IndexTable<'a, Symbol, str>) -> ValueWithCtx<'a> {
-=======
     pub fn display_ctx<'a>(&'a self, sym_table: &'a SymTable<'a>) -> ValueWithCtx<'a> {
->>>>>>> 4c12091 (Add SymTable alias)
         ValueWithCtx { value: self, sym_table }
     }
 }

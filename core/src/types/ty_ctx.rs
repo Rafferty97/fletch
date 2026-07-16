@@ -1,8 +1,9 @@
 use bumpalo::Bump;
 use itertools::Itertools;
 
+use crate::ast::Tag;
 use crate::diagnostics::ErrGuaranteed;
-use crate::types::ty::{ParamId, VarId};
+use crate::types::ty::{ParamId, VarId, Variant};
 
 use super::ty::{FloatTy, FuncTy, IntTy, Ty, TyKind, Tys, UIntTy};
 use super::ty_interners::{CommonTypes, TyInterners};
@@ -75,6 +76,15 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
     pub fn mk_tuple(&self, tys: &[Ty<'ty>]) -> Ty<'ty> {
         let tys = self.interners.ty_slice.intern_slice(self.arena, tys);
         self.mk_ty_from_kind(TyKind::Tuple(tys))
+    }
+
+    pub fn mk_variant(&self, tag: Tag, inner: Ty<'ty>) -> Ty<'ty> {
+        self.mk_enum(&[Variant { tag: tag.sym, ty: inner }])
+    }
+
+    pub fn mk_enum(&self, variants: &[Variant<'ty>]) -> Ty<'ty> {
+        let variants = self.interners.variants.intern_slice(self.arena, variants);
+        self.mk_ty_from_kind(TyKind::Enum(variants))
     }
 
     pub fn mk_func(&self, params: &[Ty<'ty>], ret: Ty<'ty>) -> Ty<'ty> {

@@ -148,6 +148,9 @@ impl<'a> NameResolution<'a> {
             ExprKind::Tuple(exprs) => {
                 exprs.iter().for_each(|arg| self.resolve_expr(arg));
             }
+            ExprKind::Variant(_, expr) => {
+                self.resolve_expr(expr);
+            }
             ExprKind::If { cond, then, r#else } => {
                 self.resolve_expr(cond);
                 self.resolve_expr(then);

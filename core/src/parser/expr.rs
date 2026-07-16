@@ -109,6 +109,11 @@ impl<'a, 'sym> Parser<'a, 'sym> {
                 };
                 ExprKind::Lit(Lit::Str(unescaped))
             }
+            Token::Tag(raw) => {
+                let tag = self.parse_tag()?;
+                let expr = self.parse_precedence(Precedence::Unary)?.into();
+                ExprKind::Variant(tag, expr)
+            }
             Token::Ident(raw) => ExprKind::Var(self.parse_ident()?),
             Token::Bang => {
                 let span = self.consume().span;

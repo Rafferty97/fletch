@@ -15,7 +15,7 @@ use crate::interner::IndexTable;
 use crate::name_resolution::{DefId, NameTables};
 use crate::parser::SymTable;
 use crate::types::infer::{Bound, TyBounds, TypeError};
-use crate::types::ty::{ParamId, VarId};
+use crate::types::ty::{ParamId, VarId, Variant};
 use crate::types::ty_ctx::TyCtx;
 use crate::types::ty_interners::{CommonTypes, TyInterners};
 use crate::types::{Ty, TyKind};
@@ -199,7 +199,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     (UnaryOp::Not, TyKind::Bool) => rhs,
                     (UnaryOp::Negate, TyKind::Int(_) | TyKind::UInt(_) | TyKind::Float(_)) => rhs,
                     (_, _) => {
-                        let msg = format!("cannot apply unary operator '{op}' to '{rhs}'");
+                        let msg = format!("cannot apply unary operator '{op}' to '{rhs:?}'"); // FIXME
                         let err = self.errors.report_err(Diagnostic::error(msg, *span));
                         self.ty_ctx.mk_error(err)
                     }
@@ -213,7 +213,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     BinOp::Eq | BinOp::NotEq => {
                         if self.ty_ctx.meet(lhs, rhs).is_never() {
                             let msg =
-                                format!("this comparison can never be true as '{lhs}' and '{rhs}' have no overlap");
+                                format!("this comparison can never be true as '{lhs:?}' and '{rhs:?}' have no overlap"); // FIXME
                             let diagnostic = Diagnostic::warning(msg, *span);
                             self.errors.report(diagnostic);
                         }
@@ -224,7 +224,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 match result {
                     Some(ty) => ty,
                     None => {
-                        let msg = format!("no implementation for '{lhs}' {op} '{rhs}'");
+                        let msg = format!("no implementation for '{lhs:?}' {op} '{rhs:?}'"); // FIXME
                         let err = self.errors.report_err(Diagnostic::error(msg, *span));
                         self.ty_ctx.mk_error(err)
                     }
@@ -264,7 +264,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                             self.ty_ctx.mk_error(err)
                         }
                         _ => {
-                            let msg = format!("expected a function, found '{func_ty}'");
+                            let msg = format!("expected a function, found '{func_ty:?}'"); // FIXME
                             let diagnostic = Diagnostic::error(msg, func.span);
                             let err = self.errors.report_err(diagnostic);
                             for arg in args {
@@ -291,10 +291,11 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                 let expr_ty = self.check_expr(expr, self.common().infer);
                 self.check_expr(index, self.common().int64);
                 match expr_ty.kind() {
+                    // TyKind::Nullable(_) => todo!(),
                     TyKind::Array(el) => el,
                     TyKind::Error(_) => expr_ty,
                     _ => {
-                        let msg = format!("cannot index into type '{}'", expr_ty);
+                        let msg = format!("cannot index into type '{:?}'", expr_ty); // FIXME
                         let diagnostic = Diagnostic::error(msg, expr.span);
                         self.ty_ctx.mk_error(self.errors.report_err(diagnostic))
                     }
@@ -310,6 +311,14 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     .map(|(index, expr)| self.check_expr(expr, expected.get(index).copied().unwrap_or(infer)))
                     .collect_vec();
                 self.ty_ctx.mk_tuple(&expr_tys)
+            }
+            ExprKind::Variant(tag, expr) => {
+                // let expected = match expected.kind() {
+                //     TyKind::Enum(variants) =>
+                // }
+                let expected = self.common().infer; // FIXME
+                let ty = self.check_expr(expr, expected);
+                self.ty_ctx.mk_enum(&[Variant { tag: tag.sym, ty }])
             }
             ExprKind::If { cond, then, r#else } => {
                 self.check_expr(cond, self.common().bool);
@@ -390,6 +399,10 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
                     .map(|ty| self.lower_ty_with_params(ty, ty_params))
                     .collect_vec();
                 self.ty_ctx.mk_tuple(&tys)
+            }
+            ast::TyKind::Variant(name, inner) => {
+                let inner = self.lower_ty_with_params(inner, ty_params);
+                self.ty_ctx.mk_enum(&[Variant { tag: name.sym, ty: inner }])
             }
             ast::TyKind::Func(params, ret) => {
                 let params = params

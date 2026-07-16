@@ -161,6 +161,13 @@ impl<'a> SExprCtx<'a> {
                 }
                 self.str.push(')');
             }
+            ExprKind::Variant(tag, expr) => {
+                self.str.push_str("(variant ");
+                self.str.push_str(self.sym_table.get_str(tag.sym));
+                self.str.push(' ');
+                self.write_expr(expr);
+                self.str.push(')');
+            }
             ExprKind::If { cond, then, r#else } => {
                 self.str.push_str("(if ");
                 self.write_expr(cond);
@@ -240,6 +247,14 @@ impl<'a> SExprCtx<'a> {
                 }
                 self.str.push(')');
             }
+            TyKind::Variant(name, ty) => {
+                self.str.push_str("(variant ");
+                self.str.push_str(self.sym_table.get_str(name.sym));
+                self.str.push(' ');
+                self.write_ty(ty);
+                self.str.push(')');
+            }
+
             TyKind::Func(params, ret) => {
                 self.str.push_str("(func");
                 for ty in params {

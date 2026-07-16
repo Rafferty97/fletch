@@ -1,5 +1,5 @@
 use crate::ast::Symbol;
-use crate::interner::IndexTable;
+use crate::interner::{Index, IndexTable};
 use crate::parser::SymTable;
 use crate::types::ty::FloatTy;
 use crate::vm::instr::{EncodedInstr, Reg, Width};
@@ -143,6 +143,11 @@ impl<'a> Vm<'a> {
                 Instr::MakeTuple { r0, rn, rd } => {
                     let elements = self.read_many(r0, rn);
                     self.write(rd, Value::new_tuple(elements.iter().cloned()));
+                }
+                Instr::MakeVariant { r0, imm, rd } => {
+                    let inner = self.read(r0);
+                    let tag = Symbol::from_usize(imm.0 as usize);
+                    self.write(rd, Value::new_variant(tag, inner.clone()))
                 }
                 Instr::Jump { addr } => {
                     self.current.pc = addr.0 as usize;

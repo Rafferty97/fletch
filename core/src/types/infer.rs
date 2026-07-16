@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::fmt::Debug;
 
 use itertools::Itertools;
 use thiserror::Error;
 
-use crate::types::ty::{FuncTy, ParamId, VarId};
+use crate::typecheck::Def::Var;
+use crate::types::ty::{FuncTy, ParamId, VarId, Variant};
 use crate::types::ty_ctx::Variance;
 use crate::util::{Args, Elements};
 
@@ -30,13 +32,13 @@ pub struct TypeError<'ty> {
     causes: Vec<TypeError<'ty>>,
 }
 
-pub type TyResult<'ty> = std::result::Result<Ty<'ty>, TypeError<'ty>>;
+pub type TyResult<'ty, T = Ty<'ty>> = std::result::Result<T, TypeError<'ty>>;
 
 #[derive(Error, Clone, PartialEq, Eq, Debug)]
 pub enum TypeErrorKind<'ty> {
     #[error("Cannot infer a type here")]
     Ambiguous,
-    #[error("'{act}' is not assignable to '{exp}'")]
+    #[error("'{act:?}' is not assignable to '{exp:?}'")] // FIXME
     Unassignable { act: Ty<'ty>, exp: Ty<'ty> },
     #[error("expected {exp}, but got {act}")]
     Arity { exp: Args, act: Args },
@@ -85,6 +87,20 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
                     .map(|(&lhs, &rhs)| self.meet(lhs, rhs))
                     .collect();
                 self.mk_tuple(&tys)
+            }
+
+            // Variants
+            (Enum(lhs), Enum(rhs)) => {
+                let lhs: HashMap<_, _> = lhs.iter().map(|v| (v.tag, v.ty)).collect();
+                let variants = rhs
+                    .iter()
+                    .flat_map(|&Variant { tag, ty: rhs }| {
+                        let lhs = *lhs.get(&tag)?;
+                        let ty = self.meet(lhs, rhs);
+                        ty.is_inhabited().then_some(Variant { tag, ty })
+                    })
+                    .collect_vec();
+                self.mk_enum(&variants)
             }
 
             // Functions
@@ -143,6 +159,19 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
                     .map(|(&lhs, &rhs)| self.join(lhs, rhs))
                     .collect();
                 self.mk_tuple(&tys)
+            }
+
+            // Variants
+            (Enum(lhs), Enum(rhs)) => {
+                let mut variants: HashMap<_, _> = lhs.iter().map(|v| (v.tag, v.ty)).collect();
+                for &Variant { tag, ty: rhs } in rhs.iter() {
+                    variants
+                        .entry(tag)
+                        .and_modify(|ty| *ty = self.join(*ty, rhs))
+                        .or_insert(rhs);
+                }
+                let variants = variants.into_iter().map(|(tag, ty)| Variant { tag, ty }).collect_vec();
+                self.mk_enum(&variants)
             }
 
             // Functions
@@ -260,6 +289,7 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
                     self.update_bounds(act, exp, bounds);
                 }
             }
+            // TODO: variants
             (Func(act), Func(exp)) if act.params.len() == exp.params.len() => {
                 for (&act, &exp) in act.params.iter().zip(exp.params.iter()) {
                     self.update_bounds(exp, act, bounds); // Flip variance
@@ -332,6 +362,22 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
                     Ok(self.mk_tuple(&tys))
                 } else {
                     Err(TypeError::unassignable(act, exp).with_causes(errors))
+                }
+            }
+            (Enum(act_in), Enum(exp_in)) => {
+                let mut act_vars: HashMap<_, _> = act_in.iter().map(|&Variant { tag, ty }| (tag, ty)).collect();
+                let (vars, errors): (Vec<_>, Vec<_>) = exp_in
+                    .iter()
+                    .map(|&Variant { tag, ty: exp }| {
+                        let act = act_vars.remove(&tag).unwrap_or(self.common().never);
+                        let ty = self.reconcile(act, exp)?;
+                        TyResult::Ok(Variant { tag, ty })
+                    })
+                    .partition_result();
+                if errors.is_empty() && act_vars.is_empty() {
+                    Ok(self.mk_enum(&vars))
+                } else {
+                    Err(TypeError::unassignable(act, exp)) // TODO: with_cause
                 }
             }
             (Func(act_in), Func(exp_in)) => {

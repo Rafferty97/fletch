@@ -1,5 +1,5 @@
 use crate::ast::span::{Span, Spanned};
-use crate::ast::{Block, Expr, ExprKind, Func, Ident, Lit, Mutability, Program, Stmt, StmtKind, Symbol, Ty};
+use crate::ast::{Block, Expr, ExprKind, Func, Ident, Lit, Mutability, Program, Stmt, StmtKind, Symbol, Tag, Ty};
 use crate::diagnostics::Diagnostic;
 use crate::parser::{SpannedToken, expr};
 
@@ -192,6 +192,18 @@ impl<'a, 'sym> Parser<'a, 'sym> {
         let sym = self.make_symbol(raw);
         let span = token.span;
         Ok(Ident { id, sym, span })
+    }
+
+    pub(crate) fn parse_tag(&mut self) -> Result<Tag> {
+        let token = self.consume();
+        let Token::Tag(raw) = token.token else {
+            let diagnostic = Diagnostic::error("expected a tag", token.span);
+            Err(self.report_err(diagnostic))?
+        };
+        let id = self.node_ids.next();
+        let sym = self.make_symbol(&raw[1..]);
+        let span = token.span;
+        Ok(Tag { id, sym, span })
     }
 
     fn convert_expr_to_place(&self, expr: Expr) -> Result<Ident> {

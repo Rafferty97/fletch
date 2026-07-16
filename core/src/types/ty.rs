@@ -9,10 +9,18 @@ use crate::{
     vm::instr::Width,
 };
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct Ty<'ty>(pub(super) Interned<'ty, TyKind<'ty>>);
 
 pub type Tys<'ty> = Interned<'ty, [Ty<'ty>]>;
+
+pub type Variants<'ty> = Interned<'ty, [Variant<'ty>]>;
+
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct Variant<'ty> {
+    pub tag: Symbol,
+    pub ty: Ty<'ty>,
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum TyKind<'ty> {
@@ -26,6 +34,7 @@ pub enum TyKind<'ty> {
     Nullable(Ty<'ty>),
     Array(Ty<'ty>),
     Tuple(Tys<'ty>),
+    Enum(Variants<'ty>),
     Func(FuncTy<'ty>),
     Any,
     Param(ParamId),
@@ -113,7 +122,15 @@ impl<'ty> Ty<'ty> {
     }
 
     pub fn is_never(self) -> bool {
-        self.kind() == TyKind::Never
+        !self.is_inhabited()
+    }
+
+    pub fn is_inhabited(self) -> bool {
+        match self.kind() {
+            TyKind::Never => false,
+            TyKind::Enum(vars) => !vars.is_empty(),
+            _ => true,
+        }
     }
 
     pub fn is_err(self) -> bool {
@@ -175,12 +192,6 @@ impl<'ty> Ty<'ty> {
     }
 }
 
-impl<'ty> Display for Ty<'ty> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.display_ctx(&[], IndexTable::empty()))
-    }
-}
-
 #[derive(Clone, Copy)]
 pub struct TyWithCtx<'a, 'ty> {
     pub ty: Ty<'ty>,
@@ -213,12 +224,22 @@ impl<'ty> Display for TyWithCtx<'_, 'ty> {
                 }
             }
             TyKind::Array(inner) => write!(f, "[{}]", inner.with_ctx(*self)),
-            TyKind::Tuple(tys) => match &tys[..] {
+            TyKind::Tuple(tys) => match &*tys {
                 [] => write!(f, "()"),
                 [first, rest @ ..] => {
                     write!(f, "({}", first.with_ctx(*self))?;
                     for ty in rest {
                         write!(f, ", {}", ty.with_ctx(*self))?;
+                    }
+                    write!(f, ")")
+                }
+            },
+            TyKind::Enum(variants) => match &*variants {
+                [] => write!(f, "never"),
+                [Variant { tag: name, ty }, rest @ ..] => {
+                    write!(f, "('{} {}", self.sym_table.get_str(*name), ty.with_ctx(*self));
+                    for Variant { tag: name, ty } in rest {
+                        write!(f, " | '{} {}", self.sym_table.get_str(*name), ty.with_ctx(*self));
                     }
                     write!(f, ")")
                 }
@@ -257,12 +278,6 @@ impl<'ty> Display for TyWithCtx<'_, 'ty> {
             TyKind::Pending => write!(f, "?"),
             TyKind::Error(_) => write!(f, "{{err}}"),
         }
-    }
-}
-
-impl<'ty> Debug for Ty<'ty> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Ty({})", self)
     }
 }
 

@@ -2,11 +2,13 @@ use bumpalo::Bump;
 
 use super::ty::{FloatTy, IntTy, Ty, TyKind, UIntTy};
 use crate::interner::Interner;
+use crate::types::ty::{Variant, Variants};
 
 #[derive(Debug)]
 pub struct TyInterners<'ty> {
     pub ty_kind: Interner<'ty, TyKind<'ty>>,
     pub ty_slice: Interner<'ty, [Ty<'ty>]>,
+    pub variants: Interner<'ty, [Variant<'ty>]>,
     pub common_types: CommonTypes<'ty>,
 }
 
@@ -14,9 +16,10 @@ impl<'ty> TyInterners<'ty> {
     pub fn new(arena: &'ty Bump) -> Self {
         let ty_kind = Interner::new();
         let ty_slice = Interner::new();
+        let variants = Interner::new();
         let common_types = CommonTypes::new(arena, &ty_kind, &ty_slice);
 
-        Self { ty_kind, ty_slice, common_types }
+        Self { ty_kind, ty_slice, variants, common_types }
     }
 }
 

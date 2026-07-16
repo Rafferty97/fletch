@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::ast::{BinOp, Block, Expr, ExprKind, Func, Ident, Lit, NodeId, Program, Stmt, StmtKind, Symbol, UnaryOp};
 use crate::diagnostics::{DiagnosticReporter, ErrGuaranteed};
-use crate::interner::IndexTable;
+use crate::interner::{Index, IndexTable};
 use crate::name_resolution::DefId;
 use crate::parser::SymTable;
 use crate::types::infer::TypeError;
@@ -13,7 +13,7 @@ use crate::types::ty::IntTy;
 use crate::types::{Ty, TyKind};
 use crate::util::IdGen;
 use crate::vm::chunk::{Chunk, ChunkBuilder};
-use crate::vm::instr::{Addr, Instr, Reg, Width};
+use crate::vm::instr::{Addr, Imm, Instr, Reg, Width};
 use crate::vm::module::{FuncId, Module};
 use crate::vm::value::{FuncObj, Int, Value};
 
@@ -315,6 +315,16 @@ impl<'a> Compiler<'a> {
 
                 let rd = rd.unwrap_or_else(|| self.push());
                 self.builder.ins(Instr::MakeTuple { r0, rn, rd });
+                rd
+            }
+            ExprKind::Variant(tag, expr) => {
+                let sp = self.stack_pos;
+                let r0 = self.compile_expr(expr, None);
+                self.stack_pos = sp;
+
+                let rd = rd.unwrap_or_else(|| self.push());
+                let imm = Imm(tag.sym.into_usize() as u16);
+                self.builder.ins(Instr::MakeVariant { r0, imm, rd });
                 rd
             }
             ExprKind::If { cond, then, r#else } => {
