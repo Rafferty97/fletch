@@ -6,7 +6,7 @@ use std::sync::Mutex;
 use bumpalo::Bump;
 use hashbrown::HashTable;
 
-#[derive(Hash, Debug)]
+#[derive(Debug)]
 pub struct Interned<'a, T: ?Sized>(&'a T);
 
 impl<'a, T: ?Sized> Clone for Interned<'a, T> {
@@ -20,6 +20,12 @@ impl<'a, T: ?Sized> Copy for Interned<'a, T> {}
 impl<'a, T: ?Sized> PartialEq for Interned<'a, T> {
     fn eq(&self, other: &Self) -> bool {
         std::ptr::eq(self.0, other.0)
+    }
+}
+
+impl<'a, T: ?Sized> Hash for Interned<'a, T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::ptr::hash(self.0, state);
     }
 }
 
