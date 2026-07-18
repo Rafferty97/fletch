@@ -3,7 +3,7 @@ use std::hash::Hash;
 
 use crate::ast::span::{Span, Spanned};
 use crate::diagnostics::ErrGuaranteed;
-use crate::interner::{Index, IndexedInterner};
+use crate::interner::Index;
 
 pub mod sexpr;
 pub mod span;

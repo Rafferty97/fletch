@@ -1,26 +1,20 @@
-use std::fmt::Pointer;
-use std::num;
-
 use bumpalo::Bump;
-use codespan_reporting::diagnostic::{self, Label};
+use codespan_reporting::diagnostic::Label;
 use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
-use fnv::FnvHashMap;
 use serde::Serialize;
 
-use crate::ast::sexpr::{SExpr, SExprCtx, to_sexpr};
+use crate::ast::sexpr::to_sexpr;
 use crate::ast::span::Span;
-use crate::ast::{ExprKind, Lit, StmtKind, Symbol};
-use crate::compile::{compile_func, compile_program};
-use crate::diagnostics::{Diagnostic, DiagnosticReporter, Level, VecReporter};
-use crate::interner::{IndexTable, IndexedInterner};
-use crate::name_resolution::{self, NameResolution};
+use crate::compile::compile_program;
+use crate::diagnostics::{Diagnostic, Level, VecReporter};
+use crate::interner::IndexedInterner;
+use crate::name_resolution::NameResolution;
 use crate::parser::{ParseCtx, Parser, SymTable};
 use crate::typecheck::{Def, FuncDef, TypeChecker};
-use crate::types::ty::{self, TyWithCtx};
 use crate::types::ty_ctx::TyCtx;
-use crate::types::ty_interners::{self, TyInterners};
+use crate::types::ty_interners::TyInterners;
 use crate::vm::{OutputSink, Vm};
 
 #[derive(Default)]
@@ -33,7 +27,6 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
     // Create arena and interners
     let arena = Bump::new();
     let sym_interner = IndexedInterner::new();
-    let main_sym = sym_interner.intern_str(&arena, "main");
 
     // Setup error reporting
     let mut files = SimpleFiles::new();
@@ -120,9 +113,7 @@ pub fn check(src: &str) -> CheckResult {
 
     // Setup error reporting
     let mut files = SimpleFiles::new();
-    let file_id = files.add("<anon>", src);
-    let writer = StandardStream::stderr(ColorChoice::Always);
-    let config = codespan_reporting::term::Config::default();
+    files.add("<anon>", src);
     let errors = VecReporter::new();
 
     // Parse
@@ -154,7 +145,7 @@ pub fn check(src: &str) -> CheckResult {
             }
         })
         .collect();
-    let type_map = checker.finish();
+    checker.finish();
 
     // Return info
     CheckResult { diagnostics: errors.into_errors(), types }
@@ -183,10 +174,10 @@ fn format_func(func: &FuncDef, sym_table: &SymTable<'_>) -> String {
         [] => buf.push_str("()"),
         [first, rest @ ..] => {
             buf.push('(');
-            write!(&mut buf, "{}", first.display_ctx(&func.ty_params, sym_table));
+            write!(&mut buf, "{}", first.display_ctx(&func.ty_params, sym_table)).unwrap();
             for param in rest {
                 buf.push_str(", ");
-                write!(&mut buf, "{}", param.display_ctx(&func.ty_params, sym_table));
+                write!(&mut buf, "{}", param.display_ctx(&func.ty_params, sym_table)).unwrap();
             }
             buf.push(')');
         }
@@ -194,7 +185,7 @@ fn format_func(func: &FuncDef, sym_table: &SymTable<'_>) -> String {
 
     if !func.ret.is_unit() {
         buf.push_str(" -> ");
-        write!(&mut buf, "{}", func.ret.display_ctx(&func.ty_params, sym_table));
+        write!(&mut buf, "{}", func.ret.display_ctx(&func.ty_params, sym_table)).unwrap();
     }
 
     buf

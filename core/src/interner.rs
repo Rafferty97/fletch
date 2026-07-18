@@ -1,11 +1,10 @@
 use std::hash::{BuildHasher, Hash, RandomState};
 use std::marker::PhantomData;
 use std::ops::Deref;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 
 use bumpalo::Bump;
 use hashbrown::HashTable;
-use itertools::Itertools;
 
 #[derive(Hash, Debug)]
 pub struct Interned<'a, T: ?Sized>(&'a T);
