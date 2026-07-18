@@ -93,7 +93,7 @@ struct Compiler<'a> {
 struct StackPos(u16);
 
 impl<'a> Compiler<'a> {
-    fn compile_func(&mut self, ast: &Func) -> () {
+    fn compile_func(&mut self, ast: &Func) {
         self.builder.ins_label("start");
 
         for (name, _) in &ast.params {
@@ -120,7 +120,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn compile_stmt(&mut self, stmt: &Stmt) -> () {
+    fn compile_stmt(&mut self, stmt: &Stmt) {
         match &stmt.node {
             StmtKind::Expr(expr) => {
                 let sp = self.stack_pos;
@@ -358,12 +358,12 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn compile_lit(&mut self, lit: &Lit, rd: Reg) -> () {
-        match lit {
-            &Lit::Null => self.builder.ins(Instr::LoadNull { rd }),
-            &Lit::Bool(false) => self.builder.ins(Instr::LoadFalse { rd }),
-            &Lit::Bool(true) => self.builder.ins(Instr::LoadTrue { rd }),
-            &Lit::Int(sym) => {
+    fn compile_lit(&mut self, lit: &Lit, rd: Reg) {
+        match *lit {
+            Lit::Null => self.builder.ins(Instr::LoadNull { rd }),
+            Lit::Bool(false) => self.builder.ins(Instr::LoadFalse { rd }),
+            Lit::Bool(true) => self.builder.ins(Instr::LoadTrue { rd }),
+            Lit::Int(sym) => {
                 let value = self.sym_table.get_str(sym).parse().unwrap(); // FIXME: unwrap
                 if value == Int::ZERO {
                     self.builder.ins(Instr::LoadIntZero { rd });
@@ -372,7 +372,7 @@ impl<'a> Compiler<'a> {
                 let imm = self.builder.constant(Value::new_int(value));
                 self.builder.ins(Instr::Load { rd, imm });
             }
-            &Lit::Float(sym) => {
+            Lit::Float(sym) => {
                 let value = self.sym_table.get_str(sym).parse().unwrap(); // FIXME: unwrap
                 if value == 0.0 {
                     self.builder.ins(Instr::LoadF64Zero { rd }); // FIXME
@@ -381,12 +381,12 @@ impl<'a> Compiler<'a> {
                 let imm = self.builder.constant(Value::new_f64(value)); // FIXME
                 self.builder.ins(Instr::Load { rd, imm });
             }
-            &Lit::Str(str) => {
+            Lit::Str(str) => {
                 let str = self.sym_table.get_str(str);
                 let imm = self.builder.constant(Value::new_str(str));
                 self.builder.ins(Instr::Load { rd, imm });
             }
-            &Lit::Err(_) => unreachable!(),
+            Lit::Err(_) => unreachable!(),
         }
     }
 

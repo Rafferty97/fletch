@@ -24,7 +24,7 @@ impl<'a, 'ty> TyCtx<'a, 'ty> {
     }
 
     pub fn mk_ty_from_kind(&self, kind: TyKind<'ty>) -> Ty<'ty> {
-        Ty(self.interners.ty_kind.intern(&self.arena, kind))
+        Ty(self.interners.ty_kind.intern(self.arena, kind))
     }
 
     pub fn mk_int(&self, kind: IntTy) -> Ty<'ty> {

@@ -340,7 +340,7 @@ impl std::fmt::Display for ValueWithCtx<'_> {
                 }
             },
             VariantRef::Variant(boxed) => {
-                let (tag, value) = &*boxed;
+                let (tag, value) = boxed;
                 let tag = self.sym_table.get_str(*tag);
                 write!(f, "('{} {})", tag, self.derive(value))
             }
@@ -378,7 +378,7 @@ impl PartialEq for Value {
         if self.ptr == other.ptr {
             return true;
         }
-        return self.variant() == other.variant();
+        self.variant() == other.variant()
     }
 }
 
@@ -417,7 +417,7 @@ impl std::ops::Deref for FuncObjRef {
     type Target = FuncObj;
 
     fn deref(&self) -> &Self::Target {
-        &*self.0
+        &self.0
     }
 }
 

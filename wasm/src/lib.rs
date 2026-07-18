@@ -33,6 +33,6 @@ impl<'a> OutputSink for JsSink<'a> {
 pub fn run(source: &str, print_cb: &js_sys::Function) -> Result<JsValue, JsValue> {
     let mut sink = JsSink(print_cb);
     let opts = FletchOpts { sexpr: false, disassemble: true };
-    let result = fletch::run("<anon>", source, opts, &mut sink);
-    serde_wasm_bindgen::to_value(&result).map_err(|e| JsValue::from_str(&e.to_string()))
+    fletch::run("<anon>", source, opts, &mut sink);
+    serde_wasm_bindgen::to_value(&()).map_err(|e| JsValue::from_str(&e.to_string()))
 }

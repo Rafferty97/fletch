@@ -6,7 +6,7 @@ pub fn to_sexpr(ast: &impl SExpr, sym_table: &SymTable<'_>) -> String {
     let mut buf = String::new();
     let mut sexpr_ctx = SExprCtx { str: &mut buf, sym_table };
     SExpr::write(ast, &mut sexpr_ctx);
-    return buf;
+    buf
 }
 
 pub trait SExpr {
@@ -39,7 +39,7 @@ impl SExpr for Ty {
 impl<'a> SExprCtx<'a> {
     fn write_program(&mut self, node: &Program) {
         for func in &node.funcs {
-            self.write_func(&func);
+            self.write_func(func);
             self.str.push('\n');
         }
     }

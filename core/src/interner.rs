@@ -80,7 +80,7 @@ impl<'a, T: Hash + Eq> Interner<'a, T> {
 
 impl<'a, T: Hash + Eq + Copy> Interner<'a, [T]> {
     pub fn intern_slice(&self, arena: &'a Bump, values: &[T]) -> Interned<'a, [T]> {
-        let hash = self.state.hash_one(&values);
+        let hash = self.state.hash_one(values);
         let &(values, _) = self
             .values
             .lock()

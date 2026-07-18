@@ -23,9 +23,9 @@ impl Module {
         use std::fmt::Write;
 
         let mut out = String::new();
-        for (_, func) in &self.funcs {
-            write!(&mut out, "<{}>\n", func.name);
-            write!(&mut out, "{}\n", func.chunk.disassemble(sym_table));
+        for func in self.funcs.values() {
+            writeln!(&mut out, "<{}>", func.name);
+            writeln!(&mut out, "{}", func.chunk.disassemble(sym_table));
         }
         out
     }

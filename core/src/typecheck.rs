@@ -142,12 +142,12 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
     fn check_stmt(&mut self, ast: &Stmt) {
         match &ast.node {
             StmtKind::Expr(expr) => {
-                self.check_expr(&*expr, self.common().infer);
+                self.check_expr(expr, self.common().infer);
             }
             StmtKind::Let(name, ty, value, _) => {
                 let def_id = *self.name_tables.uses.get(&name.id).unwrap(); // FIXME
                 let expected = ty.as_ref().map(|ty| self.lower_ty(ty)).unwrap_or(self.common().infer);
-                let ty = self.check_expr(&*value, expected);
+                let ty = self.check_expr(value, expected);
                 if let Ok(def_id) = def_id {
                     self.def_map.insert(def_id, Def::Var(ty)); // FIXME?
                 }
@@ -395,7 +395,7 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             }
             ast::TyKind::Tuple(tys) => {
                 let tys = tys
-                    .into_iter()
+                    .iter()
                     .map(|ty| self.lower_ty_with_params(ty, ty_params))
                     .collect_vec();
                 self.ty_ctx.mk_tuple(&tys)
@@ -406,12 +406,12 @@ impl<'a, 'ty> TypeChecker<'a, 'ty> {
             }
             ast::TyKind::Func(params, ret) => {
                 let params = params
-                    .into_iter()
+                    .iter()
                     .map(|ty| self.lower_ty_with_params(ty, ty_params))
                     .collect_vec();
                 let ret = ret
                     .as_ref()
-                    .map(|ty| self.lower_ty_with_params(&*ty, ty_params))
+                    .map(|ty| self.lower_ty_with_params(ty, ty_params))
                     .unwrap_or(self.common().unit());
                 self.ty_ctx.mk_func(&params, ret)
             }

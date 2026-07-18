@@ -43,16 +43,16 @@ impl Chunk {
     pub fn disassemble(&self, sym_table: &SymTable<'_>) -> String {
         let mut out = String::new();
 
-        write!(out, "[attrs]\n");
-        write!(out, "func_id = {}\n", self.func_id.0);
-        write!(out, "stack_size = {}\n", self.stack_size);
+        writeln!(out, "[attrs]");
+        writeln!(out, "func_id = {}", self.func_id.0);
+        writeln!(out, "stack_size = {}", self.stack_size);
 
         write!(out, "\n[code]\n");
         let mut labels = self.labels.iter();
         let mut next_label = labels.next();
         for (index, &instr) in self.code.iter().enumerate() {
             while let Some((_, label)) = next_label.filter(|&&(i, _)| i <= index) {
-                write!(out, "{label}:\n");
+                writeln!(out, "{label}:");
                 next_label = labels.next();
             }
             let instr = Instr::decode(instr);
@@ -60,18 +60,18 @@ impl Chunk {
                 let addr = addr.0 as usize;
                 let label = self.labels.binary_search_by_key(&addr, |(addr, _)| *addr);
                 match label {
-                    Ok(idx) => write!(out, "    {} <{}>\n", instr, &self.labels[idx].1),
-                    Err(_) => write!(out, "    {} <unresolved label>\n", instr),
+                    Ok(idx) => writeln!(out, "    {} <{}>", instr, &self.labels[idx].1),
+                    Err(_) => writeln!(out, "    {} <unresolved label>", instr),
                 };
             } else {
-                write!(out, "    {}\n", instr);
+                writeln!(out, "    {}", instr);
             }
         }
 
         if !self.constants.is_empty() {
             write!(out, "\n[constants]\n");
             for value in &self.constants {
-                write!(out, "    {}\n", value.display_ctx(sym_table));
+                writeln!(out, "    {}", value.display_ctx(sym_table));
             }
         }
 
@@ -97,25 +97,25 @@ impl ChunkBuilder {
     }
 
     pub fn ins_jump(&mut self, label: impl Display) {
-        let label = label.to_string().into();
+        let label = label.to_string();
         self.label_uses.push((label, self.curr_pos()));
         self.code.push(Instr::Jump { addr: Addr(0) }.encode());
     }
 
     pub fn ins_jump_if_true(&mut self, r0: Reg, label: impl Display) {
-        let label = label.to_string().into();
+        let label = label.to_string();
         self.label_uses.push((label, self.curr_pos()));
         self.code.push(Instr::JumpIfTrue { r0, addr: Addr(0) }.encode());
     }
 
     pub fn ins_jump_if_false(&mut self, r0: Reg, label: impl Display) {
-        let label = label.to_string().into();
+        let label = label.to_string();
         self.label_uses.push((label, self.curr_pos()));
         self.code.push(Instr::JumpIfFalse { r0, addr: Addr(0) }.encode());
     }
 
     pub fn ins_label(&mut self, label: impl Display) {
-        let label = label.to_string().into();
+        let label = label.to_string();
         if self.label_addrs.insert(label, self.curr_pos()).is_some() {
             panic!("duplicate label");
         }
