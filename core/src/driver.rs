@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use crate::ast::sexpr::to_sexpr;
 use crate::ast::span::Span;
-use crate::compile::compile_program;
+use crate::compile::{ProgramInput, compile_program};
 use crate::diagnostics::{Diagnostic, Level, VecReporter};
 use crate::interner::IndexedInterner;
 use crate::name_resolution::NameResolution;
@@ -87,17 +87,17 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
     }
 
     // Compile
-    let module = compile_program(&ast, sym_table, &name_tables.uses, &type_map);
+    let input = ProgramInput { ast: &ast, sym_table, uses: &name_tables.uses, type_map: &type_map };
+    let module = compile_program(input);
 
     // Print chunks
     if opts.disassemble {
-        output.emit(&module.disassemble(sym_table));
-        output.emit("\n");
+        todo!();
     }
 
     // Execute
-    let mut vm = Vm::new(&module, sym_table);
-    vm.execute(output);
+    let main = &module.funcs[module.main];
+    // todo
 }
 
 #[derive(Serialize, Debug)]
