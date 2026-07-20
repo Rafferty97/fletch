@@ -6,6 +6,7 @@ use cranelift::codegen::{settings, verify_function};
 use cranelift::frontend::{FunctionBuilder, FunctionBuilderContext};
 use fnv::FnvHashMap;
 use itertools::Itertools;
+use target_lexicon::Triple;
 use thiserror::Error;
 
 use crate::ast::{self, NodeId};
@@ -46,21 +47,24 @@ pub fn compile_program(program: ProgramInput<'_>) -> Module {
 }
 
 fn compile_function(ast: &ast::Func, ctx: &mut FunctionBuilderContext) -> Function {
-    let mut sig = Signature::new(CallConv::SystemV);
+    let mut sig = Signature::new(CallConv::triple_default(&Triple::host()));
     sig.returns.push(AbiParam::new(I32));
 
     let mut func = Function::with_name_signature(UserFuncName::user(0, 0), sig);
     let mut b = FunctionBuilder::new(&mut func, ctx);
 
     let block = b.create_block();
-    b.switch_to_block(block);
     b.seal_block(block);
-    let ret = b.ins().iconst(I32, 42);
+
+    b.switch_to_block(block);
+    let a = b.ins().iconst(I32, 21);
+    let ret = b.ins().imul_imm(a, 2);
     b.ins().return_(&[ret]);
 
     b.finalize();
     let flags = settings::Flags::new(settings::builder());
     verify_function(&func, &flags).unwrap();
 
+    // println!("{}", func.display());
     func
 }

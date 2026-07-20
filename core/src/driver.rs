@@ -3,7 +3,12 @@ use codespan_reporting::diagnostic::Label;
 use codespan_reporting::files::SimpleFiles;
 use codespan_reporting::term;
 use codespan_reporting::term::termcolor::{ColorChoice, StandardStream};
+use cranelift::codegen::control::ControlPlane;
+use cranelift::codegen::ir::Function;
+use cranelift::codegen::settings::Configurable;
+use cranelift::codegen::{Context, settings};
 use serde::Serialize;
+use target_lexicon::Triple;
 
 use crate::ast::sexpr::to_sexpr;
 use crate::ast::span::Span;
@@ -96,8 +101,35 @@ pub fn run(filename: &str, src: &str, opts: FletchOpts, output: &mut dyn OutputS
     }
 
     // Execute
-    let main = &module.funcs[module.main];
-    // todo
+    run_function(&module.funcs[module.main]);
+}
+
+fn run_function(func: &Function) {
+    let mut builder = settings::builder();
+    builder.set("opt_level", "speed");
+    let flags = settings::Flags::new(builder);
+
+    let isa = match cranelift::codegen::isa::lookup(Triple::host()) {
+        Ok(builder) => builder.finish(flags).unwrap(),
+        Err(err) => panic!("Error looking up target: {}", err),
+    };
+
+    let mut ctx = Context::for_function(func.clone());
+    ctx.set_disasm(true);
+    let code = ctx.compile(&*isa, &mut ControlPlane::default()).unwrap();
+    println!("{}", code.vcode.as_ref().unwrap());
+    let code = code.code_buffer();
+
+    let mut buffer = memmap2::MmapOptions::new().len(code.len()).map_anon().unwrap();
+    buffer.copy_from_slice(code);
+    let buffer = buffer.make_exec().unwrap();
+
+    let x = unsafe {
+        let code_fn: unsafe extern "C" fn() -> i32 = std::mem::transmute(buffer.as_ptr());
+        code_fn()
+    };
+
+    println!("out: {}", x);
 }
 
 #[derive(Serialize, Debug)]
